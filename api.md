@@ -203,3 +203,15 @@ $this->renderable(function (\Illuminate\Validation\ValidationException $e, $requ
 4. **Wrong status codes** — 200 for success, 201 for created, 400 for bad request, 401 for unauthenticated, 403 for forbidden, 404 for not found, 422 for validation, 500 for server error
 5. **No versioning** — `api/v1/` routes let you break changes without killing existing clients
 6. **Exposing internal errors** — never return `exception->getMessage()` to API clients in production
+
+
+## Updated from Research (2026-05)
+
+- **Optimizing API Usage with Rate Limiting in Laravel: Best Practices | by Vishalhari | Medium** (https://medium.com/@vishalhari01/optimizing-api-usage-with-rate-limiting-in-laravel-best-practices-108db750b9f1)
+  By using Laravel’s built-in middleware, creating custom rate limiting logic, monitoring with tools like Laravel Telescope, and providing clear responses when limits are exceeded, you can ensure fair usage and protect your application from abuse.
+
+- **Laravel Sanctum | Laravel 13.x - The clean stack for Artisans and agents** (https://laravel.com/docs/13.x/sanctum)
+  Sanctum allows you to assign &quot;abilities&quot; to tokens. Abilities serve a similar purpose as OAuth&#x27;s &quot;scopes&quot;.
+
+- **API Versioning in Laravel 11 - Laravel News** (https://laravel-news.com/api-versioning-in-laravel-11)
+  A common approach to writing versioned APIs in Laravel is <strong>separating routes into different files</strong>. Doing so simplifies the overhead of reasoning about a specific API version and keeps things tidy.
