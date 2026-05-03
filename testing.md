@@ -212,3 +212,4 @@ $this->assertDatabaseCount('posts', 5);
 4. **Testing too much in one test** — one assertion per test is fine, be specific
 5. **Not testing edge cases** — empty, null, very long strings, special characters
 6. **Skipping unit tests** — too many things break silently without them
+7. **`assertStatus(200)` vs `assertSuccessful()`** — Laravel 11+ prefers `assertSuccessful()` for clearer intent

@@ -106,21 +106,9 @@ $this->middleware('auth')->only(['create', 'store', 'edit', 'update', 'destroy']
 $this->middleware('cache.headers:no-store')->only(['create', 'edit']);
 ```
 
-**Middleware order (App\Http\Kernel):**
-```
-0. Handle Request (earliest)
-1. \Illuminate\Http\Middleware\HandleCors
-2. \Illuminate\Foundation\Http\Middleware\ValidatePostSize
-3. TrimStrings / ConvertEmptyStringsToNull
-4. Your custom global middleware
-5. \Illuminate\Session\Middleware\StartSession
-6. \Illuminate\View\Middleware\ShareErrorsFromSession
-7. \Illuminate\Routing\Middleware\SubstituteBindings
-8. Your route middleware
-9. \Illuminate\Auth\Middleware\Authenticate (if auth required)
-10. Controller executes
-11. Response goes back OUT through the stack
-```
+**Middleware order matters — earlier wraps later execution:**
+- Laravel 10 and earlier: middleware order configured in `App\Http\Kernel`
+- Laravel 11+: middleware registered in `bootstrap/app.php` via `$middleware->` chain
 
 **Always put early-return middleware BEFORE expensive operations.**
 
