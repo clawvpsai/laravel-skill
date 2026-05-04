@@ -39,11 +39,12 @@ metadata:
 
 ## Version Defaults
 
-- Laravel 10+ (current LTS attention)
-- PHP 8.2+
+- **Laravel 13** (latest — requires PHP 8.3+)
+- PHP 8.3+ (8.2 minimum, optimized for 8.4)
 - Composer 2.x
 - SQLite for local dev (zero config)
 - Vite for asset bundling (not Laravel Mix)
+- Laravel Reverb for WebSocket/real-time
 
 ## Pro Tips
 

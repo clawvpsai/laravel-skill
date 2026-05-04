@@ -124,7 +124,7 @@ class PostControllerTest extends TestCase
         $response = $this->getJson('/api/posts');
 
         // Assert
-        $response->assertStatus(200)
+        $response->assertSuccessful()
             ->assertJsonCount(1, 'data');
     }
 

@@ -37,16 +37,16 @@ This skill provides comprehensive guidance for building robust Laravel applicati
 
 ## Version Support
 
-- **Laravel 12** (latest) — PHP 8.2+, Vite default, Bootstrap 5
-- **Laravel 11** — Current LTS, streamlined bootstrap
-- **Laravel 10** — Security fixes only
+- **Laravel 13** (latest — March 2026, PHP 8.3+)
+- **Laravel 12** — Previous stable
+- **Laravel 11** — Legacy support
 
 ## Auto-Updater
 
 This skill is auto-updated every 2 hours via a cron job that:
 1. Rotates through topic areas (eloquent, queues, security, etc.)
 2. Scans for gaps and deprecations in current content
-3. Performs web research on latest best practices
+3. Performs web research via Parallel AI Search API on latest best practices
 4. Commits improvements directly to this repository
 
 ## Contributing
