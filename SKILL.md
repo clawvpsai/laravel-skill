@@ -11,7 +11,7 @@ metadata:
 
 | Topic | File | When to Use |
 |---|---|---|
-| Models, relationships, query builder, migrations | `eloquent.md` | Any DB work |
+| Models, relationships, query builder, migrations | `eloquent.md` + `migrations.md` | Any DB work |
 | Routing, validation, request lifecycle | `controllers.md` | Building endpoints |
 | Sanctum, policies, gates, CSRF | `auth.md` | User auth & permissions |
 | Jobs, workers, retries, failed jobs | `queues.md` | Background processing |
@@ -24,6 +24,7 @@ metadata:
 | Production deployment, env, configs | `deployment.md` | Going live |
 | File uploads, S3, presigned URLs | `file-uploads.md` | Media handling |
 | Model lifecycle, observers, events | `observers.md` | Decoupled logic |
+| DB schema, seeding, index management | `migrations.md` | Schema management |
 | Log channels, structured logging, monitoring | `logging.md` | Debugging & monitoring |
 | Translations, locales, pluralization | `localization.md` | i18n/l10n |
 | Rules, Form Requests, custom validators | `validation.md` | Input validation |
