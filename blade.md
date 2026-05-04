@@ -168,3 +168,15 @@ View::composer('partials.*', fn(View $view) => $view->with('theme', 'dark'));
 3. **Not using `@csrf` in forms** — CSRF token missing, request rejected
 4. **Forgetting `@method` for PUT/PATCH/DELETE** — wrong HTTP method, 419 error
 5. **Old `{{$var}}` (no space)** — deprecated in Laravel 10, use `{{ $var }}`
+
+
+## Updated from Research (2026-05)
+
+- **r/laravel on Reddit: What are your honest thoughts about Livewire vs Inertia.js** (https://www.reddit.com/r/laravel/comments/s9za3a/what_are_your_honest_thoughts_about_livewire_vs/)
+  I love Livewire and the author is a brilliant man. But if you want job portability, Inertia seems to be the way to go because you will use Vue along with it. If eventually you move to a different company where they don&#x27;t use the same stack (Laravel), so all your Livewire skills are going to waste.
+
+- **Livewire vs Inertia: Which one Should I Choose for Laravel Development?** (https://www.scalablepath.com/php/livewire-vs-inertia)
+  <strong>If you have a profile more oriented towards back-end development, you will definitely feel more comfortable using Livewire</strong>. However, if your team includes people who are already familiar with front-end frameworks like React, Vue, or Angular,
+
+- **Inertia.js and Livewire: a high level comparison | Information Overload** (https://sebastiandedeyne.com/inertia-js-and-livewire-a-high-level-comparison/)
+  Inertia replaces Blade views altogether by returning JavaScript components from controller actions. Those components can be built with your frontend framework of choice. <strong>Livewire is a Laravel library, while Inertia has adapters for several server and client frameworks</strong>.
