@@ -22,6 +22,11 @@ metadata:
 | Caching, indexing, eager loading | `performance.md` | Optimization |
 | PHPUnit, factories, feature tests | `testing.md` | Test-driven dev |
 | Production deployment, env, configs | `deployment.md` | Going live |
+| File uploads, S3, presigned URLs | `file-uploads.md` | Media handling |
+| Model lifecycle, observers, events | `observers.md` | Decoupled logic |
+| Log channels, structured logging, monitoring | `logging.md` | Debugging & monitoring |
+| Translations, locales, pluralization | `localization.md` | i18n/l10n |
+| Rules, Form Requests, custom validators | `validation.md` | Input validation |
 
 ## Critical Rules (Never Forget)
 
