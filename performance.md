@@ -21,6 +21,9 @@ $posts = Post::with(['author', 'comments', 'tags'])->get();
 
 // Nested eager loading
 $posts = Post::with('author.profile')->get();
+
+// Conditional eager loading
+$posts = Post::with(['author' => fn($q) => $q->select('id', 'name')])->get();
 ```
 
 ## Lazy Loading Prevention (Dev Only)
@@ -62,6 +65,14 @@ $posts = Post::withCount('comments')->get();
 foreach ($posts as $post) {
     echo $post->comments_count;
 }
+
+// With nested counts
+$posts = Post::withCount(['comments', 'comments.votes'])->get();
+
+// With specific conditions
+$posts = Post::withCount([
+    'comments as approved_comments_count' => fn($q) => $q->where('approved', true)
+])->get();
 ```
 
 ## Caching
@@ -77,14 +88,6 @@ $posts = Cache::remember('posts.active', 3600, fn() =>
 // Invalidate on update
 Cache::forget('posts.active');
 Cache::put('posts.active', $posts, 3600);
-
-// Manual invalidation pattern
-public function update(Post $post)
-{
-    Cache::forget('post.' . $post->id);
-    Cache::forget('posts.active');
-    // ...
-}
 
 // Cache tags (Redis)
 Cache::tags(['posts'])->put('active', $posts, 3600);
@@ -104,6 +107,83 @@ if (Cache::has('stats')) {
 
 // Or remember (lazy)
 $stats = Cache::remember('stats', 3600, fn() => $this->computeStats());
+
+// Cache stampede prevention — lock key
+$stats = Cache::remember('stats', 3600, function () {
+    // Only one process computes at a time
+    return Cache::remember('stats.lock', 5, fn() => false) ?: $this->computeStats();
+});
+```
+
+## Database Transactions
+
+```php
+// Wrap related writes in transactions for performance + consistency
+DB::transaction(function () use ($post, $user) {
+    $post->update(['author_id' => $user->id]);
+    $user->increment('post_count');
+    $this->indexPost($post->id);
+});
+
+// For long-running transactions, use pessimistic locking
+DB::transaction(function () {
+    $post = Post::lockForUpdate()->find($postId);
+    // Row is locked until transaction commits
+    $post->update(['status' => 'published']);
+});
+```
+
+## Query Optimization
+
+```php
+// Select only needed columns
+$posts = Post::select('id', 'title', 'author_id')->with('author:id,name')->get();
+
+// Chunk large datasets instead of all()
+Post::where('active', true)->chunk(100, function ($posts) {
+    foreach ($posts as $post) {
+        // Process each batch
+    }
+});
+
+// Cursor (memory efficient for very large datasets)
+foreach (Post::where('active', true)->cursor() as $post) {
+    // One query, low memory
+}
+
+// Avoid counts in loops — use withCount or separate query
+```
+
+## Pagination
+
+```php
+// Large tables — cursor pagination (faster)
+Post::orderBy('id')->cursorPaginate(50);
+
+// Standard (good for most cases)
+Post::paginate(20);
+
+// never do this for large datasets
+Post::all(); // loads ALL records into memory
+```
+
+## Queue Workers for Heavy Work
+
+```php
+// Offload heavy computation to queue instead of HTTP request
+// Controller
+ProcessPostJob::dispatch($postId)->onQueue('processing');
+
+// Job (runs async, doesn't block user request)
+class ProcessPostJob implements ShouldQueue
+{
+    public function handle(): void
+    {
+        // Heavy computation here
+        $this->generateReport();
+        $this->updateSearchIndex();
+    }
+}
 ```
 
 ## Query Logging (Dev)
@@ -122,19 +202,6 @@ if (app()->isLocal()) {
 }
 ```
 
-## Pagination
-
-```php
-// Large tables — cursor pagination (faster)
-Post::orderBy('id')->cursorPaginate(50);
-
-// Standard (good for most cases)
-Post::paginate(20);
-
-// never do this for large datasets
-Post::all(); // loads ALL records into memory
-```
-
 ## Common Mistakes
 
 1. **N+1 in loops** — always use `with()`
@@ -143,3 +210,15 @@ Post::all(); // loads ALL records into memory
 4. **Cache stampede** — use `Cache::remember()` not `Cache::get()` + `Cache::put()` separately
 5. **No cache invalidation** — stale data served forever
 6. **Loading too much in one query** — select only needed columns
+7. **No transactions for related writes** — partial updates on failure
+8. **Running heavy work synchronously** — block users, timeout issues
+
+## Updated from Research (2026-05)
+
+- **Cursor pagination** — memory-efficient iteration over large datasets
+- **Cache stampede prevention** — use lock keys to prevent thundering herd
+- **Pessimistic locking** — `lockForUpdate()` for race-condition-safe updates
+- **Conditional eager loading** — `with(['relation' => fn()])` to filter loaded relations
+- **withCount with conditions** — count with specific filters via alias
+
+Source: [Laravel 13 Docs - Eloquent Relationships](https://laravel.com/docs/13.x/eloquent)

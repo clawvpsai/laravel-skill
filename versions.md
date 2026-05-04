@@ -1,10 +1,10 @@
 # Laravel Version-Specific Requirements
 
-## Active LTS Versions
+## Active Versions
 
 - **Laravel 11** — Still receives security fixes
-- **Laravel 12** — Previous stable
-- **Laravel 13** — Current latest (released March 2026)
+- **Laravel 12** — Active development
+- **Laravel 13** — Current latest (v13.7.0 as of May 2026)
 
 ## Version Selector Prompt
 
@@ -17,11 +17,11 @@ Then load the relevant version sections below.
 
 ---
 
-## Laravel 13 (Latest — March 2026)
+## Laravel 13 (Latest — March 2026, v13.7.0)
 
 ### New in Laravel 13
 
-- **PHP 8.3 minimum required** (8.2, 8.3, 8.4 supported)
+- **PHP 8.3 minimum required** (8.2, 8.3, 8.4, 8.5 supported)
 - **Laravel AI / Boost MCP** — first-party MCP server for AI assistants
   - `/upgrade-laravel-v13` slash command for automated upgrades
   - Interactive HTML responses in Claude/VS Code Copilot
@@ -29,6 +29,10 @@ Then load the relevant version sections below.
 - **Faster routing** — optimized route resolution
 - **Native TypeScript support** — improved scaffolding
 - **Laravel Reverb** — first-party WebSocket server (production-ready)
+- **New PHP Attributes for Controllers:** `#[Middleware]` and `#[Authorize]`
+- **New PHP Attributes for Testing:** `#[Group]` and `#[TestProperty]`
+- **New PHP Attributes for Queues:** `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]`
+- **Queue Routing** — `Queue::route()` for centralized queue/connection routing by job class
 - **"Relatively minor upgrade"** — most apps upgrade without code changes
 
 ### Breaking Changes from 12
@@ -62,7 +66,7 @@ php artisan boost:install
 ### New in Laravel 12
 
 - **Application Starter Kits** — React, Svelte, Vue, and Livewire with Shadcn components
-- **PHP 8.2 minimum required** — supports 8.2, 8.3, 8.4
+- **PHP 8.2 minimum required** — supports 8.2, 8.3, 8.4, 8.5
 - **Bootstrap 5 by default** — no more Bootstrap 4
 - **Vite as default bundler** — Laravel Mix officially deprecated
 - **Health endpoint at `/up`** — built into framework, no route needed
@@ -143,7 +147,7 @@ php artisan boost:install
 ```bash
 # Check Laravel version
 php artisan --version
-# Laravel 13.x.x
+# Laravel 13.7.0
 
 # Check PHP version
 php -v
@@ -151,7 +155,7 @@ php -v
 
 # Check composer
 composer --version
-# Composer 2.8.x
+# Composer 2.x
 ```
 
 ---
@@ -193,5 +197,4 @@ Before working on any Laravel task:
 - **Breaking:** `App\Http\Kernel` and `App\Console\Kernel` fully removed
 - **Breaking:** `config/app.php` no longer has `aliases` array
 
-Source: [laravelversions.com](https://laravelversions.com/en) | [Laravel 13 Docs](https://laravel.com/docs/13.x)
-
+Source: [laravelversions.com](https://laravelversions.com/en) | [Laravel 13 Docs](https://laravel.com/docs/13.x) | [Packagist](https://packagist.org/packages/laravel/framework)

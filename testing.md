@@ -12,7 +12,7 @@ php artisan test --coverage
 # Run specific test
 php artisan test --filter=PostTest
 
-# Watch (with stakes/pest)
+# Watch (with Pest)
 ./vendor/bin/pest --watch
 ```
 
@@ -204,6 +204,53 @@ $this->assertDatabaseMissing('posts', ['id' => $deletedId]);
 $this->assertDatabaseCount('posts', 5);
 ```
 
+## Mocking
+
+```php
+// Mock a service
+$this->mock(PostService::class, function ($mock) {
+    $mock->shouldReceive('process')->once()->with(5)->andReturn(true);
+});
+
+// Partial mock
+$this->spy(PostService::class, function ($spy) {
+    $spy->shouldReceive('process')->with(5)->andReturn(true);
+});
+
+// Mock facades
+Cache::shouldReceive('get')
+    ->with('posts')
+    ->andReturn(collect(['post1', 'post2']));
+
+// Mock queue
+Queue::fake(); // jobs aren't actually dispatched
+
+// Assert a job was dispatched
+Queue::assertPushed(ProcessPostJob::class, fn($job) => $job->postId === 5);
+
+// Assert job was NOT dispatched
+Queue::assertNotPushed(ProcessPostJob::class);
+```
+
+## HTTP Client Testing (Guzzle Mocking)
+
+```php
+// Fake HTTP responses
+Http::fake([
+    'api.github.com/*' => Http::response(['name' => 'laravel'], 200),
+    'stripe.com/*' => Http::response(['id' => 'ch_123'], 500), // test failure
+]);
+
+// In your test
+$response = $this->post('/webhook/stripe', ['event' => 'payment']);
+$response->assertStatus(200);
+
+// Assert HTTP was called
+Http::assertSent(function ($request) {
+    return $request->url() === 'https://api.github.com/user';
+});
+```
+
 ## Laravel 13 Testing Attributes
 
 Laravel 13 expands PHP attributes for testing:
@@ -220,6 +267,78 @@ class AuthenticationTest extends TestCase
 }
 ```
 
+## Pest PHP (Popular Laravel Testing Framework)
+
+```bash
+composer require pestphp/pest --dev
+php artisan pest:install
+```
+
+```php
+// tests/Feature/PostTest.php (uses Pest instead of PHPUnit)
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+pest()->describe('Post Controller', function () {
+    beforeEach(fn() => RefreshDatabase::refreshDatabase());
+    
+    it('can list published posts', function () {
+        $post = Post::factory()->create(['published_at' => now()]);
+        
+        $response = getJson('/api/posts');
+        
+        $response->assertSuccessful()
+            ->assertJsonCount(1, 'data');
+    });
+    
+    it('rejects unauthenticated create', function () {
+        $response = postJson('/api/posts', ['title' => 'Test']);
+        
+        $response->assertStatus(401);
+    });
+});
+```
+
+**Run Pest:**
+```bash
+php artisan pest           # all tests
+php artisan pest --group=feature  # specific group
+php artisan pest --filter="can list"  # filter by name
+```
+
+**Pest Plugins:**
+```bash
+composer require pestphp/pest-plugin-laravel --dev
+php artisan pest --coverage  # coverage report
+```
+
+## Laravel Dusk (Browser Testing)
+
+```bash
+composer require --dev laravel/dusk
+php artisan dusk:install
+```
+
+```php
+// tests/Browser/PostCreationTest.php
+use Laravel\Dusk\Browser;
+use Tests\DuskTestCase;
+
+class PostCreationTest extends DuskTestCase
+{
+    public function test_user_can_create_post(): void
+    {
+        $this->browse(function (Browser $browser) {
+            $browser->loginAs(User::factory()->create())
+                ->visit('/posts/create')
+                ->type('title', 'My Post')
+                ->type('body', 'Post content here')
+                ->press('Publish')
+                ->assertPathIs('/posts');
+        });
+    }
+}
+```
+
 ## Common Mistakes
 
 1. **Not using `RefreshDatabase`** — tests see stale data from previous tests
@@ -229,10 +348,14 @@ class AuthenticationTest extends TestCase
 5. **Not testing edge cases** — empty, null, very long strings, special characters
 6. **Skipping unit tests** — too many things break silently without them
 7. **`assertStatus(200)` vs `assertSuccessful()`** — Laravel 11+ prefers `assertSuccessful()` for clearer intent
-
+8. **Not faking queue jobs** — `Queue::fake()` prevents actual job dispatch during tests
+9. **Forgetting to mock HTTP** — real API calls slow tests and can fail unexpectedly
 
 ## Updated from Research (2026-05)
 
 - **Laravel 13 Testing Attributes** — `#[Group]` and `#[TestProperty]` attributes allow organizing tests and adding metadata for filtering and reporting.
+- **Pest PHP** — increasingly standard in Laravel ecosystem; `pest()` function replaces `TestCase` class methods.
+- **HTTP Client Mocking** — `Http::fake()` for mocking external API calls in tests.
+- **Mocking Best Practices** — use `mock()` for services, `spy()` when you only need to verify calls happened, `Queue::fake()` for job queues.
 
 Source: [Laravel 13 Docs - Testing](https://laravel.com/docs/13.x/testing)
