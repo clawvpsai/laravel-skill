@@ -69,45 +69,37 @@ class ProcessPostsCommand extends Command
 }
 ```
 
-**Register in `app/Console/Kernel.php`:**
+**Register commands — in `AppServiceProvider` boot() or auto-loaded via `bootstrap/app.php`:**
 ```php
-protected function commands()
-{
-    $this->load(__DIR__.'/Commands');
-}
+// Auto-load all Commands in app/Console/Commands
+$this->commands([
+    // Commands are auto-discovered in Laravel 11+
+]);
 ```
 
 ## Scheduling (Cron)
 
+In Laravel 11+, scheduling is defined in `routes/console.php` (no Kernel needed):
+
 ```php
-// app/Console/Kernel.php
-protected function schedule(Schedule $schedule)
-{
-    // Every minute
-    $schedule->command('posts:process')->everyMinute();
+// routes/console.php
+use Illuminate\Support\Facades\Schedule;
 
-    // Hourly
-    $schedule->command('reports:generate')->hourly();
+Schedule::command('posts:process')->everyMinute();
+Schedule::command('reports:generate')->hourly();
+Schedule::command('backup:run')->dailyAt('00:00');
+Schedule::command('cleanup:old')->weekly();
+Schedule::command('invoices:close')->monthly();
 
-    // Daily at midnight
-    $schedule->command('backup:run')->dailyAt('00:00');
+// Run queue worker continuously (auto-restart)
+Schedule::command('queue:work --stop-when-empty')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->runInBackground();
 
-    // Weekly
-    $schedule->command('cleanup:old')->weekly();
-
-    // Monthly
-    $schedule->command('invoices:close')->monthly();
-
-    // Run queue worker continuously (auto-restart)
-    $schedule->command('queue:work --stop-when-empty')
-        ->everyMinute()
-        ->withoutOverlapping()
-        ->runInBackground();
-
-    // Closure (cron syntax)
-    $schedule->call(fn() => User::where('verified', false)->deleteOldUnverified())
-        ->weekly();
-}
+// Closure (cron syntax)
+Schedule::call(fn() => User::where('verified', false)->deleteOldUnverified())
+    ->weekly();
 ```
 
 **Enable scheduler — add to server crontab:**
@@ -141,6 +133,7 @@ require 'vendor/autoload.php';
 $app = require 'bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->call('tinker');
+// Note: In Laravel 13+, use: php artisan tinker directly
 ```
 
 ## Environment & Config

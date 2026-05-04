@@ -23,9 +23,9 @@ class User extends Authenticatable
 }
 ```
 
-**Token creation:**
+**Token creation with abilities (scopes):**
 ```php
-// Create token with abilities (scopes)
+// Create token with abilities
 $token = $user->createToken('api-token', ['posts:read', 'posts:write']);
 
 // Use in request
@@ -34,19 +34,41 @@ $token = $user->createToken('api-token', ['posts:read', 'posts:write']);
 // Revoke
 $user->tokens()->delete(); // all tokens
 $user->tokens()->where('id', $tokenId)->delete(); // specific token
+
+// Check abilities in request
+if ($request->user()->tokenCan('posts:write')) {
+    // user can write posts
+}
 ```
 
-**Middleware:**
+**SPA (cookie-based, no token storage):**
 ```php
-// routes/api.php
+// routes/api.php — uses session cookie, not Bearer token
 Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/posts', fn() => Post::all());
-    Route::post('/posts', fn() => Post::create(request()->all()));
+    Route::get('/user', fn() => auth()->user());
 });
+```
 
-// SPA (cookie-based, no token storage)
+## Laravel 13 Token Abilities (Enhanced)
+
+Laravel 13 Sanctum enhances token abilities with richer semantics:
+
+```php
+// Create scoped token with fine-grained abilities
+$token = $user->createToken('editor', [
+    'posts:read',
+    'posts:create',
+    'posts:update',
+    'comments:moderate',
+]);
+
+// Middleware can check abilities
 Route::middleware('auth:sanctum')->group(function () {
-    // Uses session cookie, not Bearer token
+    Route::post('/posts', fn() => /* create post */)
+        ->middleware('ability:posts:create');
+    
+    Route::put('/posts/{post}', fn() => /* update post */)
+        ->middleware('ability:posts:update');
 });
 ```
 
@@ -56,13 +78,12 @@ Route::middleware('auth:sanctum')->group(function () {
 php artisan make:policy PostPolicy --model=Post
 ```
 
-**Register in `AuthServiceProvider`:**
+**Register in `AppServiceProvider` (Laravel 11+):**
 ```php
-protected $policies = [
-    Post::class => PostPolicy::class,
-];
+use App\\Models\\Post;
+use App\\Policies\\PostPolicy;
+use Illuminate\\Support\\Facades\Gate;
 
-// Or auto-discover
 Gate::policy(Post::class, PostPolicy::class);
 ```
 
@@ -103,7 +124,7 @@ if (Gate::denies('update', $post)) {
 ## Gates
 
 ```php
-// AuthServiceProvider boot()
+// In AppServiceProvider boot() (Laravel 11+)
 Gate::define('manage-settings', function (User $user) {
     return $user->isAdmin();
 });
@@ -115,12 +136,15 @@ if (Gate::allows('manage-settings')) { /* show admin UI */ }
 if (Gate::forUser($user)->denies('access-reports')) { /* hide reports */ }
 ```
 
-## CSRF Protection
+## CSRF Protection (Laravel 13 Enhanced)
 
-Laravel auto-generates CSRF tokens for all session-based requests.
+Laravel 13 formalizes CSRF as `PreventRequestForgery` middleware with origin-aware verification:
 
-**Form (Blade):**
-```html
+```php
+// The middleware automatically validates Origin/Referer headers
+// Ensure config/app.php has correct URL configured
+
+// Form (Blade) — standard CSRF token
 <form method="POST" action="/posts">
     @csrf
     @method('PUT')
@@ -148,7 +172,7 @@ fetch('/posts', {
 ```php
 // Route
 Route::post('/webhook', [WebhookController::class, 'handle'])
-    ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class]);
+    ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\PreventRequestForgery::class]);
 ```
 
 ## Session & Cookie Security
@@ -188,6 +212,14 @@ php artisan fortify:install
 1. **Token abilities not checked** — always validate `$request->user()->tokenCan('action')`
 2. **Policy not registered** — Gate doesn't auto-discover unregistered policies
 3. **CSRF exemption for internal routes** — makes you vulnerable to CSRF attacks
-4. **Plaintext passwords stored** — always use `Hash::make()`
+4. **Plaintext passwords stored** — always `Hash::make()`
 5. **Session cookie not encrypted** — sensitive data visible in browser DevTools
 6. **SameSite=nil** — allows CSRF from malicious links on other sites
+
+
+## Updated from Research (2026-05)
+
+- **Laravel 13 Token Abilities** — Sanctum tokens support fine-grained abilities that map to `tokenCan()` checks and `ability:` middleware for API authorization.
+- **Laravel 13 CSRF** — CSRF middleware is now formalized as `PreventRequestForgery` with enhanced origin-aware request verification.
+
+Source: [Laravel 13 Docs - Sanctum](https://laravel.com/docs/13.x/sanctum) | [CSRF](https://laravel.com/docs/13.x/csrf)

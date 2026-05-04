@@ -132,6 +132,8 @@ php artisan boost:install
 | Laravel Mix | 11 (use Vite) | 12 |
 | `assertStatus()` | 10 | 13 |
 | `php artisan make:model -mcr` shorthand | Still works | — |
+| `App\Http\Kernel` removed | 11 | 12 |
+| `App\Console\Kernel` removed | 11 | 12 |
 | `config/app.php` aliases array | 11 | 12 |
 | PHP 8.0/8.1/8.2 support | 13 | — |
 | Bootstrap 4 default | 12 | — |
@@ -162,3 +164,34 @@ Before working on any Laravel task:
 - [ ] Load version-specific rules above
 - [ ] Check if feature is version-specific
 - [ ] Apply version-specific patterns, not generic ones
+
+## Updated from Research (2026-05-04)
+
+### Laravel 13 (March 2026) — Latest
+
+- **PHP 8.3 minimum** required, supports 8.4 and 8.5
+- **Laravel AI / Boost MCP** — first-party MCP server for AI assistants with `/upgrade-laravel-v13` slash command
+- **Native TypeScript support** — improved scaffolding
+- **Laravel Reverb** — first-party WebSocket server (production-ready)
+- **New PHP Attributes for Controllers:** `#[Middleware]` and `#[Authorize]` for declarative middleware/authorization
+- **New PHP Attributes for Testing:** `#[Group]` and `#[TestProperty]` for organizing/filtering tests
+- **New PHP Attributes for Queues:** `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]`
+- **Queue Routing** — `Queue::route()` for centralized queue/connection routing by job class
+- **assertStatus() fully removed** — use `assertSuccessful()` or `assertStatus(200)` pattern
+- **Relatively minor upgrade** — most apps upgrade without code changes
+
+### Laravel 12 (February 2025)
+
+- **Application Starter Kits** — React, Svelte, Vue, and Livewire with Shadcn components
+- **PHP 8.2 minimum** required (8.3 recommended, 8.4, 8.5 supported)
+- **Bootstrap 5 by default** — Bootstrap 4 no longer default
+- **Vite as default bundler** — Laravel Mix officially deprecated
+- **Health endpoint at `/up`** — built into framework
+- **Per-second rate limiting** — `RateLimiter::for("api", ...)` supports `->perSecond()`
+- **`Str::stripTags()`** — better than `strip_tags()`
+- **`php artisan serve` accepts `--host` and `--port`** natively
+- **Breaking:** `App\Http\Kernel` and `App\Console\Kernel` fully removed
+- **Breaking:** `config/app.php` no longer has `aliases` array
+
+Source: [laravelversions.com](https://laravelversions.com/en) | [Laravel 13 Docs](https://laravel.com/docs/13.x)
+

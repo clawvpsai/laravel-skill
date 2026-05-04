@@ -204,6 +204,22 @@ $this->assertDatabaseMissing('posts', ['id' => $deletedId]);
 $this->assertDatabaseCount('posts', 5);
 ```
 
+## Laravel 13 Testing Attributes
+
+Laravel 13 expands PHP attributes for testing:
+
+```php
+use Illuminate\Testing\Attributes\Group;
+use Illuminate\Testing\Attributes\TestProperty;
+
+#[Group('feature')]
+#[TestProperty('scenario', 'user-authentication')]
+class AuthenticationTest extends TestCase
+{
+    // Group tests and add metadata for test reporting/filtering
+}
+```
+
 ## Common Mistakes
 
 1. **Not using `RefreshDatabase`** — tests see stale data from previous tests
@@ -213,3 +229,10 @@ $this->assertDatabaseCount('posts', 5);
 5. **Not testing edge cases** — empty, null, very long strings, special characters
 6. **Skipping unit tests** — too many things break silently without them
 7. **`assertStatus(200)` vs `assertSuccessful()`** — Laravel 11+ prefers `assertSuccessful()` for clearer intent
+
+
+## Updated from Research (2026-05)
+
+- **Laravel 13 Testing Attributes** — `#[Group]` and `#[TestProperty]` attributes allow organizing tests and adding metadata for filtering and reporting.
+
+Source: [Laravel 13 Docs - Testing](https://laravel.com/docs/13.x/testing)

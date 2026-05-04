@@ -37,6 +37,34 @@ class PostController extends Controller
 }
 ```
 
+## Laravel 13 Controller Attributes
+
+Laravel 13 introduces PHP attributes for middleware and authorization directly on controllers:
+
+```php
+use Illuminate\Routing\Attributes\Controllers\Authorize;
+use Illuminate\Routing\Attributes\Controllers\Middleware;
+use App\Models\Comment;
+use App\Models\Post;
+
+// Apply middleware to entire controller
+#[Middleware('auth')]
+class PostController extends Controller
+{
+    // Apply middleware to specific method
+    #[Middleware('subscribed')]
+    #[Authorize('create', [Comment::class, 'post'])]
+    public function store(Post $post)
+    {
+        // Method-level middleware and policy authorization
+    }
+}
+```
+
+**Key attributes:**
+- `#[Middleware('name')]` — apply middleware to controller or method
+- `#[Authorize('action', [Model::class, 'relation'])]` — authorize with policy
+
 ## Validation
 
 ```php
@@ -165,3 +193,10 @@ try {
 4. **Wrong HTTP method** — PUT/PATCH for update, POST for create, DELETE for destroy
 5. **Not using route model binding** — manual `Post::find($id)` bypasses middleware
 6. **Validation errors not flashed** — ensure `Back` or `withErrors` is called
+
+
+## Updated from Research (2026-05)
+
+- **Laravel 13 Controller Attributes** — New `#[Middleware]` and `#[Authorize]` PHP attributes allow declarative middleware and authorization directly on controller classes and methods, replacing constructor-based middleware registration.
+
+Source: [Laravel 13 Docs - Controllers](https://laravel.com/docs/13.x/controllers)

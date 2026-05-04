@@ -92,6 +92,38 @@ class ProcessPostJob implements ShouldQueue
 }
 ```
 
+## Laravel 13 PHP Attributes (Alternative to Properties)
+
+Instead of defining job properties, you can use PHP attributes:
+
+```php
+use Illuminate\Queue\Attributes\Job;
+
+#[Job]
+#[Job\Backoff([60, 300, 900])]
+#[Job\MaxAttempts(3)]
+#[Job\Timeout(120)]
+#[Job\FailOnTimeout]
+class ProcessPostJob implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public function __construct(public int $postId) {}
+
+    public function handle(): void
+    {
+        $post = Post::find($this->postId);
+        if (!$post) return;
+        $post->update(['processed' => true]);
+    }
+
+    public function failed(\Throwable $e): void
+    {
+        Log::error("ProcessPostJob failed", ['post_id' => $this->postId, 'error' => $e->getMessage()]);
+    }
+}
+```
+
 ## Dispatching
 
 ```php
@@ -144,6 +176,21 @@ numprocs=4
 redirect_stderr=true
 stdout_logfile=/var/log/laravel-worker.log
 stopwaitsecs=3600
+```
+
+## Queue Routing (Laravel 13+)
+
+Define default queue/connection routing rules for specific jobs centrally:
+
+```php
+// bootstrap/app.php or AppServiceProvider
+use Illuminate\Support\Facades\Queue;
+use App\Jobs\ProcessPodcast;
+
+Queue::route(ProcessPodcast::class, connection: 'redis', queue: 'podcasts');
+
+// Now all ProcessPodcast dispatches go to redis podcasts queue automatically
+ProcessPodcast::dispatch($podcastId); // -> redis:podcasts
 ```
 
 ## Failed Jobs
@@ -218,3 +265,11 @@ $batch->failed(); // number of failures
 4. **DB::transaction() in job** — exit/timeout inside transaction won't rollback
 5. **Not using unique job IDs** — duplicate dispatches cause double-processing
 6. **No retry backoff** — hammer the failing service with immediate retries
+
+
+## Updated from Research (2026-05)
+
+- **Queue Routing** — Laravel 13 adds `Queue::route()` for centralized queue/connection routing by job class. Configure once, applies everywhere.
+- **Job PHP Attributes** — Laravel 13 introduces `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]` as declarative alternatives to job properties.
+
+Source: [Laravel 13 Docs - Queues](https://laravel.com/docs/13.x/queues)

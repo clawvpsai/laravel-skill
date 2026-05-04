@@ -4,7 +4,7 @@ Production-grade Laravel development skill for OpenClaw agents.
 
 ## Overview
 
-This skill provides comprehensive guidance for building robust Laravel applications. It covers everything from Eloquent models to production deployment, with version-specific guidance for Laravel 10, 11, and 12.
+This skill provides comprehensive guidance for building robust Laravel applications. It covers everything from Eloquent models to production deployment, with version-specific guidance for Laravel 11, 12, and 13.
 
 ## Navigation
 

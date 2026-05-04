@@ -161,3 +161,18 @@ $user = User::where('api_key', hash('sha256', $apiKey))->first();
 4. **User input in shell commands** — command injection, validate or use Symfony Process
 5. **Plaintext passwords** — always `Hash::make()`
 6. **Exposing stack traces in production** — debug=false in production .env
+
+
+## Updated from Research (2026-05)
+
+### Laravel 13 CSRF Enhancement
+
+Laravel 13 formalizes CSRF protection as `PreventRequestForgery` middleware with **origin-aware request verification** while preserving token-based CSRF compatibility.
+
+```php
+// Laravel 13 enhanced CSRF — origin checking is automatic
+// Ensure your app URL is properly configured in config/app.php
+// The middleware validates Origin/Referer headers against your app URL
+```
+
+Source: [Laravel 13 Docs - CSRF](https://laravel.com/docs/13.x/csrf)
