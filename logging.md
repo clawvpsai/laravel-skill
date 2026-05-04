@@ -101,7 +101,7 @@ DB::listen(fn($query) => Log::debug('SQL', [
 ]));
 
 // Alternative: Laravel Debugbar (package)
-// Alternative: clockwork (package)
+// Alternative: Clockwork (package)
 ```
 
 ## Production Log Monitoring
@@ -116,11 +116,11 @@ Log::critical('Database connection lost', [
 
 **Log levels (lowest to highest):** `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`
 
-## Laravel 13 Log Channels
+## Laravel 13 Structured Log Channels
 
 Laravel 13 adds native support for structured log channels:
 ```php
-' Papertrail' => [
+'papertrail' => [
     'driver' => 'monolog',
     'handler' => Monolog\Handler\SyslogUdpHandler::class,
     'handler_with' => ['host' => env('PAPERTRAIL_URL')],
@@ -147,8 +147,9 @@ Laravel 13 adds native support for structured log channels:
 | Laravel Telescope | Dev/staging debug assistant (not for production) |
 | Laravel Horizon | Queue monitoring |
 
-## Updated from Research (2026-05)
+## Updated from Research (2026-05-04)
 - Structured logging with `shareContext()` is the recommended approach for request correlation
 - Sentry is the most common production error monitoring for Laravel apps
+- Laravel 13 Papertrail channel uses Monolog handler natively
 
 Source: [Laravel Logging](https://laravel.com/docs/13.x/logging)

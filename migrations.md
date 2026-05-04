@@ -48,7 +48,7 @@ return new class extends Migration
 | `$table->integer('x')` | INT |
 | `$table->bigInteger('x')` | BIGINT |
 | `$table->float('x', 8, 2)` | FLOAT(8,2) |
-| `$table->decimal('x', 10, 2)` | DECIMAL(10,2) |
+| `$table->decimal('x', 10, 2)` | DECIMAL(10,2) — use for money, not FLOAT |
 | `$table->boolean('x')` | TINYINT(1) |
 | `$table->date('x')` | DATE |
 | `$table->dateTime('x')` | DATETIME |
@@ -68,7 +68,25 @@ $table->string('token')->nullable();
 $table->integer('votes')->unsigned();
 $table->string('name')->charset('utf8mb4');
 $table->string('slug')->collation('utf8mb4_unicode_ci');
-$table->text('bio')->useCurrent();            // DEFAULT CURRENT_TIMESTAMP
+$table->text('bio')->useCurrent();            // DEFAULT CURRENT_TIMESTAMP (on insert)
+$table->timestamp('updated_at')->useCurrentOnUpdate(); // auto-update on update
+$table->json('meta')->default([]);            // default value as expression
+```
+
+## Timestamps & Auto-Update
+
+```php
+// Timestamps with automatic management
+$table->timestamps();       // created_at + updated_at (nullable, auto-set by Laravel)
+$table->timestamp('verified_at')->nullable();
+$table->softDeletes();      // deleted_at column
+
+// Explicit default values (Laravel 13+)
+$table->timestamp('created_at')->useCurrent();              // DEFAULT CURRENT_TIMESTAMP
+$table->timestamp('updated_at')->useCurrentOnUpdate();      // ON UPDATE CURRENT_TIMESTAMP
+
+// Explicit nullable timestamps (Laravel 11+ default — no longer auto-not-null)
+$table->timestamp('published_at')->nullable();  // must be nullable if not always set
 ```
 
 ## Indexes
@@ -79,6 +97,10 @@ $table->unique(['email']);                     // unique constraint
 $table->primary('id');                         // explicit PK
 $table->foreignId('user_id')->constrained();   // FK with index
 $table->dropIndex(['user_id']);                // remove index
+$table->dropUnique(['email']);                 // remove unique constraint
+
+// Naming convention — keep under 64 chars for MySQL
+$table->index(['user_id', 'created_at'], 'ix_posts_user_created');
 ```
 
 ## Renaming & Changing Columns
@@ -86,6 +108,11 @@ $table->dropIndex(['user_id']);                // remove index
 ```php
 Schema::table('posts', function (Blueprint $table) {
     $table->renameColumn('bio', 'biography');
+});
+
+// Drop column (Laravel 13+: requires no other column to depend on it via FK)
+Schema::table('posts', function (Blueprint $table) {
+    $table->dropColumn('bio');
 });
 ```
 
@@ -101,20 +128,29 @@ $table->foreignId('user_id')
     ->constrained('users')
     ->cascadeOnDelete()      // drop row when parent deleted
     ->cascadeOnUpdate()      // update FK when parent PK updated
-    ->restrictOnDelete()      // prevent delete of parent
-    ->nullOnDelete();         // set FK to null on parent delete
+    ->restrictOnDelete()    // prevent delete of parent with children
+    ->nullOnDelete();       // set FK to null on parent delete
+
+// On existing column
+$table->foreign('user_id')
+    ->references('id')
+    ->on('users')
+    ->cascadeOnDelete();
+
+// Drop FK
+$table->dropForeign(['user_id']);
 ```
 
 ## Running Migrations
 
 ```bash
 php artisan migrate                  # run pending migrations
-php artisan migrate --force          # run in production
-php artisan migrate:rollback         # rollback last batch
+php artisan migrate --force         # run in production (skip confirmation)
+php artisan migrate:rollback        # rollback last batch
 php artisan migrate:rollback --step=3
-php artisan migrate:fresh            # drop all + re-run (dev only!)
+php artisan migrate:fresh            # drop all tables + re-run (dev only!)
 php artisan migrate:refresh         # rollback + migrate
-php artisan migrate:status          # show which migrations ran
+php artisan migrate:status           # show which migrations ran
 php artisan migrate --path=database/migrations/custom
 ```
 
@@ -186,12 +222,16 @@ php artisan migrate:fresh --seed       # reset + seed
 1. **`migrate:fresh` in production** — drops ALL tables, no undo
 2. **No `down()` method** — migrations must be reversible
 3. **Changing column without doctrine/dbal** — requires the package
-4. **Long index names** — MySQL max 64 chars; use `$table->index('user_id', 'ix_short_name')`
+4. **Long index names** — MySQL max 64 chars; use `$table->index('col', 'short_name')`
 5. **Enum as FK** — don't use enum for foreign keys, use integer IDs
-6. **No timestamps on pivot tables** — many2many needs `timestamps()` for `laravel_through_many`
+6. **No timestamps on pivot tables** — many2many needs `timestamps()` for `withTimestamps()`
+7. **`decimal` vs `float` for money** — always use `decimal(10,2)` for currency, never float
+8. **Nullable timestamps without default** — Laravel expects `nullable()` timestamps to have a default or be set explicitly; can cause "Incorrect datetime value" errors
 
-## Updated from Research (2026-05)
-- Laravel 13 supports `usingCurrent()` for TIMESTAMP defaults
+## Updated from Research (2026-05-04)
+- Laravel 13 supports `useCurrentOnUpdate()` for auto-updating timestamps
+- `decimal` is the correct type for monetary values, not `float`
 - `foreignId` with `constrained()` auto-detects table name from column name
+- Laravel 13 drop column requires no FK dependencies on the target column
 
-Source: [Laravel Migrations](https://laravel.com/docs/13.x/migrations)
+Source: [Laravel Migrations](https://laravel.com/docs/13.x/migrations) | [Laravel 13 Release Notes](https://laravel.com/docs/13.x/releases)
