@@ -3,8 +3,8 @@
 ## Active LTS Versions
 
 - **Laravel 10** — Security fixes only, no new features
-- **Laravel 11** — Current stable, LTS until late 2026
-- **Laravel 12** — Latest, new features landing here
+- **Laravel 11** — Previous stable
+- **Laravel 12** — Current latest (released February 2025)
 
 ## Version Selector Prompt
 
@@ -17,25 +17,30 @@ Then load the relevant version sections below.
 
 ---
 
-## Laravel 12 (Latest — 2024+)
+## Laravel 12 (Latest — February 2025)
 
 ### New in Laravel 12
 
+- **Application Starter Kits** — React, Svelte, Vue, and Livewire with Shadcn components
+- **PHP 8.4 support** — optimized for PHP 8.4 features (property hooks, asymmetric visibility)
+- **PHP 8.2 minimum required** — officially supports 8.2, 8.3, 8.4
 - **Bootstrap 5 by default** — no more Bootstrap 4
 - **Vite as default bundler** — Laravel Mix officially deprecated
-- **Health endpoint at `/up`** — built into framework now, not needing a route
+- **Health endpoint at `/up`** — built into framework, no route needed
 - **`php artisan serve` accepts `--host` and `--port`** natively
 - **`Queue::after()` and `Queue::failure()` methods** — cleaner queue events
-- **Per-second rate limiting** — `RateLimiter::for('api', ...)` supports `perSecond()` not just `perMinute()`
+- **Per-second rate limiting** — `RateLimiter::for('api', ...)` supports `perSecond()`
 - **`Str::stripTags()`** — better than `strip_tags()` PHP原生
 - **Carbon 3** — if upgrading, watch for `startOfDay()` / `endOfDay()` behavior changes
-- **PHP 8.2 minimum** — some methods deprecated if on older PHP
+- **Laravel Reverb** — first-party WebSocket server for real-time apps
+- **"Relatively minor maintenance release"** — most apps upgrade without code changes
 
 ### Breaking Changes from 11
 
-- `bootstrap/app.php` no longer registers all service providers by default — use `App::forceApplication()` pattern
+- `bootstrap/app.php` no longer registers all service providers by default
 - `config/app.php` no longer has `aliases` array — uses individual facades natively
 - Route middleware registered in `bootstrap/app.php` via `$middleware->` not Kernel.php
+- `App\Http\Kernel` and `App\Console\Kernel` fully removed
 
 ### Migration to Laravel 12
 
@@ -46,19 +51,18 @@ php artisan --version  # verify
 
 ---
 
-## Laravel 11 (2024 — Current Main LTS)
+## Laravel 11 (2024 — Previous Stable)
 
 ### New in Laravel 11
 
 - **Application skeleton cleaned** — far less boilerplate
 - **`bootstrap/app.php`** replaces `Kernel.php` for middleware registration
 - **`config/app.php`** much shorter — providers and aliases removed by default
-- **Per-second rate limiting** available via `RateLimiter::for()` with `->perSecond()`
-- **Health check endpoint** — `Route::get('/up', fn() => 'ok')` or use `/up` route health
+- **Per-second rate limiting** via `RateLimiter::for()` with `->perSecond()`
+- **Health check endpoint** — `Route::get('/up', fn() => 'ok')`
 - **`php artisan about`** shows comprehensive environment summary
 - **`DB::table()` query logging** improved
-- **`RateLimiter` for API** — cleaner setup in `RouteServiceProvider`
-- **Password rehashing** — happens automatically when user logs in and their password needs update
+- **Password rehashing** — happens automatically on login
 - **`assertSuccessful()`** on responses (was `assertStatus(200)`)
 
 ### Breaking Changes from 10
@@ -80,25 +84,9 @@ composer require laravel/framework:^11.0 --with-all-dependencies
 - `routes/web.php` — now only web routes, API routes in `routes/api.php`
 - `config/` — many config files slimmed down
 
-### Laravel 11 Specific Commands
-
-```bash
-# Create app with streamlined bootstrap
-composer create-project laravel/laravel app-name
-
-# Install API scaffolding
-php artisan install:api
-
-# Install broadcasting
-php artisan install:broadcasting
-
-# Health check
-php artisan about | grep -A5 'Environment'
-```
-
 ---
 
-## Laravel 10 (2023 — LTS, Security until 2025-2026)
+## Laravel 10 (2023 — LTS, Security until late 2026)
 
 ### New in Laravel 10
 
@@ -131,7 +119,7 @@ php artisan --version
 
 ### Always Use
 
-- PHP 8.2+ (Laravel 11+ requires 8.2, Laravel 12 requires 8.2+)
+- PHP 8.2+ (Laravel 12 requires 8.2+, optimized for 8.4)
 - Composer 2.x
 - Vite (not Mix — Mix deprecated in 11+)
 - SQLite for local dev (zero config, no Docker needed)
@@ -146,7 +134,7 @@ php artisan --version
 | `php artisan make:model -mcr` shorthand | Still works | — |
 | `bootstrap/app.php` Kernel pattern | 11 (old style) | 12 |
 | `config/app.php` aliases array | 11 | 12 |
-| PHP 8.0 support | 10 | 11 |
+| PHP 8.0/8.1 support | 12 | — |
 | Bootstrap 4 default | 12 | — |
 
 ### Version Detection Quick Reference
@@ -154,21 +142,21 @@ php artisan --version
 ```bash
 # Check Laravel version
 php artisan --version
-# Laravel 11.x.x
+# Laravel 12.x.x
 
 # Check PHP version
 php -v
-# PHP 8.2.19
+# PHP 8.4.x
 
 # Check composer
 composer --version
-# Composer 2.7.x
+# Composer 2.8.x
 ```
 
 ### Always Ask When Unknown
 
 If working on a Laravel project and version is unknown, check:
-1. `composer.json` — `"laravel/framework": "^10.0"` or `^11.0` etc.
+1. `composer.json` — `"laravel/framework": "^12.0"` or `^11.0` etc.
 2. `bootstrap/app.php` — if it has `Application::configure()` = Laravel 11+
 3. `app/Http/Kernel.php` — if this file exists = Laravel 10 or older
 
@@ -178,7 +166,7 @@ If working on a Laravel project and version is unknown, check:
 
 Before working on any Laravel task:
 - [ ] Identify Laravel version
-- [ ] Check PHP version compatibility
+- [ ] Check PHP version compatibility (8.2+ for 12)
 - [ ] Load version-specific rules above
 - [ ] Check if feature is version-specific (API, queue syntax, etc.)
 - [ ] Apply version-specific patterns, not generic ones
