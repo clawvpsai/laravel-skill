@@ -138,6 +138,19 @@ Post::where('created_at', now()->subDays(30))
     ->whereHas('author', fn($q) => $q->where('verified', true))
     ->with(['author', 'tags'])
     ->get();
+
+// Nested where clauses (Laravel 12+)
+$posts = Post::query()
+    ->where(fn($q) => $q->where('status', 'published')
+        ->orWhere('featured', true))
+    ->where(fn($q) => $q->where('category', 'tech')
+        ->orWhere('category', 'news'))
+    ->get();
+// Produces: WHERE (status = 'published' OR featured = 1) AND (category = 'tech' OR category = 'news')
+
+// whereRelation (Laravel 10+)
+$posts = Post::whereRelation('author', 'verified', true)->get();
+$posts = Post::whereRelation('author', fn($q) => $q->where('role', 'admin'))->get();
 ```
 
 **Always use DB bindings — never string interpolation:**
@@ -251,3 +264,11 @@ Post::factory()->unpublished()->make();
 4. **Accessing deleted model** — always re-fetch after force delete
 5. **N+1 with counts** — use `withCount('comments')` instead of `$post->comments->count()` in loop
 6. **Not handling unique constraint violations** — wrap in try/catch or use `firstOrCreate`
+7. **`nestedWhere` with complex AND/OR without parentheses** — always wrap OR groups in `where()` callback to ensure correct precedence
+
+## Updated from Research (2026-05)
+
+- **nestedWhere()** (Laravel 12+) — cleaner alternative to deeply nested closures for mixed AND/OR conditions
+- **whereRelation()** (Laravel 10+) — `whereRelation('author', 'verified', true)` reads more naturally than `whereHas`
+
+Source: [Laravel 13 Docs - Eloquent](https://laravel.com/docs/13.x/eloquent) | [Laravel 12 Query Builder](https://laravel.com/docs/12.x/queries)
