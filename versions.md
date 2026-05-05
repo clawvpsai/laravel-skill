@@ -13,7 +13,7 @@ When working with Laravel, start by determining the version. Ask the user or che
 grep '"laravel/framework"' composer.json | grep -oP '\d+\.\d+'
 ```
 
-Then load the relevant version sections below.
+Then load the relevant sections below.
 
 ---
 
@@ -30,10 +30,16 @@ Then load the relevant version sections below.
 - **Native TypeScript support** — improved scaffolding
 - **Laravel Reverb** — first-party WebSocket server (production-ready)
 - **New PHP Attributes for Controllers:** `#[Middleware]` and `#[Authorize]`
-- **New PHP Attributes for Testing:** `#[Group]` and `#[TestProperty]`
+- **New PHP Attributes for Testing:** `#[Group]`, `#[TestProperty]`, `#[UnitTest]`
 - **New PHP Attributes for Queues:** `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]`
 - **Queue Routing** — `Queue::route()` for centralized queue/connection routing by job class
-- **"Relatively minor upgrade"** — most apps upgrade without code changes
+
+### New in Laravel 13.7 (April 2026)
+
+- **Interruptible Jobs** — `ShouldInterrupt` interface for jobs that respond to worker shutdown signals and checkpoint progress for resumable processing
+- **@fonts Blade Directive** — generates `<link rel="preload">` tags for Vite-managed fonts, improving Core Web Vitals
+- **Bulk JSON Path Assertions** — `assertJsonPaths()` on TestResponse for asserting multiple paths at once
+- **SortDirection Enum** — typed enum for sort direction in query builders
 
 ### Breaking Changes from 12
 
@@ -169,20 +175,22 @@ Before working on any Laravel task:
 - [ ] Check if feature is version-specific
 - [ ] Apply version-specific patterns, not generic ones
 
-## Updated from Research (2026-05-04)
+## Updated from Research (2026-05-05)
 
-### Laravel 13 (March 2026) — Latest
+### Laravel 13.7 (April 2026) — Latest Patch
+
+- **Interruptible Jobs** — `ShouldInterrupt` interface for graceful worker shutdown + checkpointing
+- **@fonts Blade Directive** — preload Vite-managed fonts for better Core Web Vitals
+- **Bulk JSON Path Assertions** — `assertJsonPaths()` for multi-path JSON testing
+- **SortDirection Enum** — typed enum for query builder sorting
+
+### Laravel 13 (March 2026) — Major Release
 
 - **PHP 8.3 minimum** required, supports 8.4 and 8.5
-- **Laravel AI / Boost MCP** — first-party MCP server for AI assistants with `/upgrade-laravel-v13` slash command
-- **Native TypeScript support** — improved scaffolding
-- **Laravel Reverb** — first-party WebSocket server (production-ready)
-- **New PHP Attributes for Controllers:** `#[Middleware]` and `#[Authorize]` for declarative middleware/authorization
-- **New PHP Attributes for Testing:** `#[Group]` and `#[TestProperty]` for organizing/filtering tests
-- **New PHP Attributes for Queues:** `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]`
-- **Queue Routing** — `Queue::route()` for centralized queue/connection routing by job class
-- **assertStatus() fully removed** — use `assertSuccessful()` or `assertStatus(200)` pattern
-- **Relatively minor upgrade** — most apps upgrade without code changes
+- **Laravel AI / Boost MCP** — first-party MCP server for AI assistants
+- **New PHP Attributes:** `#[Middleware]`, `#[Authorize]` (controllers), `#[Group]`, `#[TestProperty]`, `#[UnitTest]` (testing), `#[Job]` family (queues)
+- **Queue Routing** — `Queue::route()` for centralized job routing
+- **assertStatus() fully removed** — use `assertSuccessful()` or `assertStatus(200)`
 
 ### Laravel 12 (February 2025)
 
@@ -192,9 +200,8 @@ Before working on any Laravel task:
 - **Vite as default bundler** — Laravel Mix officially deprecated
 - **Health endpoint at `/up`** — built into framework
 - **Per-second rate limiting** — `RateLimiter::for("api", ...)` supports `->perSecond()`
-- **`Str::stripTags()`** — better than `strip_tags()`
 - **`php artisan serve` accepts `--host` and `--port`** natively
 - **Breaking:** `App\Http\Kernel` and `App\Console\Kernel` fully removed
 - **Breaking:** `config/app.php` no longer has `aliases` array
 
-Source: [laravelversions.com](https://laravelversions.com/en) | [Laravel 13 Docs](https://laravel.com/docs/13.x) | [Packagist](https://packagist.org/packages/laravel/framework)
+Sources: [Laravel 13 Release Notes](https://laravel.com/docs/13.x/releases) | [Laravel News - 13.7](https://laravel-news.com/laravel-13-7-0) | [Packagist](https://packagist.org/packages/laravel/framework)

@@ -149,6 +149,27 @@ class PostCard extends Component
 <img src="{{ storage_path('app/public/avatars/' . $user->avatar) }}">
 ```
 
+## @fonts Directive (Laravel 13.7+)
+
+The `@fonts` directive preloads Vite-managed font files for better performance:
+
+```blade
+{{-- Load custom fonts from Vite bundle --}}
+@fonts
+
+{{-- Works with <link rel="preload"> for font files in your Vite manifest --}}
+```
+
+This generates `<link rel="preload">` tags for fonts managed by Vite, improving Core Web Vitals (FCP, LCP) by reducing font render-blocking.
+
+**Typical usage in layout:**
+```blade
+<head>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @fonts
+</head>
+```
+
 ## View Composers (run on every render of a view)
 
 ```php
@@ -169,14 +190,8 @@ View::composer('partials.*', fn(View $view) => $view->with('theme', 'dark'));
 4. **Forgetting `@method` for PUT/PATCH/DELETE** — wrong HTTP method, 419 error
 5. **Old `{{$var}}` (no space)** — deprecated in Laravel 10, use `{{ $var }}`
 
-
 ## Updated from Research (2026-05)
 
-- **r/laravel on Reddit: What are your honest thoughts about Livewire vs Inertia.js** (https://www.reddit.com/r/laravel/comments/s9za3a/what_are_your_honest_thoughts_about_livewire_vs/)
-  I love Livewire and the author is a brilliant man. But if you want job portability, Inertia seems to be the way to go because you will use Vue along with it. If eventually you move to a different company where they don&#x27;t use the same stack (Laravel), so all your Livewire skills are going to waste.
+- **@fonts Directive (Laravel 13.7+)** — `@fonts` generates `<link rel="preload">` tags for Vite-managed fonts, improving Core Web Vitals.
 
-- **Livewire vs Inertia: Which one Should I Choose for Laravel Development?** (https://www.scalablepath.com/php/livewire-vs-inertia)
-  <strong>If you have a profile more oriented towards back-end development, you will definitely feel more comfortable using Livewire</strong>. However, if your team includes people who are already familiar with front-end frameworks like React, Vue, or Angular,
-
-- **Inertia.js and Livewire: a high level comparison | Information Overload** (https://sebastiandedeyne.com/inertia-js-and-livewire-a-high-level-comparison/)
-  Inertia replaces Blade views altogether by returning JavaScript components from controller actions. Those components can be built with your frontend framework of choice. <strong>Livewire is a Laravel library, while Inertia has adapters for several server and client frameworks</strong>.
+Source: [Laravel 13 Blade](https://laravel.com/docs/13.x/blade)

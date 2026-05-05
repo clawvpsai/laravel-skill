@@ -258,14 +258,45 @@ Laravel 13 expands PHP attributes for testing:
 ```php
 use Illuminate\Testing\Attributes\Group;
 use Illuminate\Testing\Attributes\TestProperty;
+use Illuminate\Testing\Attributes\UnitTest;
 
 #[Group('feature')]
 #[TestProperty('scenario', 'user-authentication')]
 class AuthenticationTest extends TestCase
 {
     // Group tests and add metadata for test reporting/filtering
+
+    #[UnitTest]
+    public function test_password_hashing(): void
+    {
+        // Skips booting Laravel app — faster for pure unit tests
+        $hash = Hash::make('secret');
+        $this->assertTrue(Hash::check('secret', $hash));
+    }
 }
 ```
+
+**Key attributes:**
+- `#[Group('name')]` — organize tests into groups for filtering (`php artisan test --group=feature`)
+- `#[TestProperty('key', 'value')]` — attach metadata to tests for reporting
+- `#[UnitTest]` — skip Laravel app boot for faster pure unit tests that don't need it
+
+## Bulk JSON Path Assertions (Laravel 13.7+)
+
+TestResponse supports asserting multiple JSON paths at once:
+
+```php
+$response = $this->getJson('/api/posts/1');
+
+$response->assertJsonPaths([
+    'data.id',
+    'data.title',
+    'data.author.id',
+    'data.author.name',
+]);
+```
+
+This is cleaner than chaining multiple `assertJsonPath` calls when you need to verify many fields.
 
 ## Pest PHP (Popular Laravel Testing Framework)
 
@@ -353,7 +384,8 @@ class PostCreationTest extends DuskTestCase
 
 ## Updated from Research (2026-05)
 
-- **Laravel 13 Testing Attributes** — `#[Group]` and `#[TestProperty]` attributes allow organizing tests and adding metadata for filtering and reporting.
+- **Laravel 13 Testing Attributes** — `#[Group]` and `#[TestProperty]` for organizing/filtering tests, `#[UnitTest]` to skip Laravel app boot for pure unit tests.
+- **Bulk JSON Path Assertions (13.7+)** — `assertJsonPaths()` for asserting multiple JSON paths in one call.
 - **Pest PHP** — increasingly standard in Laravel ecosystem; `pest()` function replaces `TestCase` class methods.
 - **HTTP Client Mocking** — `Http::fake()` for mocking external API calls in tests.
 - **Mocking Best Practices** — use `mock()` for services, `spy()` when you only need to verify calls happened, `Queue::fake()` for job queues.

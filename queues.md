@@ -41,7 +41,6 @@ namespace App\Jobs;
 use App\Models\Post;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Access\Authorizable;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
@@ -123,6 +122,54 @@ class ProcessPostJob implements ShouldQueue
     }
 }
 ```
+
+## Laravel 13.7+ Interruptible Jobs (ShouldInterrupt)
+
+Jobs can implement `ShouldInterrupt` to respond to worker shutdown signals — useful for long-running jobs that need to checkpoint progress:
+
+```php
+use Illuminate\Contracts\Queue\ShouldInterrupt;
+use Illuminate\Queue\InteractsWithQueue;
+
+class ProcessLargeDatasetJob implements ShouldQueue, ShouldInterrupt
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $tries = 1;  // no retries — handle gracefully on interrupt
+    public int $timeout = 3600;
+
+    public function __construct(public int $datasetId) {}
+
+    public function handle(): void
+    {
+        $items = DatasetItem::where('dataset_id', $this->datasetId)->cursor();
+
+        foreach ($items as $item) {
+            // Checkpoint — save progress before potentially being interrupted
+            cache()->put("dataset:{$this->datasetId}:checkpoint", $item->id);
+
+            // Process item
+            $this->processItem($item);
+
+            // Laravel checks interruption at this point (yielded via cursor iteration)
+        }
+    }
+
+    public function interrupt(): void
+    {
+        // Save final checkpoint — job will resume here on next run
+        Log::info("Job interrupted, checkpoint saved", [
+            'dataset_id' => $this->datasetId,
+            'last_item_id' => cache()->get("dataset:{$this->datasetId}:checkpoint"),
+        ]);
+    }
+}
+```
+
+**When to use:**
+- Long-running batch jobs (data imports, report generation)
+- Jobs that can resume from a checkpoint rather than restart from scratch
+- Worker graceful shutdown (SIGTERM) triggers interruption point
 
 ## Dispatching
 
@@ -266,10 +313,10 @@ $batch->failed(); // number of failures
 5. **Not using unique job IDs** — duplicate dispatches cause double-processing
 6. **No retry backoff** — hammer the failing service with immediate retries
 
-
 ## Updated from Research (2026-05)
 
 - **Queue Routing** — Laravel 13 adds `Queue::route()` for centralized queue/connection routing by job class. Configure once, applies everywhere.
 - **Job PHP Attributes** — Laravel 13 introduces `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]` as declarative alternatives to job properties.
+- **Interruptible Jobs (Laravel 13.7+)** — `ShouldInterrupt` interface lets jobs respond to worker shutdown signals and checkpoint progress for resumable processing.
 
 Source: [Laravel 13 Docs - Queues](https://laravel.com/docs/13.x/queues)
