@@ -4,7 +4,7 @@
 
 - **Laravel 11** — Still receives security fixes
 - **Laravel 12** — Active development
-- **Laravel 13** — Current latest (v13.7.0 as of May 2026)
+- **Laravel 13** — Current latest (v13.8.0 as of May 2026)
 
 ## Version Selector Prompt
 
@@ -17,7 +17,7 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — March 2026, v13.7.0)
+## Laravel 13 (Latest — March 2026, v13.8.0)
 
 ### New in Laravel 13
 
@@ -33,6 +33,18 @@ Then load the relevant sections below.
 - **New PHP Attributes for Testing:** `#[Group]`, `#[TestProperty]`, `#[UnitTest]`
 - **New PHP Attributes for Queues:** `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]`
 - **Queue Routing** — `Queue::route()` for centralized queue/connection routing by job class
+
+### New in Laravel 13.8 (May 2026)
+
+- **DatabaseLock excludes expired locks** — `DatabaseLock::isLock` now properly excludes expired locks when checking ownership, fixing race conditions in lock cleanup
+- **Worker Pausing/Resuming events** — new `WorkerPausing` and `WorkerResuming` events dispatched by queue workers
+- **assertSessionMissingInput** — new TestResponse assertion to verify old input is NOT present in session after form submission
+- **assertPushedOn enum support for QueueFake** — `QueueFake::assertPushedOn()` now accepts an enum as the queue argument
+- **Custom ON DELETE/UPDATE for foreign keys** — `foreignId()->constrained()->onDelete()->onUpdate()` now supports fully custom constraint actions
+- **LocalScope private recursion fix** — `LocalScope` now properly handles private methods without infinite recursion
+- **schedule:list environment filter** — `php artisan schedule:list --environment=production` filters output by environment
+- **Collection min/max generic result type** — `Collection::min()`/`max()` now return `T|null` instead of `mixed`
+- **All queue inspection methods** — new `allPushed()`, `allNotPushed()`, `allPushedOn()` methods on QueueFake for batch assertions
 
 ### New in Laravel 13.7 (April 2026)
 
@@ -153,7 +165,7 @@ php artisan boost:install
 ```bash
 # Check Laravel version
 php artisan --version
-# Laravel 13.7.0
+# Laravel 13.8.0
 
 # Check PHP version
 php -v
@@ -175,9 +187,20 @@ Before working on any Laravel task:
 - [ ] Check if feature is version-specific
 - [ ] Apply version-specific patterns, not generic ones
 
-## Updated from Research (2026-05-05)
+## Updated from Research (2026-05-06)
 
-### Laravel 13.7 (April 2026) — Latest Patch
+### Laravel 13.8 (May 2026) — Latest Patch
+
+- **DatabaseLock expired lock fix** — `DatabaseLock::isLock` now excludes expired locks
+- **Worker events** — new `WorkerPausing`/`WorkerResuming` events
+- **assertSessionMissingInput** — test session old input is absent after form submit
+- **QueueFake assertPushedOn enum** — accepts enum as queue name
+- **Foreign key onDelete/onUpdate custom actions** — `->onDelete()->onUpdate()` now fully customizable
+- **schedule:list --environment filter** — filter schedule list by environment
+- **Collection min/max generic types** — proper `T|null` return types
+- **All queue inspection methods** — `allPushed()`, `allNotPushed()`, `allPushedOn()` on QueueFake
+
+### Laravel 13.7 (April 2026)
 
 - **Interruptible Jobs** — `ShouldInterrupt` interface for graceful worker shutdown + checkpointing
 - **@fonts Blade Directive** — preload Vite-managed fonts for better Core Web Vitals
@@ -204,4 +227,66 @@ Before working on any Laravel task:
 - **Breaking:** `App\Http\Kernel` and `App\Console\Kernel` fully removed
 - **Breaking:** `config/app.php` no longer has `aliases` array
 
-Sources: [Laravel 13 Release Notes](https://laravel.com/docs/13.x/releases) | [Laravel News - 13.7](https://laravel-news.com/laravel-13-7-0) | [Packagist](https://packagist.org/packages/laravel/framework)
+Sources: [Laravel 13 Release Notes](https://laravel.com/docs/13.x/releases) | [GitHub Releases](https://github.com/laravel/framework/releases) | [Packagist](https://packagist.org/packages/laravel/framework)
+---
+name: Laravel
+slug: laravel-developer
+version: 1.0.0
+description: Production-grade Laravel development — ship robust apps without common pitfalls.
+metadata: {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
+---
+
+## Navigation
+
+| Topic | File | When to Use |
+|---|---|---|
+| Models, relationships, query builder, migrations | `eloquent.md` + `migrations.md` | Any DB work |
+| Routing, validation, request lifecycle | `controllers.md` | Building endpoints |
+| Sanctum, policies, gates, CSRF | `auth.md` | User auth & permissions |
+| Jobs, workers, retries, failed jobs | `queues.md` | Background processing |
+| Templates, components, XSS, slots | `blade.md` | Blade/frontend work |
+| CLI commands, scheduling, tinker | `artisan.md` | DevOps & maintenance |
+| REST APIs, JSON, rate limiting | `api.md` | API development |
+| XSS, SQL injection, hardening | `security.md` | Security-critical code |
+| Caching, indexing, eager loading | `performance.md` | Optimization |
+| PHPUnit, factories, feature tests | `testing.md` | Test-driven dev |
+| Production deployment, env, configs | `deployment.md` | Going live |
+| File uploads, S3, presigned URLs | `file-uploads.md` | Media handling |
+| Model lifecycle, observers, events | `observers.md` | Decoupled logic |
+| DB schema, seeding, index management | `migrations.md` | Schema management |
+| Log channels, structured logging, monitoring | `logging.md` | Debugging & monitoring |
+| Translations, locales, pluralization | `localization.md` | i18n/l10n |
+| Rules, Form Requests, custom validators | `validation.md` | Input validation |
+
+## Critical Rules (Never Forget)
+
+- **`env()` only in config files** — returns null after `config:cache`
+- **Eager load relationships** — `with('posts')` or N+1 queries hit on every loop
+- **`$fillable` or `$guarded`** — unprotected mass assignment = security hole
+- **`findOrFail()` over `find()`** — null returns silently, crashes are better than silent bugs
+- **Queue jobs serialize models as IDs** — re-fetch on process, model may be stale/deleted
+- **`DB::transaction()` rolls back on exceptions only** — `exit`/timeout bypasses it
+- **`{!! !!}` skips escaping** — XSS vector, use `{{ }}` by default
+- **Middleware order matters** — earlier wraps later execution
+- **`required` passes empty string** — use `required|filled` for actual content
+- **`firstOrCreate` persists immediately** — `firstOrNew` lets you validate before saving
+- **Route model binding defaults to `id`** — override `getRouteKeyName()` for slugs
+
+## Version Defaults
+
+- **Laravel 13** (latest — requires PHP 8.3+)
+- PHP 8.3+ (8.2 minimum, optimized for 8.4)
+- Composer 2.x
+- SQLite for local dev (zero config)
+- Vite for asset bundling (not Laravel Mix)
+- Laravel Reverb for WebSocket/real-time
+
+## Pro Tips
+
+- Run `php artisan route:list --json` to get all routes as JSON for programmatic use
+- Use `php artisan tinker` to test code in real Laravel context
+- Use `php artisan about` to see full environment summary
+- Use `php artisan optimize` after major changes in production
+- Use `php artisan make:model Post -mcr` to generate Model + Migration + Controller in one shot
+
+Start with `eloquent.md` for most common Laravel work.

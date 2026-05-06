@@ -230,6 +230,17 @@ Queue::assertPushed(ProcessPostJob::class, fn($job) => $job->postId === 5);
 
 // Assert job was NOT dispatched
 Queue::assertNotPushed(ProcessPostJob::class);
+
+// Assert job was pushed to a specific queue (Laravel 13.8+)
+Queue::assertPushedOn('high-priority', ProcessPostJob::class);
+
+// Assert job was pushed to queue defined by enum (Laravel 13.8+)
+Queue::assertPushedOn(QueueNames::HighPriority, ProcessPostJob::class);
+
+// Batch queue assertions (Laravel 13.8+)
+Queue::allPushed();                        // all dispatched jobs
+Queue::allNotPushed(ProcessPostJob::class); // all jobs NOT dispatched
+Queue::allPushedOn('emails');              // all jobs on 'emails' queue
 ```
 
 ## HTTP Client Testing (Guzzle Mocking)
@@ -297,6 +308,20 @@ $response->assertJsonPaths([
 ```
 
 This is cleaner than chaining multiple `assertJsonPath` calls when you need to verify many fields.
+
+## Session Assertions (Laravel 13.8+)
+
+```php
+// After form redirect, verify old input is NOT in session (e.g., after successful submission)
+$response = $this->post('/contact', ['name' => 'Adarsh', 'email' => 'adarsh@example.com']);
+$response->assertSessionMissingInput('name');  // old input cleared
+$response->assertSessionMissingInput('email');
+
+// For comparison, assert old input IS present
+$response->assertSessionHasInput('name');  // redirect back with old input (validation error scenario)
+```
+
+Use `assertSessionMissingInput()` to verify that old form input has been cleared after a successful form submission (e.g., contact form sent successfully).
 
 ## Pest PHP (Popular Laravel Testing Framework)
 
@@ -381,11 +406,26 @@ class PostCreationTest extends DuskTestCase
 7. **`assertStatus(200)` vs `assertSuccessful()`** — Laravel 11+ prefers `assertSuccessful()` for clearer intent
 8. **Not faking queue jobs** — `Queue::fake()` prevents actual job dispatch during tests
 9. **Forgetting to mock HTTP** — real API calls slow tests and can fail unexpectedly
+10. **Using stale old input in redirect tests** — use `assertSessionMissingInput()` after successful form submission
 
-## Updated from Research (2026-05)
+## Updated from Research (2026-05-06)
 
-- **Laravel 13 Testing Attributes** — `#[Group]` and `#[TestProperty]` for organizing/filtering tests, `#[UnitTest]` to skip Laravel app boot for pure unit tests.
-- **Bulk JSON Path Assertions (13.7+)** — `assertJsonPaths()` for asserting multiple JSON paths in one call.
+### Laravel 13.8 (May 2026)
+
+- **assertSessionMissingInput** — verify old form input is cleared from session after successful submission
+- **QueueFake batch methods** — `allPushed()`, `allNotPushed()`, `allPushedOn()` for batch job assertions
+- **QueueFake assertPushedOn enum** — `assertPushedOn()` accepts an enum as the queue name
+
+### Laravel 13.7+ Testing
+
+- **Bulk JSON Path Assertions** — `assertJsonPaths()` for asserting multiple JSON paths in one call.
+
+### Laravel 13 Testing Attributes
+
+- **#[Group], #[TestProperty], #[UnitTest]** — organize tests, attach metadata, skip app boot for pure unit tests.
+
+### General Testing
+
 - **Pest PHP** — increasingly standard in Laravel ecosystem; `pest()` function replaces `TestCase` class methods.
 - **HTTP Client Mocking** — `Http::fake()` for mocking external API calls in tests.
 - **Mocking Best Practices** — use `mock()` for services, `spy()` when you only need to verify calls happened, `Queue::fake()` for job queues.
