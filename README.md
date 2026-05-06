@@ -69,7 +69,7 @@ php artisan --version
 
 | Version | Status | PHP | Key Features |
 |---|---|---|---|
-| **Laravel 13** | ✅ Latest (Mar 2026) | 8.3+ | AI/Boost MCP, Reverb, new attributes, PHP 8.4 |
+| **Laravel 13** | ✅ Latest (May 2026) | 8.3+ | AI/Boost MCP, Reverb, new attributes, PHP 8.4/8.5 |
 | Laravel 12 | Stable | 8.2+ | Bootstrap 5, Vite, per-second rate limiting |
 | Laravel 11 | Security fixes | 8.1+ | Cleaner bootstrap, health endpoint |
 
@@ -80,7 +80,7 @@ php artisan --version
 The skill is **auto-updated every 6 hours** via a cron job. The agent decides whether to update based on whether it finds meaningful gaps — no forced updates.
 
 **How it works:**
-1. Checks current state of all 15 topic files
+1. Checks current state of all 17 topic files
 2. Identifies weak or outdated areas via web research
 3. Checks for new Laravel/dependency releases
 4. Updates files with new patterns + source URLs
@@ -107,7 +107,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 ## 📊 Skill Stats
 
-- **15 topic files** covering full Laravel development lifecycle
+- **17 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
 - **~6,200+ lines** of production-ready content
 - **Auto-updated** via OpenClaw cron — never stale
