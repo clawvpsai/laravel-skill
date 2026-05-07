@@ -240,6 +240,36 @@ Queue::route(ProcessPodcast::class, connection: 'redis', queue: 'podcasts');
 ProcessPodcast::dispatch($podcastId); // -> redis:podcasts
 ```
 
+## Worker Lifecycle Events (Laravel 13.8+)
+
+Laravel 13.8 adds `WorkerPausing` and `WorkerResuming` events dispatched by queue workers — useful for coordinating external resources (database connections, Redis sessions, file handles) when workers pause or resume:
+
+```php
+use Illuminate\Queue\Events\WorkerPausing;
+use Illuminate\Queue\Events\WorkerResuming;
+use Illuminate\Support\Facades\Event;
+
+// In AppServiceProvider boot()
+Event::listen(\Illuminate\Queue\Events\WorkerPausing::class, function (WorkerPausing $event) {
+    // Worker is about to pause (e.g., queue empty, SIGSTOP, scaling down)
+    // Close or release non-persistent resources
+    \Illuminate\Support\Facades\DB::disconnect();
+    Log::info("Worker pausing", ['connection' => $event->connection, 'queue' => $event->queue]);
+});
+
+Event::listen(\Illuminate\Queue\Events\WorkerResuming::class, function (WorkerResuming $event) {
+    // Worker is resuming after a pause
+    // Reconnect resources, warm up caches
+    Log::info("Worker resuming", ['connection' => $event->connection, 'queue' => $event->queue]);
+});
+```
+
+**Use cases:**
+- Release database connection pools during idle pauses to free resources
+- Flush or sync local caches when workers scale down/up
+- Coordinate with Kubernetes pod lifecycle or AWS auto-scaling graceful shutdown
+- Log worker availability state for monitoring dashboards
+
 ## Failed Jobs
 
 ```bash
@@ -313,10 +343,11 @@ $batch->failed(); // number of failures
 5. **Not using unique job IDs** — duplicate dispatches cause double-processing
 6. **No retry backoff** — hammer the failing service with immediate retries
 
-## Updated from Research (2026-05)
+## Updated from Research (2026-05-07)
 
 - **Queue Routing** — Laravel 13 adds `Queue::route()` for centralized queue/connection routing by job class. Configure once, applies everywhere.
 - **Job PHP Attributes** — Laravel 13 introduces `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]` as declarative alternatives to job properties.
 - **Interruptible Jobs (Laravel 13.7+)** — `ShouldInterrupt` interface lets jobs respond to worker shutdown signals and checkpoint progress for resumable processing.
+- **WorkerPausing/WorkerResuming Events (Laravel 13.8+)** — new worker lifecycle events dispatched when queue workers pause or resume. Use to release/reconnect external resources (DB pools, Redis sessions) in coordination with auto-scaling or graceful shutdown.
 
 Source: [Laravel 13 Docs - Queues](https://laravel.com/docs/13.x/queues)
