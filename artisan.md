@@ -107,6 +107,25 @@ Schedule::call(fn() => User::where('verified', false)->deleteOldUnverified())
 * * * * * cd /path-to-project && php artisan schedule:run >> /dev/null 2>&1
 ```
 
+**List scheduled tasks (Laravel 13.8+):**
+```bash
+# List all scheduled tasks
+php artisan schedule:list
+
+# Filter by environment
+php artisan schedule:list --environment=production
+```
+
+## Laravel AI / Boost MCP (Laravel 13+)
+
+```bash
+# Install the Boost MCP server for AI assistant integration
+php artisan boost:install
+
+# Interactive AI-assisted upgrade to latest Laravel
+php artisan boost:upgrade
+```
+
 ## Tinker
 
 ```bash
