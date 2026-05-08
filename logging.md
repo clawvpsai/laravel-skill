@@ -128,6 +128,24 @@ Laravel 13 adds native support for structured log channels:
 ],
 ```
 
+
+
+### JsonFormatter (Laravel 13.6+)
+
+Laravel 13.6 adds a native `JsonFormatter` for Monolog that outputs structured JSON logs — ideal for log aggregation systems (Papertrail, CloudWatch, Datadog):
+
+```php
+'channels' => [
+    'json' => [
+        'driver' => 'monolog',
+        'handler' => Monolog\Handler\StreamHandler::class,
+        'handler_with' => ['stream' => storage_path('logs/laravel.json.log')],
+        'formatter' => Monolog\Formatter\JsonFormatter::class,
+        'level' => env('LOG_LEVEL', 'debug'),
+    ],
+],
+```
+
 ## Common Mistakes
 
 1. **`Log::info` in production loops** — spamming logs in tight loops fills disk fast
@@ -147,9 +165,10 @@ Laravel 13 adds native support for structured log channels:
 | Laravel Telescope | Dev/staging debug assistant (not for production) |
 | Laravel Horizon | Queue monitoring |
 
-## Updated from Research (2026-05-04)
+## Updated from Research (2026-05-08)
 - Structured logging with `shareContext()` is the recommended approach for request correlation
 - Sentry is the most common production error monitoring for Laravel apps
 - Laravel 13 Papertrail channel uses Monolog handler natively
+- **JsonFormatter (Laravel 13.6+)** — native `Monolog\Formatter\JsonFormatter` support for structured JSON log output, ideal for log aggregation pipelines
 
 Source: [Laravel Logging](https://laravel.com/docs/13.x/logging)

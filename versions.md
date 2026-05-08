@@ -53,6 +53,19 @@ Then load the relevant sections below.
 - **Bulk JSON Path Assertions** — `assertJsonPaths()` on TestResponse for asserting multiple paths at once
 - **SortDirection Enum** — typed enum for sort direction in query builders
 
+
+
+### New in Laravel 13.6 (April 2026)
+
+- **Debounceable Queued Jobs** — `#[DebounceFor]` attribute keeps only the last dispatch within a time window. Eliminates redundant processing from bursty workloads (e.g., user edits same doc 10x in 30s → 1 rebuild instead of 10).
+- **JSON support for health route** — `/up` health endpoint now supports returning JSON response data for richer health status
+- **JsonFormatter** — native `Monolog\Formatter\JsonFormatter` support for structured JSON log output
+- **Cloudflare Email Service support** — new mail driver integration for Cloudflare's email routing
+
+### New in Laravel 13.5 (Late April 2026)
+
+- Queue infrastructure maturity improvements across v13.3 through v13.6 releases
+
 ### Breaking Changes from 12
 
 - PHP 8.2 minimum (8.3 recommended)
@@ -187,7 +200,7 @@ Before working on any Laravel task:
 - [ ] Check if feature is version-specific
 - [ ] Apply version-specific patterns, not generic ones
 
-## Updated from Research (2026-05-06)
+## Updated from Research (2026-05-08)
 
 ### Laravel 13.8 (May 2026) — Latest Patch
 
@@ -200,12 +213,21 @@ Before working on any Laravel task:
 - **Collection min/max generic types** — proper `T|null` return types
 - **All queue inspection methods** — `allPushed()`, `allNotPushed()`, `allPushedOn()` on QueueFake
 
+### Laravel 13.8 (May 2026) — Latest Patch (see above)
+
 ### Laravel 13.7 (April 2026)
 
 - **Interruptible Jobs** — `ShouldInterrupt` interface for graceful worker shutdown + checkpointing
 - **@fonts Blade Directive** — preload Vite-managed fonts for better Core Web Vitals
 - **Bulk JSON Path Assertions** — `assertJsonPaths()` for multi-path JSON testing
 - **SortDirection Enum** — typed enum for query builder sorting
+
+### Laravel 13.6 (April 2026)
+
+- **Debounceable Jobs** — `#[DebounceFor]` attribute or `->debounce()` keeps only the last job dispatch in a time window. Clean answer for bursty workloads — user editing same document 10 times in 30 seconds triggers 1 rebuild, not 10.
+- **JsonFormatter** — native `Monolog\Formatter\JsonFormatter` for structured JSON logs (CloudWatch, Datadog, Papertrail)
+- **JSON health route** — `/up` health endpoint gains JSON response support for richer status data
+- **Cloudflare Email Service** — new mail driver for Cloudflare email routing
 
 ### Laravel 13 (March 2026) — Major Release
 

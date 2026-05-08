@@ -171,6 +171,43 @@ class ProcessLargeDatasetJob implements ShouldQueue, ShouldInterrupt
 - Jobs that can resume from a checkpoint rather than restart from scratch
 - Worker graceful shutdown (SIGTERM) triggers interruption point
 
+
+
+## Debounceable Jobs (Laravel 13.6+)
+
+When the same job is dispatched multiple times in a short window, debounceable jobs keep **only the last one** — eliminating redundant processing from bursty user actions. Apply `#[DebounceFor]` on the job class or debounce at the dispatch call site:
+
+```php
+use Illuminate\Queue\Attributes\DebounceFor;
+use Illuminate\Queue\Attributes\Job;
+
+#[Job]
+#[DebounceFor(30)] // only keep the last dispatch if another comes within 30 seconds
+class RebuildDocumentJob implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public function __construct(public int $documentId) {}
+
+    public function handle(): void
+    {
+        // Rebuild document — only runs once even if dispatched 10 times in 30s
+        Document::find($this->documentId)?->rebuild();
+    }
+}
+```
+
+**Debounce at dispatch time** (overrides the class-level attribute):
+```php
+RebuildDocumentJob::dispatch($docId)->debounce(60);
+```
+
+**When to use:**
+- Auto-save / document rebuilding where user edits rapidly
+- Search index updates after multiple changes
+- Notifications that should only fire once after a burst of activity
+- Rate-limiting expensive jobs without external throttle infrastructure
+
 ## Dispatching
 
 ```php
@@ -342,12 +379,16 @@ $batch->failed(); // number of failures
 4. **DB::transaction() in job** — exit/timeout inside transaction won't rollback
 5. **Not using unique job IDs** — duplicate dispatches cause double-processing
 6. **No retry backoff** — hammer the failing service with immediate retries
+7. **Duplicate dispatches causing double-processing** — use `#[DebounceFor]` for bursty workloads where only the last dispatch matters
 
-## Updated from Research (2026-05-07)
+## Updated from Research (2026-05-08)
 
 - **Queue Routing** — Laravel 13 adds `Queue::route()` for centralized queue/connection routing by job class. Configure once, applies everywhere.
 - **Job PHP Attributes** — Laravel 13 introduces `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]` as declarative alternatives to job properties.
 - **Interruptible Jobs (Laravel 13.7+)** — `ShouldInterrupt` interface lets jobs respond to worker shutdown signals and checkpoint progress for resumable processing.
+- **WorkerPausing/WorkerResuming Events (Laravel 13.8+)** — new worker lifecycle events dispatched when queue workers pause or resume. Use to release/reconnect external resources (DB pools, Redis sessions) in coordination with auto-scaling or graceful shutdown.
+
+- **Debounceable Jobs (Laravel 13.6+)** — `#[DebounceFor]` attribute or `->debounce()` at dispatch keeps only the last job in a time window. Eliminates redundant processing from rapid-fire dispatches (e.g., user editing same document 10x in 30s = 1 rebuild).
 - **WorkerPausing/WorkerResuming Events (Laravel 13.8+)** — new worker lifecycle events dispatched when queue workers pause or resume. Use to release/reconnect external resources (DB pools, Redis sessions) in coordination with auto-scaling or graceful shutdown.
 
 Source: [Laravel 13 Docs - Queues](https://laravel.com/docs/13.x/queues)
