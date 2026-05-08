@@ -27,7 +27,7 @@ php artisan --version
 
 ---
 
-## 📚 Topics Covered (15 files)
+## 📚 Topics Covered (17 files)
 
 | Topic | File | When to Use |
 |---|---|---|
