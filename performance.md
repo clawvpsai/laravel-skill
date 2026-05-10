@@ -202,6 +202,90 @@ if (app()->isLocal()) {
 }
 ```
 
+## Semantic Search — pgvector (Laravel 13 AI Search)
+
+Laravel 13 supports **semantic/vector search** using PostgreSQL's pgvector extension. Instead of matching exact keywords, it matches by *meaning*. Requires:
+- PostgreSQL with `pgvector` extension enabled
+- `illuminate/db` PostgreSQL driver
+
+**Migration — create vector column:**
+```php
+Schema::create('knowledge_articles', function (Blueprint $table) {
+    $table->id();
+    $table->string('title');
+    $table->text('content');
+    $table->json('embedding'); // stores the vector (typically 1536 dims for OpenAI embeddings)
+    $table->timestamps();
+});
+
+// Enable pgvector
+DB::statement('CREATE EXTENSION IF NOT EXISTS vector');
+```
+
+**Model with vector column:**
+```php
+use Illuminate\Database\Eloquent\Model;
+
+class KnowledgeArticle extends Model
+{
+    protected $casts = [
+        'embedding' => 'array', // casts vector JSON to PHP array
+    ];
+}
+```
+
+**Generate and store embeddings (Laravel AI SDK):**
+```php
+use Laravel\AI\Facades\Embeddings;
+
+// Generate embedding for content
+$embedding = Embeddings::embed($text); // returns float[]
+
+// Store with article
+$article = KnowledgeArticle::create([
+    'title' => $title,
+    'content' => $text,
+    'embedding' => $embedding,
+]);
+```
+
+**Query by semantic similarity:**
+```php
+// Find articles semantically similar to a query
+$queryEmbedding = Embeddings::embed($searchQuery);
+
+$results = KnowledgeArticle::query()
+    ->whereVectorSimilarTo('embedding', $queryEmbedding)
+    ->orderByRelevance('embedding', $queryEmbedding) // orders by most similar
+    ->limit(5)
+    ->get();
+```
+
+**RAG (Retrieval Augmented Generation) pattern:**
+```php
+// 1. Retrieve relevant context via semantic search
+$context = KnowledgeArticle::query()
+    ->whereVectorSimilarTo('embedding', $userQueryEmbedding)
+    ->limit(3)
+    ->get()
+    ->pluck('content')
+    ->join("\n\n");
+
+// 2. Feed context to LLM
+$response = AI::chat([
+    'model' => 'gpt-4',
+    'messages' => [
+        ['role' => 'system', 'content' => "Use this context: {$context}"],
+        ['role' => 'user', 'content' => $userQuery],
+    ],
+]);
+```
+
+**When to use semantic search vs traditional:**
+- **Semantic search** — user queries with natural language ("how do I reset my password?"), documents with similar *meaning* are found even without exact keyword overlap
+- **Traditional `where()`/`fulltext()`** — exact term matching, structured filters, known categories
+- **Hybrid** — run both, merge/rank results
+
 ## Common Mistakes
 
 1. **N+1 in loops** — always use `with()`
@@ -212,6 +296,18 @@ if (app()->isLocal()) {
 6. **Loading too much in one query** — select only needed columns
 7. **No transactions for related writes** — partial updates on failure
 8. **Running heavy work synchronously** — block users, timeout issues
+
+## Updated from Research (2026-05-10)
+
+### Semantic Search (pgvector) — Laravel 13
+
+- **Vector search via `whereVectorSimilarTo()`** — semantic search using pgvector. Matches results by meaning, not keywords.
+- **RAG pattern** — retrieve relevant documents via vector search, feed as context to LLM for AI-powered answers.
+- **Embeddings facade** — `Laravel\AI\Facades\Embeddings::embed()` generates vector embeddings for content.
+- Use when users search with natural language queries where exact keyword matching falls short.
+- Consider hybrid: run traditional `where()` + semantic search, merge ranked results.
+
+Sources: [Laravel 13 Docs - Search](https://laravel.com/docs/13.x/search) | [Laravel News - RAG with pgvector](https://laravel-news.com/ship-ai-with-laravel-rag-with-embeddings-and-pgvector-in-laravel-13)
 
 ## Updated from Research (2026-05)
 
