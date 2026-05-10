@@ -387,8 +387,6 @@ $batch->failed(); // number of failures
 - **Job PHP Attributes** — Laravel 13 introduces `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]` as declarative alternatives to job properties.
 - **Interruptible Jobs (Laravel 13.7+)** — `ShouldInterrupt` interface lets jobs respond to worker shutdown signals and checkpoint progress for resumable processing.
 - **WorkerPausing/WorkerResuming Events (Laravel 13.8+)** — new worker lifecycle events dispatched when queue workers pause or resume. Use to release/reconnect external resources (DB pools, Redis sessions) in coordination with auto-scaling or graceful shutdown.
-
 - **Debounceable Jobs (Laravel 13.6+)** — `#[DebounceFor]` attribute or `->debounce()` at dispatch keeps only the last job in a time window. Eliminates redundant processing from rapid-fire dispatches (e.g., user editing same document 10x in 30s = 1 rebuild).
-- **WorkerPausing/WorkerResuming Events (Laravel 13.8+)** — new worker lifecycle events dispatched when queue workers pause or resume. Use to release/reconnect external resources (DB pools, Redis sessions) in coordination with auto-scaling or graceful shutdown.
 
 Source: [Laravel 13 Docs - Queues](https://laravel.com/docs/13.x/queues)

@@ -309,7 +309,7 @@ $response = AI::chat([
 
 Sources: [Laravel 13 Docs - Search](https://laravel.com/docs/13.x/search) | [Laravel News - RAG with pgvector](https://laravel-news.com/ship-ai-with-laravel-rag-with-embeddings-and-pgvector-in-laravel-13)
 
-## Updated from Research (2026-05)
+### Performance Patterns
 
 - **Cursor pagination** — memory-efficient iteration over large datasets
 - **Cache stampede prevention** — use lock keys to prevent thundering herd
