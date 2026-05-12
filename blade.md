@@ -62,6 +62,55 @@ class PostCard extends Component
 <x-post-card title="Hello" body="Content here" :featured="$isFeatured" />
 ```
 
+### @props Directive (pass all public properties to view)
+
+For class-based components, use `@props` in the view to auto-pass all public constructor properties without explicitly calling `$this->with()`:
+
+```php
+// app/View/Components/StatsCard.php
+class StatsCard extends Component
+{
+    public function __construct(
+        public int $views = 0,
+        public int $likes = 0,
+        public string $label = 'Stats',
+    ) {}
+
+    public function render()
+    {
+        return view('components.stats-card');
+    }
+}
+```
+
+```blade
+{{-- resources/views/components/stats-card.blade.php --}}
+@props(['views', 'likes', 'label'])
+
+<div class="stats-card">
+    <h3>{{ $label }}</h3>
+    <p>👁 {{ $views }} · ❤️ {{ $likes }}</p>
+</div>
+```
+
+Then call it simply:
+```html
+<x-stats-card :views="$post->views" :likes="$post->likes" label="Popular Post" />
+```
+
+**Without `@props`, you must explicitly pass data:**
+```php
+// Instead of relying on @props, you can also use:
+public function render()
+{
+    return view('components.stats-card')->with([
+        'views' => $this->views,
+        'likes' => $this->likes,
+        'label' => $this->label,
+    ]);
+}
+```
+
 ## Slots
 
 ```php
@@ -193,5 +242,6 @@ View::composer('partials.*', fn(View $view) => $view->with('theme', 'dark'));
 ## Updated from Research (2026-05)
 
 - **@fonts Directive (Laravel 13.7+)** — `@fonts` generates `<link rel="preload">` tags for Vite-managed fonts, improving Core Web Vitals.
+- **@props Directive** — pass all public constructor properties to a component view inline without `->with()`.
 
 Source: [Laravel 13 Blade](https://laravel.com/docs/13.x/blade)
