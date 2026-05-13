@@ -4,7 +4,7 @@
 
 - **Laravel 11** — Still receives security fixes
 - **Laravel 12** — Active development
-- **Laravel 13** — Current latest (v13.8.0 as of May 2026)
+- **Laravel 13** — Current latest (v13.9.0 as of May 2026)
 
 ## Version Selector Prompt
 
@@ -17,7 +17,7 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — March 2026, v13.8.0)
+## Laravel 13 (Latest — May 2026, v13.9.0)
 
 ### New in Laravel 13
 
@@ -34,6 +34,15 @@ Then load the relevant sections below.
 - **New PHP Attributes for Queues:** `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]`
 - **Queue Routing** — `Queue::route()` for centralized queue/connection routing by job class
 
+### New in Laravel 13.9 (May 2026)
+
+- **PreparesForDispatch interface for Jobs** — new `PreparesForDispatch` interface lets jobs execute preparation logic before being dispatched to the queue. Useful for validation, enrichment, or state checks that run synchronously at dispatch time rather than async in handle().
+- **PendingDispatch conditionable** — `PendingDispatch` now supports `->when()` and `->unless()` conditionals for cleaner conditional dispatch logic.
+- **Migration events with name** — `MigrationStarted` and `MigrationEnded` events now carry the migration name for more granular event handling.
+- **Generic return types on Builder paginate** — `paginate()`, `simplePaginate()`, `cursorPaginate()` now return properly typed `LengthAwarePaginator`/`Paginator` instances.
+- **Queue:pause error display** — `php artisan queue:pause` now shows a clear error when the Worker is not pausable.
+- Internal: `mt_rand()` replaces `rand()`, `preg_split` replaces `mb_split`, PSR-7 multipart array handling fixed.
+
 ### New in Laravel 13.8 (May 2026)
 
 - **DatabaseLock excludes expired locks** — `DatabaseLock::isLock` now properly excludes expired locks when checking ownership, fixing race conditions in lock cleanup
@@ -47,12 +56,6 @@ Then load the relevant sections below.
 - **All queue inspection methods** — new `allPushed()`, `allNotPushed()`, `allPushedOn()` methods on QueueFake for batch assertions
 
 ### New in Laravel 13.7 (April 2026)
-
-- **Interruptible Jobs** — `ShouldInterrupt` interface for jobs that respond to worker shutdown signals and checkpoint progress for resumable processing
-- **@fonts Blade Directive** — generates `<link rel="preload">` tags for Vite-managed fonts, improving Core Web Vitals
-- **Bulk JSON Path Assertions** — `assertJsonPaths()` on TestResponse for asserting multiple paths at once
-- **SortDirection Enum** — typed enum for sort direction in query builders
-
 ### New in Laravel 13.6 (April 2026)
 
 - **Debounceable Queued Jobs** — `#[DebounceFor]` attribute keeps only the last dispatch within a time window. Eliminates redundant processing from bursty workloads (e.g., user edits same doc 10x in 30s → 1 rebuild instead of 10).
