@@ -255,6 +255,52 @@ dispatch(new SendMarketingEmailJob($userId))
 ```
 
 
+
+### PreparesForDispatch Interface (Laravel 13.9+)
+
+Jobs can implement `PreparesForDispatch` to run synchronous validation/enrichment logic at dispatch time — before the job hits the queue. Useful for early rejection, enrichment, or checks that should run in the request context rather than the async worker:
+
+```php
+use Illuminate\Contracts\Queue\PreparesForDispatch;
+use Illuminate\Queue\Attributes\Job;
+
+#[Job]
+#[Job\MaxAttempts(3)]
+class SendWelcomeEmailJob implements ShouldQueue, PreparesForDispatch
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public function __construct(public int $userId) {}
+
+    public function prepareForDispatch(): void
+    {
+        // Runs synchronously when dispatch() is called — before queuing
+        // Throw exception here to reject the dispatch entirely
+        $user = User::find($this->userId);
+        if (!$user || !$user->is_active) {
+            throw new \RuntimeException("Cannot dispatch: user {$this->userId} is invalid or inactive");
+        }
+        // Enrich job data
+        $this->userId = $user->id; // normalize ID
+    }
+
+    public function handle(): void
+    {
+        // Runs async in worker — data already validated and enriched
+        Mail::to($this->user)->send(new WelcomeMail($this->user));
+    }
+}
+```
+
+**When to use:**
+- Validate prerequisites before the job is queued (fail fast, don't queue broken jobs)
+- Enrich or normalize job data in the request context
+- Early-exit if a business rule disqualifies the job (e.g., user unsubscribed, feature flag off)
+- Throttle at dispatch site without custom middleware
+
+**Key difference from `__construct`:** `prepareForDispatch()` runs before serialization and queueing. `__construct` runs during dispatch but may serialize arguments. Use `prepareForDispatch` for anything that must be validated against live data right before queuing.
+
+## Queue Workers
 ## Queue Workers
 
 ```bash
@@ -408,7 +454,9 @@ $batch->failed(); // number of failures
 6. **No retry backoff** — hammer the failing service with immediate retries
 7. **Duplicate dispatches causing double-processing** — use `#[DebounceFor]` for bursty workloads where only the last dispatch matters
 
-## Updated from Research (2026-05-08)
+## Updated from Research (2026-05-14)
+
+- **PreparesForDispatch Interface (Laravel 13.9+)** — `PreparesForDispatch` interface on jobs runs synchronous validation/enrichment logic at dispatch time (before queuing). Use for early rejection, data normalization, or prerequisite checks that should fail fast in the request context rather than async in the worker.
 
 - **Queue Routing** — Laravel 13 adds `Queue::route()` for centralized queue/connection routing by job class. Configure once, applies everywhere.
 - **Job PHP Attributes** — Laravel 13 introduces `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]` as declarative alternatives to job properties.
