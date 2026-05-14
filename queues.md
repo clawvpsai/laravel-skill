@@ -228,6 +228,33 @@ ProcessPostJob::dispatch($postId)->onQueue('high-priority');
 ProcessPostJob::dispatchSync($postId);
 ```
 
+### PendingDispatch Conditionals (Laravel 13.9+)
+
+`PendingDispatch` now supports `->when()` and `->unless()` for clean conditional dispatch:
+
+```php
+// Dispatch only if condition is true
+PendingDispatch::dispatch($postId)
+    ->when($user->isPremium(), fn($job) => $job->onQueue('premium'));
+
+// Or at dispatch time with the helper
+dispatch(new ProcessPostJob($postId))
+    ->when($isPriority)
+    ->delay(now()->addMinutes(5));
+```
+
+**Use case:** Skip expensive jobs if a feature flag is off, or route premium users to a separate queue.
+
+```php
+// Route premium users to dedicated queue via condition
+dispatch(new SendMarketingEmailJob($userId))
+    ->when(
+        $user->subscription->plan === 'premium',
+        fn($job) => $job->onQueue('marketing-premium')
+    );
+```
+
+
 ## Queue Workers
 
 ```bash
