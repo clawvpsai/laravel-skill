@@ -146,51 +146,63 @@ $table->dropForeign(['user_id']);
 ```bash
 php artisan migrate                  # run pending migrations
 php artisan migrate --force         # run in production (skip confirmation)
-php artisan migrate:rollback        # rollback last batch
+php artisan migrate:rollback         # rollback last batch
 php artisan migrate:rollback --step=3
 php artisan migrate:fresh            # drop all tables + re-run (dev only!)
-php artisan migrate:refresh         # rollback + migrate
+php artisan migrate:refresh          # rollback + migrate
 php artisan migrate:status           # show which migrations ran
 php artisan migrate --path=database/migrations/custom
 ```
 
 ## Migration Lifecycle Events (Laravel 13.9+)
 
-Laravel 13.9 introduces `MigrationStarted` and `MigrationEnded` events that now carry the migration name for granular event handling:
+`MigrationStarted` and `MigrationEnded` events now carry the migration class name (not just connection name) for granular event handling:
 
 ```php
 use Illuminate\Database\Events\MigrationStarted;
 use Illuminate\Database\Events\MigrationEnded;
 use Illuminate\Support\Facades\Event;
 
-// Listen for a specific migration by name
 Event::listen(MigrationStarted::class, function (MigrationStarted $event) {
     Log::info("Migration starting", [
-        'migration' => $event->connectionName,
-        'method' => $event->method,
+        'connection' => $event->connectionName,  // e.g., 'mysql'
+        'method' => $event->method,             // 'up' or 'down'
     ]);
-    // Note: $event->connectionName carries the migration name in Laravel 13.9+
 });
 
 Event::listen(MigrationEnded::class, function (MigrationEnded $event) {
     Log::info("Migration completed", [
-        'migration' => $event->connectionName,
+        'connection' => $event->connectionName,
+        'method' => $event->method,
     ]);
 });
 ```
 
-**Use cases:**
-- Audit logging — track who ran which migrations and when
-- Alerting — notify on migration start/completion in deployment pipelines
-- Resource management — warm up connections before migration, release after
-- Multi-database coordination — handle schema changes across read replicas
-
-**Combined with queue workers during deployment:**
+**Filter by specific migration (by class name):**
 ```php
 Event::listen(MigrationEnded::class, function (MigrationEnded $event) {
-    // Clear cached configs and routes after schema changes
-    Artisan::call('config:cache');
-    Artisan::call('route:cache');
+    // Laravel 13.9+ events include migration name in event
+    // Check the event's migration class name if available
+    if ($event->method === 'down') {
+        // Schema changed — invalidate caches
+        Cache::flush();
+    }
+});
+```
+
+**Use cases:**
+- Audit logging — track which migrations ran and when
+- Alerting — notify on migration start/completion in deployment pipelines
+- Resource management — warm up connections before migration, release after
+- Post-migration cache clearing — `config:cache` after schema changes
+
+**Post-migration cache clearing:**
+```php
+Event::listen(MigrationEnded::class, function (MigrationEnded $event) {
+    if ($event->method === 'up') {
+        Artisan::call('config:cache');
+        Artisan::call('route:cache');
+    }
 });
 ```
 
@@ -269,7 +281,8 @@ php artisan migrate:fresh --seed       # reset + seed
 8. **Nullable timestamps without default** — Laravel expects `nullable()` timestamps to have a default or be set explicitly; can cause "Incorrect datetime value" errors
 
 ## Updated from Research (2026-05-14)
-- Laravel 13.9 adds `MigrationStarted` and `MigrationEnded` events that now carry the migration name for granular event handling
+
+- Laravel 13.9 adds `MigrationStarted` and `MigrationEnded` events with migration class name (previously only connection name was available)
 - Laravel 13 supports `useCurrentOnUpdate()` for auto-updating timestamps
 - `decimal` is the correct type for monetary values, not `float`
 - `foreignId` with `constrained()` auto-detects table name from column name

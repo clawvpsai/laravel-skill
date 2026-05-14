@@ -57,6 +57,47 @@ use App\Observers\PostObserver;
 Post::observe(PostObserver::class);
 ```
 
+## Laravel 13 `#[ObservedBy]` Attribute (No Boot Method Needed)
+
+Instead of registering observers in a service provider's `boot()` method, Laravel 13 lets you attach observers directly via the `#[ObservedBy]` PHP attribute on the model — cleaner and co-locates the observer with the model:
+
+```php
+use App\Models\Post;
+use App\Observers\PostObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+
+#[ObservedBy([PostObserver::class])]
+class Post extends Model
+{
+    // Observer is auto-attached — no service provider needed
+}
+```
+
+**With multiple observers:**
+```php
+#[ObservedBy([PostObserver::class, PostAnalyticsObserver::class])]
+class Post extends Model
+{
+    // Both observers receive all model events
+}
+```
+
+**Benefits over boot method:**
+- Observer is visible right next to the model it concerns
+- No service provider pollution
+- Easier to see at a glance what model lifecycle hooks exist
+- Works well with IDE autocompletion for the attribute
+
+**Legacy boot method still works:**
+```php
+// Still valid in Laravel 13 — not going away
+protected static function boot()
+{
+    parent::boot();
+    static::observe(PostObserver::class);
+}
+```
+
 ## Events (Decoupled Architecture)
 
 ```php
@@ -112,9 +153,9 @@ class SendPostPublishedNotification implements ShouldQueue
 }
 ```
 
-## Laravel 13 Attribute Events (New)
+## Laravel 13 Model Attribute Hooks
 
-Laravel 13 formalizes model attribute events with PHP attributes:
+Laravel 13 introduces PHP attributes for model lifecycle hooks directly on model methods:
 
 ```php
 use App\Models\Post;
@@ -122,14 +163,19 @@ use Illuminate\Database\Eloquent\Attributes\UpdatedAt;
 
 class Post extends Model
 {
-    // Fires on any attribute update
+    // Called when the updated_at timestamp is set (e.g., via touch() or save)
     #[UpdatedAt]
-    public function touch(): void
+    public function onTimestampUpdate(): void
     {
-        // Custom logic on any update
+        // Custom logic — e.g., notify subscribers when post is edited
     }
 }
 ```
+
+**Available lifecycle attributes:**
+- `#[UpdatedAt]` — method fires when `updated_at` is set
+
+These complement (not replace) observer methods. Use for lightweight inline hooks; use observers for heavier logic that belongs in its own class.
 
 ## Model Custom Events (Beyond Observer)
 
@@ -182,8 +228,23 @@ class PostObserver
 4. **Storing unserializable data in events** — events get queued; file handles, connections can't serialize
 5. **Overusing events** — for simple cases, just put logic directly in controller or service
 
-## Updated from Research (2026-05)
-- Laravel 13 introduces formal PHP attributes for model event hooks
-- `ShouldQueue` on listeners is the recommended pattern for async event processing
+## Updated from Research (2026-05-14)
 
-Source: [Laravel Events](https://laravel.com/docs/13.x/events)
+### `#[ObservedBy]` Attribute (Laravel 13)
+
+- **No service provider needed** — attach observer directly to model via `#[ObservedBy([PostObserver::class])]`
+- Attaches observer automatically when model is loaded
+- Supports multiple observers: `#[ObservedBy([Obs1::class, Obs2::class])]`
+- Legacy `static::boot()` + `static::observe()` pattern still works
+
+### Model Lifecycle Attribute Hooks (Laravel 13)
+
+- `#[UpdatedAt]` on a method marks it as the handler when the `updated_at` timestamp is set
+- Lightweight alternative to full observer for simple inline hooks
+
+### General
+
+- `ShouldQueue` on listeners is the recommended pattern for async event processing
+- Prefer `#[ObservedBy]` over service provider observer registration for new code
+
+Sources: [Laravel 13 Docs - Eloquent Observers](https://laravel.com/docs/13.x/eloquent#observers) | [Laravel 13 Docs - Events](https://laravel.com/docs/13.x/events) | [Laravel News - PHP Attributes](https://laravel-news.com/laravel-13-attributes)
