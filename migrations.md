@@ -154,6 +154,46 @@ php artisan migrate:status           # show which migrations ran
 php artisan migrate --path=database/migrations/custom
 ```
 
+## Migration Lifecycle Events (Laravel 13.9+)
+
+Laravel 13.9 introduces `MigrationStarted` and `MigrationEnded` events that now carry the migration name for granular event handling:
+
+```php
+use Illuminate\Database\Events\MigrationStarted;
+use Illuminate\Database\Events\MigrationEnded;
+use Illuminate\Support\Facades\Event;
+
+// Listen for a specific migration by name
+Event::listen(MigrationStarted::class, function (MigrationStarted $event) {
+    Log::info("Migration starting", [
+        'migration' => $event->connectionName,
+        'method' => $event->method,
+    ]);
+    // Note: $event->connectionName carries the migration name in Laravel 13.9+
+});
+
+Event::listen(MigrationEnded::class, function (MigrationEnded $event) {
+    Log::info("Migration completed", [
+        'migration' => $event->connectionName,
+    ]);
+});
+```
+
+**Use cases:**
+- Audit logging — track who ran which migrations and when
+- Alerting — notify on migration start/completion in deployment pipelines
+- Resource management — warm up connections before migration, release after
+- Multi-database coordination — handle schema changes across read replicas
+
+**Combined with queue workers during deployment:**
+```php
+Event::listen(MigrationEnded::class, function (MigrationEnded $event) {
+    // Clear cached configs and routes after schema changes
+    Artisan::call('config:cache');
+    Artisan::call('route:cache');
+});
+```
+
 ## Seeding
 
 ```bash
@@ -228,7 +268,8 @@ php artisan migrate:fresh --seed       # reset + seed
 7. **`decimal` vs `float` for money** — always use `decimal(10,2)` for currency, never float
 8. **Nullable timestamps without default** — Laravel expects `nullable()` timestamps to have a default or be set explicitly; can cause "Incorrect datetime value" errors
 
-## Updated from Research (2026-05-04)
+## Updated from Research (2026-05-14)
+- Laravel 13.9 adds `MigrationStarted` and `MigrationEnded` events that now carry the migration name for granular event handling
 - Laravel 13 supports `useCurrentOnUpdate()` for auto-updating timestamps
 - `decimal` is the correct type for monetary values, not `float`
 - `foreignId` with `constrained()` auto-detects table name from column name
