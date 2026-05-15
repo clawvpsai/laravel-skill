@@ -301,7 +301,6 @@ class SendWelcomeEmailJob implements ShouldQueue, PreparesForDispatch
 **Key difference from `__construct`:** `prepareForDispatch()` runs before serialization and queueing. `__construct` runs during dispatch but may serialize arguments. Use `prepareForDispatch` for anything that must be validated against live data right before queuing.
 
 ## Queue Workers
-## Queue Workers
 
 ```bash
 # Run default queue
@@ -334,6 +333,26 @@ redirect_stderr=true
 stdout_logfile=/var/log/laravel-worker.log
 stopwaitsecs=3600
 ```
+
+### Worker Timeout Exit Code Override (Laravel 13.9+)
+
+By default, a timed-out worker exits with code `0`. Laravel 13.9 lets you override this via the `--exit-code` flag, so your process supervisor can distinguish timeout exits from normal exits:
+
+```bash
+# Exit with code 2 on timeout (distinct from normal exit code 0)
+php artisan queue:work redis --timeout=60 --exit-code=2
+```
+
+```ini
+# supervisor: treat exit code 2 as FAIL, not success
+command=php /path/to/artisan queue:work redis --timeout=60 --exit-code=2
+exitcodes=2
+```
+
+**Use cases:**
+- Distinguish timeout exits from success in supervisor `exitcodes` config
+- Trigger auto-restart policy only on genuine failures, not expected timeouts
+- Health check scripts that grep exit codes for alerting
 
 ## Queue Routing (Laravel 13+)
 
@@ -379,6 +398,90 @@ Event::listen(\Illuminate\Queue\Events\WorkerResuming::class, function (WorkerRe
 - Flush or sync local caches when workers scale down/up
 - Coordinate with Kubernetes pod lifecycle or AWS auto-scaling graceful shutdown
 - Log worker availability state for monitoring dashboards
+
+## SQS Large Payload Disk Storage (Laravel 13.9+)
+
+SQS has a 256KB message size limit. For jobs with large payloads (serialized models, bulk data), Laravel 13.9 can offload the body to a local disk (or S3) and send only a reference through SQS:
+
+```php
+// config/queue.php
+'connections' => [
+    'sqs' => [
+        'driver' => 'sqs',
+        'key' => env('AWS_ACCESS_KEY_ID'),
+        'secret' => env('AWS_SECRET_ACCESS_KEY'),
+        'region' => env('AWS_DEFAULT_REGION'),
+        'queue' => env('SQS_QUEUE'),
+        'payload_disk' => 'local', // 's3' also supported
+        // or 'payload_disk' => 's3' with bucket config
+    ],
+],
+```
+
+**With S3 disk:**
+```php
+'connections' => [
+    'sqs' => [
+        'driver' => 'sqs',
+        // ... standard SQS config ...
+        'payload_disk' => 's3',
+        'payload_disk_config' => [
+            'disk' => 's3',
+            'path_prefix' => 'queue-payloads/',
+        ],
+    ],
+],
+```
+
+**How it works:**
+- Payload > 256KB → stored on disk/S3, reference key sent via SQS
+- Worker retrieves reference → fetches actual payload from disk/S3 → processes job
+- Automatic cleanup after successful processing
+
+**When to use:**
+- Jobs that need to pass large data (bulk imports, report generation payloads)
+- Avoids SQS extended client library manual setup
+- Local disk is fast but ephemeral (use S3 for multi-worker production)
+
+## Cloud Queue Metrics (Laravel 13.9+)
+
+Laravel 13.9 introduces first-party cloud queue metric support for SQS and other cloud providers. Metrics (jobs received, processed, failed, latency) are exposed via the Queue facade for observability:
+
+```php
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Queue\CloudQueueMetrics;
+
+// Access metrics for a connection
+$metrics = Queue::connection('sqs')->metrics();
+
+// Returns metrics object with:
+// $metrics->jobsReceived()   — total jobs pushed to queue
+// $metrics->jobsProcessed()  — total jobs successfully handled
+// $metrics->jobsFailed()     — total failed jobs
+// $metrics->averageLatency() — avg time from receive to complete (ms)
+```
+
+**Use in monitoring dashboards / health checks:**
+```php
+Route::get('/queue-health', function () {
+    $metrics = Queue::connection('sqs')->metrics();
+
+    return response()->json([
+        'queue' => 'sqs',
+        'jobs_received' => $metrics->jobsReceived(),
+        'jobs_processed' => $metrics->jobsProcessed(),
+        'jobs_failed' => $metrics->jobsFailed(),
+        'avg_latency_ms' => $metrics->averageLatency(),
+        'healthy' => $metrics->jobsFailed() < 10, // custom threshold
+    ]);
+});
+```
+
+**Use cases:**
+- Health check endpoints that include queue depth/failure rate
+- Alerting when job failure rate spikes above threshold
+- Tracking queue backpressure and latency trends
+- Capacity planning (are workers keeping up with incoming volume?)
 
 ## Failed Jobs
 
@@ -454,14 +557,17 @@ $batch->failed(); // number of failures
 6. **No retry backoff** — hammer the failing service with immediate retries
 7. **Duplicate dispatches causing double-processing** — use `#[DebounceFor]` for bursty workloads where only the last dispatch matters
 
-## Updated from Research (2026-05-14)
+## Updated from Research (2026-05-15)
 
+- **SQS Large Payload Disk Storage (Laravel 13.9+)** — payloads exceeding SQS 256KB limit are offloaded to local disk or S3 automatically. Configure via `payload_disk` and `payload_disk_config` in the SQS queue connection. Eliminates manual setup of SQS Extended Client.
+- **Cloud Queue Metrics (Laravel 13.9+)** — first-party `Queue::connection()->metrics()` API exposes `jobsReceived()`, `jobsProcessed()`, `jobsFailed()`, and `averageLatency()` for monitoring dashboards and health checks.
+- **Worker Timeout Exit Code Override (Laravel 13.9+)** — `queue:work --exit-code=N` lets supervisors distinguish timeout exits from normal exits via distinct exit codes, enabling smarter restart/alarm policies.
 - **PreparesForDispatch Interface (Laravel 13.9+)** — `PreparesForDispatch` interface on jobs runs synchronous validation/enrichment logic at dispatch time (before queuing). Use for early rejection, data normalization, or prerequisite checks that should fail fast in the request context rather than async in the worker.
-
-- **Queue Routing** — Laravel 13 adds `Queue::route()` for centralized queue/connection routing by job class. Configure once, applies everywhere.
-- **Job PHP Attributes** — Laravel 13 introduces `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]` as declarative alternatives to job properties.
+- **PendingDispatch Conditionals (Laravel 13.9+)** — `PendingDispatch` supports `->when()` and `->unless()` for declarative conditional dispatch. Route premium users to dedicated queues without custom logic.
+- **Queue Routing (Laravel 13)** — Laravel 13 adds `Queue::route()` for centralized queue/connection routing by job class. Configure once, applies everywhere.
+- **Job PHP Attributes (Laravel 13)** — `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]` as declarative alternatives to job properties.
 - **Interruptible Jobs (Laravel 13.7+)** — `ShouldInterrupt` interface lets jobs respond to worker shutdown signals and checkpoint progress for resumable processing.
-- **WorkerPausing/WorkerResuming Events (Laravel 13.8+)** — new worker lifecycle events dispatched when queue workers pause or resume. Use to release/reconnect external resources (DB pools, Redis sessions) in coordination with auto-scaling or graceful shutdown.
-- **Debounceable Jobs (Laravel 13.6+)** — `#[DebounceFor]` attribute or `->debounce()` at dispatch keeps only the last job in a time window. Eliminates redundant processing from rapid-fire dispatches (e.g., user editing same document 10x in 30s = 1 rebuild).
+- **WorkerPausing/WorkerResuming Events (Laravel 13.8+)** — new worker lifecycle events for coordinating external resources during pause/resume cycles.
+- **Debounceable Jobs (Laravel 13.6+)** — `#[DebounceFor]` attribute or `->debounce()` at dispatch keeps only the last job in a time window.
 
 Source: [Laravel 13 Docs - Queues](https://laravel.com/docs/13.x/queues)
