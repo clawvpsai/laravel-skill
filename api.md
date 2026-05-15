@@ -85,6 +85,133 @@ public function show(Post $post)
 }
 ```
 
+## JSON:API Resources (Laravel 13 — Spec-Compliant APIs)
+
+Laravel 13 ships first-party `JsonApiResource` for building APIs that comply with the [JSON:API specification](https://jsonapi.org/). Clients (mobile apps, third-party consumers) get a predictable, well-documented response structure without you having to hand-roll it.
+
+```bash
+php artisan make:json-api-resource PostResource
+```
+
+**Resource (single item):**
+```php
+// app/JsonApi/Resources/PostResource.php
+namespace App\JsonApi\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonApiResources\JsonApiResource;
+
+class PostResource extends JsonApiResource
+{
+    public function toAttributes(Request $request): array
+    {
+        return [
+            'title' => $this->title,
+            'body' => $this->body,
+            'created_at' => $this->created_at->toIso8601String(),
+            'updated_at' => $this->updated_at->toIso8601String(),
+        ];
+    }
+
+    public function toRelationships(Request $request): array
+    {
+        return [
+            'author' => fn() => UserResource::make($this->whenLoaded('author')),
+            'comments' => fn() => CommentResource::collection($this->whenLoaded('comments')),
+        ];
+    }
+}
+```
+
+**Relationship resource:**
+```php
+// app/JsonApi/Resources/UserResource.php
+class UserResource extends JsonApiResource
+{
+    public function toAttributes(Request $request): array
+    {
+        return [
+            'name' => $this->name,
+            'email' => $this->email,
+        ];
+    }
+}
+```
+
+**Controller — automatic JSON:API response structure:**
+```php
+public function show(Post $post): JsonApiResource
+{
+    return PostResource::make($post->load('author', 'comments'));
+}
+
+public function index(): JsonApiResource
+{
+    return PostResource::collection(Post::with('author')->paginate(20));
+}
+```
+
+**Generated response structure (what clients get):**
+```json
+{
+  "data": {
+    "type": "posts",
+    "id": "42",
+    "attributes": {
+      "title": "My Post",
+      "body": "Post content...",
+      "created_at": "2026-05-15T10:00:00+00:00"
+    },
+    "relationships": {
+      "author": {
+        "data": { "type": "users", "id": "1" }
+      },
+      "comments": {
+        "data": [
+          { "type": "comments", "id": "7" }
+        ]
+      }
+    },
+    "links": {
+      "self": "https://api.example.com/posts/42"
+    }
+  },
+  "included": [
+    {
+      "type": "users",
+      "id": "1",
+      "attributes": { "name": "Adarsh", "email": "adarsh@example.com" }
+    }
+  ]
+}
+```
+
+**Sparse Fieldsets (client asks for only specific fields):**
+```php
+// Client requests: GET /posts?fields[posts]=title,body&fields[users]=name
+// Only those fields appear in response — reduces payload size
+```
+
+**Filtering, Sorting, Pagination (use Laravel 13's JsonApiQueryParameters):**
+```php
+use Illuminate\Http\JsonApiQueryParameters;
+
+public function index(JsonApiQueryParameters $params): JsonApiResource
+{
+    $query = Post::query();
+
+    // $params->filter() — extract filters
+    // $params->sort() — extract sort fields
+    // $params->page() — extract pagination
+
+    return PostResource::collection($query->paginate(20));
+}
+```
+
+**When to use JsonApiResource vs JsonResource:**
+- **JsonApiResource** — public APIs consumed by mobile apps, third-party developers, or any client that benefits from a standardized spec. The structure is rigid but predictable.
+- **JsonResource** — internal APIs, admin panels, B2B integrations where you control both client and server and want full flexibility over the response shape.
+
 ## Pagination
 
 ```php
@@ -203,15 +330,29 @@ $this->renderable(function (\Illuminate\Validation\ValidationException $e, $requ
 4. **Wrong status codes** — 200 for success, 201 for created, 400 for bad request, 401 for unauthenticated, 403 for forbidden, 404 for not found, 422 for validation, 500 for server error
 5. **No versioning** — `api/v1/` routes let you break changes without killing existing clients
 6. **Exposing internal errors** — never return `exception->getMessage()` to API clients in production
+7. **Mixing JsonApiResource and JsonResource** — pick one approach per API; mixing makes client code harder
+8. **Missing `type` in JSON:API responses** — JsonApiResource handles this automatically; don't hand-roll responses that omit it
 
 
-## Updated from Research (2026-05)
+## Updated from Research (2026-05-15)
+
+### JSON:API Resources (Laravel 13 — Major Feature)
+
+- **First-party JSON:API spec support** — `JsonApiResource` and `JsonApiQueryParameters` ship in Laravel 13 core
+- **Spec-compliant responses** — `data`, `attributes`, `relationships`, `included`, `links` all auto-generated
+- **Sparse fieldsets** — clients request only specific fields, reducing payload
+- **When to use** — public/mobile/third-party APIs benefit most; internal/admin APIs may prefer flexible `JsonResource`
+- **Install command** — `php artisan make:json-api-resource PostResource`
+
+Sources: [Laravel 13 Docs - JSON:API Resources](https://laravel.com/docs/13.x/eloquent-resources) | [apnahive.com - JSON:API Resources](https://apnahive.com/laravel-13-ships-jsonapi-resources-your-api-just-got-a-spec/) | [programmingfields.com - JSON:API Guide](https://programmingfields.com/laravel-13-json-api-resources/)
+
+### Updated from Research (2026-05)
 
 - **Optimizing API Usage with Rate Limiting in Laravel: Best Practices | by Vishalhari | Medium** (https://medium.com/@vishalhari01/optimizing-api-usage-with-rate-limiting-in-laravel-best-practices-108db750b9f1)
-  By using Laravel’s built-in middleware, creating custom rate limiting logic, monitoring with tools like Laravel Telescope, and providing clear responses when limits are exceeded, you can ensure fair usage and protect your application from abuse.
+  By using Laravel's built-in middleware, creating custom rate limiting logic, monitoring with tools like Laravel Telescope, and providing clear responses when limits are exceeded, you can ensure fair usage and protect your application from abuse.
 
 - **Laravel Sanctum | Laravel 13.x - The clean stack for Artisans and agents** (https://laravel.com/docs/13.x/sanctum)
-  Sanctum allows you to assign &quot;abilities&quot; to tokens. Abilities serve a similar purpose as OAuth&#x27;s &quot;scopes&quot;.
+  Sanctum allows you to assign "abilities" to tokens. Abilities serve a similar purpose as OAuth's "scopes".
 
 - **API Versioning in Laravel 11 - Laravel News** (https://laravel-news.com/api-versioning-in-laravel-11)
   A common approach to writing versioned APIs in Laravel is <strong>separating routes into different files</strong>. Doing so simplifies the overhead of reasoning about a specific API version and keeps things tidy.
