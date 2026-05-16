@@ -571,3 +571,56 @@ $batch->failed(); // number of failures
 - **Debounceable Jobs (Laravel 13.6+)** — `#[DebounceFor]` attribute or `->debounce()` at dispatch keeps only the last job in a time window.
 
 Source: [Laravel 13 Docs - Queues](https://laravel.com/docs/13.x/queues)
+
+### Laravel Reverb Database Driver — WebSocket Without Redis (Laravel 13)
+
+Laravel Reverb now ships with a **native database driver**, eliminating the Redis dependency for real-time WebSocket features. Previously, Reverb required Redis for its internal pub/sub layer. Now you can run full-featured WebSockets with just MySQL/PostgreSQL.
+
+**Why it matters:**
+- Managed VPS / shared hosting deployments no longer need Redis for real-time features
+- Simpler infrastructure for smaller apps — reduces operational cost and complexity
+- Pusher is no longer the only "easy" option for real-time without self-hosting Redis
+
+**Configuration (`config/broadcasting.php` or `.env`):**
+```php
+// .env
+BROADCAST_CONNECTION=reverb
+REVERB_DRIVER=database
+
+# Optional: tune for database driver
+REVERB_DB_POLL_INTERVAL=5000  # polling interval in ms
+```
+
+**Run migrations for Reverb's database tables:**
+```bash
+php artisan reverb:table
+php artisan migrate
+```
+
+**Start Reverb server:**
+```bash
+php artisan reverb:start
+```
+
+**Compare driver options:**
+
+| Driver | Best For | Infrastructure |
+|---|---|---|
+| **Redis** | High-traffic, multi-server | Redis server required |
+| **Database** | Medium traffic, single/simple setup | MySQL/PostgreSQL only |
+| **Log** | Debugging only | None extra |
+
+**Performance note:** Database driver uses polling, which is less efficient than Redis pub/sub at scale. For <1,000 concurrent WebSocket connections, database driver is typically fine. Beyond that, add Redis.
+
+**Reverb in deployment (Supervisor):**
+```ini
+[program:reverb]
+command=php /path-to-project/artisan reverb:start
+numprocs=1
+autostart=true
+autorestart=true
+redirect_stderr=true
+stdout_logfile=/var/log/reverb.log
+```
+
+Source: [Laravel 13 Docs - Reverb](https://laravel.com/docs/13.x/reverb)

@@ -318,3 +318,29 @@ Sources: [Laravel 13 Docs - Search](https://laravel.com/docs/13.x/search) | [Lar
 - **withCount with conditions** — count with specific filters via alias
 
 Source: [Laravel 13 Docs - Eloquent Relationships](https://laravel.com/docs/13.x/eloquent)
+
+### Cache::touch() — Extend TTL Without Re-Fetching (Laravel 13)
+
+`Cache::touch()` updates the expiration time of a cached item **without** re-fetching or modifying its value. Useful for sliding expiration patterns (sessions, activity tracking):
+
+```php
+use Illuminate\Support\Facades\Cache;
+
+// Extend TTL by 1 hour — value stays the same
+Cache::touch('user.last_active.' . $user->id, 3600);
+
+// Sliding session cache — accessed every time, expires 30 min after last access
+Cache::put('session.' . $sessionId, $data, 1800);
+Cache::touch('session.' . $sessionId, 1800); // reset TTL on each activity
+```
+
+**Use cases:**
+- User "last seen" tracking — update TTL on each page view without re-writing data
+- Sliding window caches — frequently accessed data stays hot, rarely used items expire
+- Session-like patterns where access = keep-alive
+
+**Caveats:**
+- `touch()` only works on cache backends that support it natively (Redis, Memcached, Array). File/DB backends may not support it — check driver capabilities.
+- Returns `bool` — `false` if key doesn't exist or backend doesn't support it.
+
+Source: [Laravel 13 Docs - Cache](https://laravel.com/docs/13.x/cache)
