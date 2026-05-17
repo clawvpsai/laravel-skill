@@ -20,6 +20,7 @@ metadata:
 | REST APIs, JSON, rate limiting | `api.md` | API development |
 | XSS, SQL injection, hardening | `security.md` | Security-critical code |
 | Caching, indexing, eager loading | `performance.md` | Optimization |
+| AI agents, tools, streaming, embeddings | `ai.md` | AI/LLM integration |
 | PHPUnit, factories, feature tests | `testing.md` | Test-driven dev |
 | Production deployment, env, configs | `deployment.md` | Going live |
 | File uploads, S3, presigned URLs | `file-uploads.md` | Media handling |

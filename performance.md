@@ -272,7 +272,7 @@ $context = KnowledgeArticle::query()
     ->join("\n\n");
 
 // 2. Feed context to LLM
-$response = AI::chat([
+$response = AI::prompt('openai', 'gpt-4o', [
     'model' => 'gpt-4',
     'messages' => [
         ['role' => 'system', 'content' => "Use this context: {$context}"],

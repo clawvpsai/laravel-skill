@@ -40,6 +40,7 @@ php artisan --version
 | REST APIs, JSON, rate limiting | `api.md` | API development |
 | XSS, SQL injection, hardening | `security.md` | Security-critical code |
 | Caching, indexing, eager loading | `performance.md` | Optimization |
+| AI agents, tools, streaming, embeddings | `ai.md` | AI/LLM integration |
 | PHPUnit, factories, feature tests | `testing.md` | Test-driven dev |
 | Production deployment, Docker, Octane | `deployment.md` | Going live |
 | File uploads, S3, presigned URLs | `file-uploads.md` | Media handling |
@@ -80,7 +81,7 @@ php artisan --version
 The skill is **auto-updated every 6 hours** via a cron job. The agent decides whether to update based on whether it finds meaningful gaps — no forced updates.
 
 **How it works:**
-1. Checks current state of all 17 topic files
+1. Checks current state of all 18 topic files
 2. Identifies weak or outdated areas via web research
 3. Checks for new Laravel/dependency releases
 4. Updates files with new patterns + source URLs
@@ -107,7 +108,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 ## 📊 Skill Stats
 
-- **17 topic files** covering full Laravel development lifecycle
+- **18 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
 - **~6,200+ lines** of production-ready content
 - **Auto-updated** via OpenClaw cron — never stale
