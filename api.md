@@ -273,6 +273,36 @@ RateLimiter::for('posts', function (Request $request) {
 {"message": "Too many requests.", "retry_after": 60}
 ```
 
+## ThrottlesExceptions with Closure (Laravel 13.9+)
+
+`ThrottlesExceptions` middleware (for rate-limiting exception/thrown error responses) now accepts a Closure for dynamic limit configuration — useful for adjusting limits based on exception type or request context:
+
+```php
+use Illuminate\Routing\Middleware\ThrottlesExceptions;
+
+// Static limit
+Route::middleware(ThrottlesExceptions::class)->group(function () {
+    Route::post('/webhook', [WebhookController::class, 'handle']);
+});
+
+// Dynamic limit via Closure (Laravel 13.9+) — determine limit at runtime
+Route::middleware(ThrottlesExceptions::using(function (Request $request, \Throwable $e) {
+    // Stricter limit for auth-related exceptions
+    if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+        return 3; // only 3 attempts for auth errors
+    }
+    // More lenient for other exceptions
+    return 10;
+}))->group(function () {
+    Route::post('/login', [AuthController::class, 'login']);
+});
+```
+
+**Common use cases:**
+- Tighter throttling on authentication endpoints to prevent brute-force
+- Different limits per exception type (e.g., 3 for auth, 10 for general validation)
+- Context-aware limits based on user role or request origin
+
 ## Error Responses
 
 ```php
@@ -333,8 +363,13 @@ $this->renderable(function (\Illuminate\Validation\ValidationException $e, $requ
 7. **Mixing JsonApiResource and JsonResource** — pick one approach per API; mixing makes client code harder
 8. **Missing `type` in JSON:API responses** — JsonApiResource handles this automatically; don't hand-roll responses that omit it
 
+## Updated from Research (2026-05-18)
 
-## Updated from Research (2026-05-15)
+### ThrottlesExceptions Closure Support (Laravel 13.9+)
+
+- `ThrottlesExceptions` middleware now accepts a Closure as its limit parameter for dynamic, runtime-determined throttling limits
+- Enables exception-type-aware throttling (e.g., stricter limits on auth exceptions)
+- Use case: protect login endpoints from brute-force with per-exception-type limits
 
 ### JSON:API Resources (Laravel 13 — Major Feature)
 
@@ -344,15 +379,4 @@ $this->renderable(function (\Illuminate\Validation\ValidationException $e, $requ
 - **When to use** — public/mobile/third-party APIs benefit most; internal/admin APIs may prefer flexible `JsonResource`
 - **Install command** — `php artisan make:json-api-resource PostResource`
 
-Sources: [Laravel 13 Docs - JSON:API Resources](https://laravel.com/docs/13.x/eloquent-resources) | [apnahive.com - JSON:API Resources](https://apnahive.com/laravel-13-ships-jsonapi-resources-your-api-just-got-a-spec/) | [programmingfields.com - JSON:API Guide](https://programmingfields.com/laravel-13-json-api-resources/)
-
-### Updated from Research (2026-05)
-
-- **Optimizing API Usage with Rate Limiting in Laravel: Best Practices | by Vishalhari | Medium** (https://medium.com/@vishalhari01/optimizing-api-usage-with-rate-limiting-in-laravel-best-practices-108db750b9f1)
-  By using Laravel's built-in middleware, creating custom rate limiting logic, monitoring with tools like Laravel Telescope, and providing clear responses when limits are exceeded, you can ensure fair usage and protect your application from abuse.
-
-- **Laravel Sanctum | Laravel 13.x - The clean stack for Artisans and agents** (https://laravel.com/docs/13.x/sanctum)
-  Sanctum allows you to assign "abilities" to tokens. Abilities serve a similar purpose as OAuth's "scopes".
-
-- **API Versioning in Laravel 11 - Laravel News** (https://laravel-news.com/api-versioning-in-laravel-11)
-  A common approach to writing versioned APIs in Laravel is <strong>separating routes into different files</strong>. Doing so simplifies the overhead of reasoning about a specific API version and keeps things tidy.
+Sources: [Laravel 13 Docs - JSON:API Resources](https://laravel.com/docs/13.x/eloquent-resources) | [Laravel 13 Docs - Rate Limiting](https://laravel.com/docs/13.x/rate-limiting)

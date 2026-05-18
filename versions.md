@@ -3,7 +3,7 @@
 ## Active Versions
 
 - **Laravel 11** — Still receives security fixes
-- **Laravel 12** — Active development
+- **Laravel 12** — Active development (v12.59.0 as of May 2026)
 - **Laravel 13** — Current latest (v13.9.0 as of May 2026)
 
 ## Version Selector Prompt
@@ -41,6 +41,8 @@ Then load the relevant sections below.
 - **Migration events with name** — `MigrationStarted` and `MigrationEnded` events now carry the migration name for more granular event handling.
 - **Generic return types on Builder paginate** — `paginate()`, `simplePaginate()`, `cursorPaginate()` now return properly typed `LengthAwarePaginator`/`Paginator` instances.
 - **Queue:pause error display** — `php artisan queue:pause` now shows a clear error when the Worker is not pausable.
+- **ThrottlesExceptions Closure support** — `ThrottlesExceptions` middleware now accepts a Closure for dynamic, exception-type-aware rate limiting.
+- **foreignUuidFor schema helper** — `$table->foreignUuidFor(Model::class)` collapses UUID FK + index + constraint into one call.
 - Internal: `mt_rand()` replaces `rand()`, `preg_split` replaces `mb_split`, PSR-7 multipart array handling fixed.
 
 ### New in Laravel 13.8 (May 2026)
@@ -54,14 +56,15 @@ Then load the relevant sections below.
 - **schedule:list environment filter** — `php artisan schedule:list --environment=production` filters output by environment
 - **Collection min/max generic result type** — `Collection::min()`/`max()` now return `T|null` instead of `mixed`
 - **All queue inspection methods** — new `allPushed()`, `allNotPushed()`, `allPushedOn()` methods on QueueFake for batch assertions
+- **SortDirection enum** — `Illuminate\Database\Query\SortDirection` provides type-safe `Ascending`/`Descending` for `orderBy()` instead of string `'asc'`/`'desc'`
 
 ### New in Laravel 13.7 (April 2026)
-### New in Laravel 13.6 (April 2026)
 
 - **Debounceable Queued Jobs** — `#[DebounceFor]` attribute keeps only the last dispatch within a time window. Eliminates redundant processing from bursty workloads (e.g., user edits same doc 10x in 30s → 1 rebuild instead of 10).
 - **JSON support for health route** — `/up` health endpoint now supports returning JSON response data for richer health status
 - **JsonFormatter** — native `Monolog\Formatter\JsonFormatter` support for structured JSON log output
 - **Cloudflare Email Service support** — new mail driver integration for Cloudflare's email routing
+- **@fonts Blade directive** — `@fonts` generates `<link rel="preload">` tags for Vite-managed fonts, improving Core Web Vitals
 
 ### New in Laravel 13.5 (Late April 2026)
 
@@ -93,7 +96,7 @@ php artisan boost:install
 
 ---
 
-## Laravel 12 (February 2025)
+## Laravel 12 (February 2025, v12.59.0)
 
 ### New in Laravel 12
 
@@ -114,6 +117,15 @@ php artisan boost:install
 - `config/app.php` no longer has `aliases` array
 - Route middleware registered in `bootstrap/app.php` via `$middleware->`
 - `App\Http\Kernel` and `App\Console\Kernel` fully removed
+
+### Laravel 12 Latest Patch (v12.59.0 — May 2026)
+
+v12.59.0 is a **patch release** — contains bug fixes and features backported from Laravel 13, no new breaking features:
+- Worker pausing fixes backported from 13.x
+- Cloud queue support backported from 13.x
+- Infinite recursion fixes for middleware and scopes
+- SQS credential provider fixes
+- No new features — purely maintenance
 
 ---
 
@@ -179,7 +191,7 @@ php artisan boost:install
 ```bash
 # Check Laravel version
 php artisan --version
-# Laravel 13.8.0
+# Laravel 13.9.0
 
 # Check PHP version
 php -v

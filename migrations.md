@@ -42,6 +42,7 @@ return new class extends Migration
 |---|---|
 | `$table->id()` | BigInt auto-increment, primary key |
 | `$table->foreignId('x_id')` | BigInt FK, adds index + FK constraint |
+| `$table->foreignUuidFor(Model::class)` | UUID FK (CHAR(36)), adds index + FK constraint |
 | `$table->string('x', 255)` | VARCHAR with optional length |
 | `$table->text('x')` | TEXT |
 | `$table->longText('x')` | LONGTEXT |
@@ -58,6 +59,32 @@ return new class extends Migration
 | `$table->enum('x', ['a','b'])` | ENUM (use with caution) |
 | `$table->morphs('taggable')` | taggable_id + taggable_type indexes |
 | `$table->nullableMorphs('taggable')` | nullable version |
+
+## UUID Foreign Keys (Laravel 13.9+)
+
+Use `foreignUuidFor()` for UUID-based foreign key columns — cleaner than manually adding `$table->uuid()` + `$table->foreign()`:
+
+```php
+Schema::create('comments', function (Blueprint $table) {
+    $table->id();
+    $table->foreignUuidFor(User::class);         // user_uuid — adds FK + index
+    $table->foreignUuidFor(Post::class, 'post'); // post_uuid — custom suffix
+    $table->text('body');
+    $table->timestamps();
+});
+```
+
+```php
+// Equivalent manual approach (before Laravel 13.9):
+$table->uuid('user_uuid');
+$table->foreign('user_uuid')->references('id')->on('users');
+// foreignUuidFor() collapses this into one call
+```
+
+**With constraints:**
+```php
+$table->foreignUuidFor(User::class)->nullable()->constrained()->cascadeOnDelete();
+```
 
 ## Modifiers
 
@@ -280,8 +307,9 @@ php artisan migrate:fresh --seed       # reset + seed
 7. **`decimal` vs `float` for money** — always use `decimal(10,2)` for currency, never float
 8. **Nullable timestamps without default** — Laravel expects `nullable()` timestamps to have a default or be set explicitly; can cause "Incorrect datetime value" errors
 
-## Updated from Research (2026-05-14)
+## Updated from Research (2026-05-18)
 
+- **foreignUuidFor() (Laravel 13.9+)** — `$table->foreignUuidFor(Model::class)` collapses UUID FK + index + constraint into one call; cleaner than manual `$table->uuid()` + `->foreign()`
 - Laravel 13.9 adds `MigrationStarted` and `MigrationEnded` events with migration class name (previously only connection name was available)
 - Laravel 13 supports `useCurrentOnUpdate()` for auto-updating timestamps
 - `decimal` is the correct type for monetary values, not `float`

@@ -153,6 +153,25 @@ $posts = Post::whereRelation('author', 'verified', true)->get();
 $posts = Post::whereRelation('author', fn($q) => $q->where('role', 'admin'))->get();
 ```
 
+**SortDirection Enum (Laravel 13.8+):**
+```php
+use Illuminate\Database\Query\SortDirection;
+
+// Instead of string 'asc'/'desc', use type-safe SortDirection enum
+Post::orderBy('created_at', SortDirection::Descending)->get();
+Post::orderBy('title', SortDirection::Ascending)->get();
+
+// Also works with collection sort/sortBy
+$posts = $posts->sortBy('created_at', SortDirection::Descending);
+
+// In query builder scope:
+public function scopeOrderByDate($query, string $direction = 'desc')
+{
+    $sortDir = SortDirection::tryFrom($direction) ?? SortDirection::Descending;
+    return $query->orderBy('created_at', $sortDir);
+}
+```
+
 **Always use DB bindings — never string interpolation:**
 ```php
 // SAFE
@@ -266,8 +285,9 @@ Post::factory()->unpublished()->make();
 6. **Not handling unique constraint violations** — wrap in try/catch or use `firstOrCreate`
 7. **`nestedWhere` with complex AND/OR without parentheses** — always wrap OR groups in `where()` callback to ensure correct precedence
 
-## Updated from Research (2026-05)
+## Updated from Research (2026-05-18)
 
+- **SortDirection enum (Laravel 13.8+)** — `Illuminate\Database\Query\SortDirection` provides type-safe `Ascending`/`Descending` values for `orderBy()` instead of string `'asc'`/`'desc'`
 - **nestedWhere()** (Laravel 12+) — cleaner alternative to deeply nested closures for mixed AND/OR conditions
 - **whereRelation()** (Laravel 10+) — `whereRelation('author', 'verified', true)` reads more naturally than `whereHas`
 
