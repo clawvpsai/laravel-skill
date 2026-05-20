@@ -399,6 +399,34 @@ Event::listen(\Illuminate\Queue\Events\WorkerResuming::class, function (WorkerRe
 - Coordinate with Kubernetes pod lifecycle or AWS auto-scaling graceful shutdown
 - Log worker availability state for monitoring dashboards
 
+### WorkerIdle Event (Laravel 13.10+)
+
+`WorkerIdle` fires when the queue worker has no jobs to process during a polling cycle. Unlike `WorkerLooping` (which fires on every loop iteration), `WorkerIdle` only fires when the queue is empty — useful for idling down, emitting metrics, or triggering cleanup:
+
+```php
+use Illuminate\Queue\Events\WorkerIdle;
+use Illuminate\Queue\Events\Looping;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Queue\WorkerOptions;
+
+Event::listen(WorkerIdle::class, function (WorkerIdle $event, array $payload) {
+    [$connection, $queue, $workerOptions] = $payload;
+
+    Log::info("Worker idle — queue empty", [
+        'connection' => $connection,
+        'queue' => $queue,
+    ]);
+});
+```
+
+**vs WorkerLooping:** `WorkerLooping` fires on every loop (even when jobs exist). `WorkerIdle` only fires when the queue is empty, making it more efficient for "nothing to do" logic.
+
+**Use cases:**
+- Scale down worker instances when idle (emit zero-queue-depth metric → trigger scale-in)
+- Run cleanup tasks only when the queue is drained
+- Emit "queue depth = 0" metrics for dashboards
+- Trigger health check to report "idle and healthy"
+
 ## SQS Large Payload Disk Storage (Laravel 13.9+)
 
 SQS has a 256KB message size limit. For jobs with large payloads (serialized models, bulk data), Laravel 13.9 can offload the body to a local disk (or S3) and send only a reference through SQS:
@@ -557,7 +585,7 @@ $batch->failed(); // number of failures
 6. **No retry backoff** — hammer the failing service with immediate retries
 7. **Duplicate dispatches causing double-processing** — use `#[DebounceFor]` for bursty workloads where only the last dispatch matters
 
-## Updated from Research (2026-05-15)
+## Updated from Research (2026-05-20)
 
 - **SQS Large Payload Disk Storage (Laravel 13.9+)** — payloads exceeding SQS 256KB limit are offloaded to local disk or S3 automatically. Configure via `payload_disk` and `payload_disk_config` in the SQS queue connection. Eliminates manual setup of SQS Extended Client.
 - **Cloud Queue Metrics (Laravel 13.9+)** — first-party `Queue::connection()->metrics()` API exposes `jobsReceived()`, `jobsProcessed()`, `jobsFailed()`, and `averageLatency()` for monitoring dashboards and health checks.
@@ -569,6 +597,10 @@ $batch->failed(); // number of failures
 - **Interruptible Jobs (Laravel 13.7+)** — `ShouldInterrupt` interface lets jobs respond to worker shutdown signals and checkpoint progress for resumable processing.
 - **WorkerPausing/WorkerResuming Events (Laravel 13.8+)** — new worker lifecycle events for coordinating external resources during pause/resume cycles.
 - **Debounceable Jobs (Laravel 13.6+)** — `#[DebounceFor]` attribute or `->debounce()` at dispatch keeps only the last job in a time window.
+- **Dedicated Cloud Queue (Laravel 13.11+)** — `Illuminate\Foundation\Cloud\Queue` decorator wraps any queue driver with cloud-native instrumentation. Tracks processing job, job start timestamps, and dispatches `CloudJobFetching/Processing/Processed/Failed` events. Use via `cloud` queue connection or `Cloud` facade.
+- **Cloud-Request-ID (renamed from X-Request-ID, Laravel 13.11+)** — renamed for clarity in cloud deployments. Auto-written to log entries for distributed request tracing.
+- **WorkerIdle Event (Laravel 13.10+)** — fires when the queue worker has no jobs to process (only on empty queue, unlike `WorkerLooping` which fires every iteration). Useful for scaling down, cleanup, and idle metrics.
+- **assertPushedOnce (Laravel 13.10+)** — `Queue::assertPushedOnce($job)` asserts a job was pushed exactly once. Accepts optional callback for partial matching.
 
 Source: [Laravel 13 Docs - Queues](https://laravel.com/docs/13.x/queues)
 
@@ -624,3 +656,73 @@ stdout_logfile=/var/log/reverb.log
 ```
 
 Source: [Laravel 13 Docs - Reverb](https://laravel.com/docs/13.x/reverb)
+
+---
+
+## Dedicated Cloud Queue (Laravel 13.11+)
+
+`Illuminate\Foundation\Cloud\Queue` is a **decorator wrapper** around any existing queue driver (Redis, SQS, database, etc.) that adds cloud-native instrumentation:
+
+- Tracks the currently processing job and when it started
+- Dispatches `CloudJobFetching`, `CloudJobProcessing`, `CloudJobProcessed`, `CloudJobFailed` events
+- Logs `Cloud-Request-ID` alongside job processing for distributed tracing
+- Provides structured metrics via `Queue::connection('cloud')->metrics()`
+
+**How it works:**
+```php
+// config/queue.php
+'connections' => [
+    'cloud' => [
+        'driver' => 'cloud',
+        'connection' => 'redis',   // underlying driver to wrap
+        'queue' => env('AWS_SQS_QUEUE_URL'),
+        'region' => env('AWS_DEFAULT_REGION'),
+    ],
+],
+```
+
+```php
+// .env
+QUEUE_CONNECTION=cloud
+```
+
+**Or wrap at dispatch time using the Cloud facade:**
+```php
+use Illuminate\Support\Facades\Cloud;
+
+Cloud::connection('sqs')->queue('emails')->push(new SendEmailJob($user));
+```
+
+**Dedicated Cloud Queue events:**
+```php
+use Illuminate\Foundation\Cloud\Events\CloudJobFetching;
+use Illuminate\Foundation\Cloud\Events\CloudJobProcessing;
+use Illuminate\Foundation\Cloud\Events\CloudJobProcessed;
+use Illuminate\Foundation\Cloud\Events\CloudJobFailed;
+
+Event::listen(CloudJobProcessing::class, function (CloudJobProcessing $event) {
+    Log::info("Cloud job processing", [
+        'job' => $event->job->connectionName,
+        'started_at' => $event->startedAt->toIso8601String(),
+        'cloud_request_id' => $event->cloudRequestId,
+    ]);
+});
+```
+
+**CloudFailedJobProvider:**
+Cloud queue includes a dedicated `FailedJobProvider` that stores failure metadata (exception class, message, timestamps, cloud request ID) for cross-service correlation:
+```php
+// config/queue.php
+'failed' => [
+    'driver' => 'cloud',
+    'provider' => 'database',  // underlying failed job storage
+],
+```
+
+**Use cases:**
+- Multi-service job tracing with `Cloud-Request-ID` correlation
+- Per-job latency tracking (job started → job finished → latency metric)
+- Cloud-native failed job storage with rich metadata
+- Foundation for managed queue platforms (Laravel Cloud, Vapor, etc.)
+
+Source: [Laravel 13 PR #60180](https://github.com/laravel/framework/pull/60180)

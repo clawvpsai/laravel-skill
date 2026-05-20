@@ -237,6 +237,11 @@ Queue::assertPushedOn('high-priority', ProcessPostJob::class);
 // Assert job was pushed to queue defined by enum (Laravel 13.8+)
 Queue::assertPushedOn(QueueNames::HighPriority, ProcessPostJob::class);
 
+// Assert job was pushed exactly once (Laravel 13.10+)
+Queue::assertPushedOnce(SendWelcomeEmailJob::class);
+// Also accepts a callback for partial matching
+Queue::assertPushedOnce(SendWelcomeEmailJob::class, fn($job) => $job->userId === 42);
+
 // Batch queue assertions (Laravel 13.8+)
 Queue::allPushed();                        // all dispatched jobs
 Queue::allNotPushed(ProcessPostJob::class); // all jobs NOT dispatched
@@ -408,7 +413,11 @@ class PostCreationTest extends DuskTestCase
 9. **Forgetting to mock HTTP** — real API calls slow tests and can fail unexpectedly
 10. **Using stale old input in redirect tests** — use `assertSessionMissingInput()` after successful form submission
 
-## Updated from Research (2026-05-06)
+## Updated from Research (2026-05-20)
+
+### Laravel 13.10 (May 2026)
+
+- **assertPushedOnce()** — `Queue::assertPushedOnce($job, $callback?)` asserts a job was pushed exactly once. Equivalent to `assertPushed` with exactly 1 expected call, but cleaner and more explicit. Optionally accepts a callback for partial matching.
 
 ### Laravel 13.8 (May 2026)
 

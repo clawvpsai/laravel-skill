@@ -146,8 +146,11 @@ public function attributes(): array
 3. **Not using Form Request** — keeps controller clean, easy to reuse
 4. **No custom error messages** — always provide user-friendly messages in `messages()`
 5. **Validating arrays incorrectly** — `tags.*` validates each element
+6. **`starts_with`/`ends_with` rejecting numeric values** — before Laravel 13.10, these rules rejected integer/float input. Now they accept them. If you have numeric validation logic that worked around this, simplify it (Laravel 13.10+).
 
-## Updated from Research (2026-05)
+## Updated from Research (2026-05-20)
+- **starts_with/ends_with accept numeric values (Laravel 13.10+)** — fixed validation rule regression. Previously rejected integer/float values. Now accepts them alongside strings.
+- **Line break injection prevention (Laravel 13.10+)** — email validation now rejects values containing line breaks, preventing email header injection attacks.
 - Laravel 13 enhances `required_if` behavior and adds `prohibits` rule
 - `Rule::when()` method allows conditional rule application
 

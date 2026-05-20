@@ -3,8 +3,8 @@
 ## Active Versions
 
 - **Laravel 11** — Still receives security fixes
-- **Laravel 12** — Active development (v12.59.0 as of May 2026)
-- **Laravel 13** — Current latest (v13.9.0 as of May 2026)
+- **Laravel 12** — Active development (v12.60.2 as of May 2026)
+- **Laravel 13** — Current latest (v13.11.2 as of May 2026)
 
 ## Version Selector Prompt
 
@@ -17,7 +17,7 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — May 2026, v13.9.0)
+## Laravel 13 (Latest — May 2026, v13.11.2)
 
 ### New in Laravel 13
 
@@ -70,6 +70,28 @@ Then load the relevant sections below.
 
 - Queue infrastructure maturity improvements across v13.3 through v13.6 releases
 
+
+### New in Laravel 13.10 (May 2026, v13.10.0)
+
+- **WorkerIdle event** — new `WorkerIdle` event dispatched when the queue worker has no jobs to process. Useful for cleanup, metrics, or scaling down workers. Receives `WorkerOptions`.
+- **assertPushedOnce()** — new `Queue::assertPushedOnce()` assertion to verify a job was pushed exactly once (alias for `assertPushed($job)` with exactly 1 call count).
+- **starts_with/ends_with accept numeric values** — `starts_with` and `ends_with` validation rules now correctly accept numeric (integer/float) input values.
+- **Validate line breaks in emails** — email validation now rejects values containing line breaks (potential email header injection).
+- **storage store artisan command** — new `php artisan storage:store` command to write files to storage disks programmatically.
+- **URL-encode paths** — Laravel now properly URL-encodes paths in routing to prevent traversal issues.
+- **Schedule::group() lifecycle callbacks** — `Schedule::group()` now supports `before()`, `after()`, `onFailure()`, and `onSuccess()` callbacks.
+- **Delimit aggregate aliases** — aggregate query aliases (COUNT, SUM, AVG) are now properly delimited in the query builder.
+- **SQS overflow store flush on queue:clear** — `php artisan queue:clear` now optionally flushes the SQS FIFO overflow store.
+- **queue:list --json output** — `php artisan queue:work --stop-when-empty` option for CI/CD scripts.
+- **WorkerLooping event now receives WorkerOptions** — `WorkerLooping` event listeners can now access `WorkerOptions` for context-aware handling.
+- **Cloud-Request-ID header** — request tracking header renamed from `X-Request-ID` to `Cloud-Request-ID` for clarity in cloud deployments.
+
+### New in Laravel 13.11 (May 2026, v13.11.2)
+
+- **Dedicated Cloud Queue** — new `Illuminate\Foundation\Cloud\Queue` decorator wraps any queue driver (Redis, SQS, etc.) with cloud-native instrumentation. Tracks currently processing job, job start timestamps, and dispatches cloud-specific events. Use via the `cloud` queue connection.
+- **Cloud-Request-ID in logs** — `Cloud-Request-ID` header value is automatically written to log entries for request tracing across services.
+- **Boot managed queues before service providers** — cloud queue service providers now boot before application service providers, ensuring queue workers are ready before the app starts processing jobs.
+- **Lifecycle deferred event method fixes** — fixed edge cases in event deferral for cloud queue lifecycle events.
 ### Breaking Changes from 12
 
 - PHP 8.2 minimum (8.3 recommended)
@@ -96,7 +118,7 @@ php artisan boost:install
 
 ---
 
-## Laravel 12 (February 2025, v12.59.0)
+## Laravel 12 (February 2025, v12.60.2)
 
 ### New in Laravel 12
 
@@ -118,13 +140,15 @@ php artisan boost:install
 - Route middleware registered in `bootstrap/app.php` via `$middleware->`
 - `App\Http\Kernel` and `App\Console\Kernel` fully removed
 
-### Laravel 12 Latest Patch (v12.59.0 — May 2026)
+### Laravel 12 Latest Patch (v12.60.2 — May 2026)
 
-v12.59.0 is a **patch release** — contains bug fixes and features backported from Laravel 13, no new breaking features:
+v12.60.2 is a **patch release** — contains bug fixes and features backported from Laravel 13, no new breaking features:
 - Worker pausing fixes backported from 13.x
 - Cloud queue support backported from 13.x
 - Infinite recursion fixes for middleware and scopes
 - SQS credential provider fixes
+- Lifecycle deferred event fixes
+- Boot managed queues before service providers boot (backport from 13.11.2)
 - No new features — purely maintenance
 
 ---
@@ -191,7 +215,7 @@ v12.59.0 is a **patch release** — contains bug fixes and features backported f
 ```bash
 # Check Laravel version
 php artisan --version
-# Laravel 13.9.0
+# Laravel 13.11.2 (May 2026)
 
 # Check PHP version
 php -v
