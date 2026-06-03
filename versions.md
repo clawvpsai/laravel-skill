@@ -3,8 +3,8 @@
 ## Active Versions
 
 - **Laravel 11** — Still receives security fixes
-- **Laravel 12** — Active development (v12.60.2 as of May 2026)
-- **Laravel 13** — Current latest (v13.11.2 as of May 2026)
+- **Laravel 12** — Active development (v12.61.0 as of May 2026)
+- **Laravel 13** — Current latest (v13.13.0 as of June 2026)
 
 ## Version Selector Prompt
 
@@ -17,7 +17,7 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — May 2026, v13.11.2)
+## Laravel 13 (Latest — June 2026, v13.13.0)
 
 ### New in Laravel 13
 
@@ -33,6 +33,66 @@ Then load the relevant sections below.
 - **New PHP Attributes for Testing:** `#[Group]`, `#[TestProperty]`, `#[UnitTest]`
 - **New PHP Attributes for Queues:** `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]`
 - **Queue Routing** — `Queue::route()` for centralized queue/connection routing by job class
+
+### New in Laravel 13.13 (June 2026, v13.13.0)
+
+- **MariaDB Vector Index support** — new vector index capability for AI/embeddings workloads directly in migrations: `$table->vectorIndex(['embedding'], 'vector_index', 'vector_length:1536)` (requires MariaDB with vector support)
+- **`Bus::bulk()`** — new method for dispatching multiple jobs at once with a single call. Useful for batch processing: `Bus::bulk([new ProcessItem(1), new ProcessItem(2), new ProcessItem(3)])`
+- **`Cache` attribute memoization** — `#[Cache(ttl: 300)]` now supports memoization — the callback is only executed once and the result is cached for subsequent calls within the same request
+- **`Http::asPsrClient()`** — HTTP facade now implements `Psr\Http\Client\ClientInterface`, allowing Laravel's Http client to be used as a drop-in PSR-18 client
+- **`attachFromStorage` for Mailables** — `MailMessage::attachFromStorage()` convenience method for attaching files from Laravel storage disks to notifications/mails
+- **`InspectedJob` payload** — queue jobs can now carry an arbitrary payload array via `InspectedJob`, useful for observability and debugging
+- **Cloud managed queue FIFO fix** — fixed FIFO name normalization in Cloud managed queues (backported from 13.11 fix)
+- **SQL Server unique constraint error handling** — `isUniqueConstraintError()` now catches SQL Server error 2627
+- **`whereDate`/`whereTime` crash fix** — fixed crash when `$column` is a `Query\Expression`
+- **`assertJsonPathsCanonicalizing`** — new `TestResponse` assertion: `$response->assertJsonPathsCanonicalizing($paths)` for order-independent JSON comparison
+- **`Str::studly()`/`Str::pascal()` normalize parameter** — both methods now accept `normalize: true` to strip non-alphanumeric chars before casing: `Str::studly('hello-world_test', normalize: true)` → `HelloWorldTest`
+- **Image dimension validation operator fix** — fixed inverted ratio comparison in dimension validation rules
+- **Scheduler opt-out of pause/interrupt cache** — scheduled tasks can now opt out of worker pause and interrupt cache checks via attribute
+- **Event skipping indication** — events can now signal they were intentionally skipped in listeners
+- **`UniqueFor` hint unit** — improved type hinting for `UniqueFor` validation rule
+
+### New in Laravel 13.12 (May 2026, v13.12.0)
+
+- **Worker restart on lost connection opt-out** — queue workers can now be configured to NOT restart on lost database/Redis connection via `Queue::preventWorkerRestartOnLostConnection()`
+- **Scheduler attributes** — `Schedule` now supports custom attributes for grouping/organizing scheduled tasks: `->attributes(['group' => 'critical'])`
+- **`Str::studly()`/`Str::pascal()` normalize parameter** — see v13.13 entry above (same feature, noted in both releases)
+- **`assertJsonPathsCanonicalizing`** — see v13.13 entry above
+- **`queue:clear` default param null** — `queue:clear` command now defaults `driver` param to `null` instead of requiring explicit driver argument
+- **Scheduler callback parameter resolution** — scheduled event callbacks are now resolved by type rather than parameter name, fixing edge cases with DI
+- **`compact()` removal** — all remaining `compact()` calls in framework replaced with explicit arrays (compatibility with PHP 8.4)
+- **SQLite `file:` prefix URI support** — SQLite connections now support `file:` prefix in DSN: `sqlite://file:/path/to/database`
+- **ClearCommand prohibitable** — `queue:clear`, `cache:clear`, `config:clear` now implement `Prohibitable` interface
+- **Auto-discovered listeners opt-out** — event listeners can opt out of auto-discovery via `#[Discoverable(enabled: false)]`
+- **`Up`/`Down` commands exception reporting** — `php artisan up` and `php artisan down` now properly report exceptions instead of silently failing
+- **`Number::spell()` type fix** — fixed incorrect `@return` types in `Number::spell()`, `ordinal()`, and `spellOrdinal()`
+- **Async HTTP retries with array backoff** — async HTTP client retries now work correctly with array backoff values like `[1, 5, 10]`
+- **PSR-7 multipart array handling** — fixed multipart/form-data handling for PSR-7 responses
+- **`Optional::offsetUnset()` docblock** — fixed incorrect docblock type hint
+- **`factory()->pivot()` stub** — new `factory()->pivot()` method generates pivot table model factories
+- **`KeyGenerateCommand` prohibited** — `php artisan key:generate` now respects the `Prohibitable` interface
+
+### New in Laravel 13.11 (May 2026, v13.11.2)
+
+- **Dedicated Cloud Queue** — new `Illuminate\Foundation\Cloud\Queue` decorator wraps any queue driver (Redis, SQS, etc.) with cloud-native instrumentation. Tracks currently processing job, job start timestamps, and dispatches cloud-specific events. Use via the `cloud` queue connection.
+- **Cloud-Request-ID in logs** — `Cloud-Request-ID` header value is automatically written to log entries for request tracing across services.
+- **Boot managed queues before service providers** — cloud queue service providers now boot before application service providers, ensuring queue workers are ready before the app starts processing jobs.
+- **Lifecycle deferred event method fixes** — fixed edge cases in event deferral for cloud queue lifecycle events.
+
+### New in Laravel 13.10 (May 2026, v13.10.0)
+
+- **WorkerIdle event** — new `WorkerIdle` event dispatched when the queue worker has no jobs to process. Useful for cleanup, metrics, or scaling down workers. Receives `WorkerOptions`.
+- **assertPushedOnce()** — new `Queue::assertPushedOnce()` assertion to verify a job was pushed exactly once (alias for `assertPushed($job)` with exactly 1 call count).
+- **starts_with/ends_with accept numeric values** — `starts_with` and `ends_with` validation rules now correctly accept numeric (integer/float) input values.
+- **Validate line breaks in emails** — email validation now rejects values containing line breaks (potential email header injection).
+- **storage store artisan command** — new `php artisan storage:store` command to write files to storage disks programmatically.
+- **URL-encode paths** — Laravel now properly URL-encodes paths in routing to prevent traversal issues.
+- **Schedule::group() lifecycle callbacks** — `Schedule::group()` now supports `before()`, `after()`, `onFailure()`, and `onSuccess()` callbacks.
+- **Delimit aggregate aliases** — aggregate query aliases (COUNT, SUM, AVG) are now properly delimited in the query builder.
+- **SQS overflow store flush on queue:clear** — `php artisan queue:clear` now optionally flushes the SQS FIFO overflow store.
+- **queue:list --json output** — `php artisan queue:work --stop-when-empty` option for CI/CD scripts.
+- **WorkerLooping event now receives WorkerOptions** — `WorkerLooping` event listeners can now access `WorkerOptions` for context-aware handling.
+- **Cloud-Request-ID header** — request tracking header renamed from `X-Request-ID` to `Cloud-Request-ID` for clarity in cloud deployments.
 
 ### New in Laravel 13.9 (May 2026)
 
@@ -70,28 +130,6 @@ Then load the relevant sections below.
 
 - Queue infrastructure maturity improvements across v13.3 through v13.6 releases
 
-
-### New in Laravel 13.10 (May 2026, v13.10.0)
-
-- **WorkerIdle event** — new `WorkerIdle` event dispatched when the queue worker has no jobs to process. Useful for cleanup, metrics, or scaling down workers. Receives `WorkerOptions`.
-- **assertPushedOnce()** — new `Queue::assertPushedOnce()` assertion to verify a job was pushed exactly once (alias for `assertPushed($job)` with exactly 1 call count).
-- **starts_with/ends_with accept numeric values** — `starts_with` and `ends_with` validation rules now correctly accept numeric (integer/float) input values.
-- **Validate line breaks in emails** — email validation now rejects values containing line breaks (potential email header injection).
-- **storage store artisan command** — new `php artisan storage:store` command to write files to storage disks programmatically.
-- **URL-encode paths** — Laravel now properly URL-encodes paths in routing to prevent traversal issues.
-- **Schedule::group() lifecycle callbacks** — `Schedule::group()` now supports `before()`, `after()`, `onFailure()`, and `onSuccess()` callbacks.
-- **Delimit aggregate aliases** — aggregate query aliases (COUNT, SUM, AVG) are now properly delimited in the query builder.
-- **SQS overflow store flush on queue:clear** — `php artisan queue:clear` now optionally flushes the SQS FIFO overflow store.
-- **queue:list --json output** — `php artisan queue:work --stop-when-empty` option for CI/CD scripts.
-- **WorkerLooping event now receives WorkerOptions** — `WorkerLooping` event listeners can now access `WorkerOptions` for context-aware handling.
-- **Cloud-Request-ID header** — request tracking header renamed from `X-Request-ID` to `Cloud-Request-ID` for clarity in cloud deployments.
-
-### New in Laravel 13.11 (May 2026, v13.11.2)
-
-- **Dedicated Cloud Queue** — new `Illuminate\Foundation\Cloud\Queue` decorator wraps any queue driver (Redis, SQS, etc.) with cloud-native instrumentation. Tracks currently processing job, job start timestamps, and dispatches cloud-specific events. Use via the `cloud` queue connection.
-- **Cloud-Request-ID in logs** — `Cloud-Request-ID` header value is automatically written to log entries for request tracing across services.
-- **Boot managed queues before service providers** — cloud queue service providers now boot before application service providers, ensuring queue workers are ready before the app starts processing jobs.
-- **Lifecycle deferred event method fixes** — fixed edge cases in event deferral for cloud queue lifecycle events.
 ### Breaking Changes from 12
 
 - PHP 8.2 minimum (8.3 recommended)
@@ -118,7 +156,7 @@ php artisan boost:install
 
 ---
 
-## Laravel 12 (February 2025, v12.60.2)
+## Laravel 12 (February 2025, v12.61.0)
 
 ### New in Laravel 12
 
@@ -140,9 +178,9 @@ php artisan boost:install
 - Route middleware registered in `bootstrap/app.php` via `$middleware->`
 - `App\Http\Kernel` and `App\Console\Kernel` fully removed
 
-### Laravel 12 Latest Patch (v12.60.2 — May 2026)
+### Laravel 12 Latest Patch (v12.61.0 — May 2026)
 
-v12.60.2 is a **patch release** — contains bug fixes and features backported from Laravel 13, no new breaking features:
+v12.61.0 is a **patch release** — contains bug fixes and features backported from Laravel 13, no new breaking features:
 - Worker pausing fixes backported from 13.x
 - Cloud queue support backported from 13.x
 - Infinite recursion fixes for middleware and scopes
@@ -193,7 +231,7 @@ v12.60.2 is a **patch release** — contains bug fixes and features backported f
 - PHP 8.3+ (Laravel 13 requires 8.3+, optimized for 8.4)
 - Composer 2.x
 - Vite (not Mix — Mix deprecated in 11+)
-- SQLite for local dev
+- SQLite for local dev (zero config)
 - `php artisan key:generate` on fresh install
 - `assertSuccessful()` not `assertStatus(200)` in tests
 
@@ -215,7 +253,7 @@ v12.60.2 is a **patch release** — contains bug fixes and features backported f
 ```bash
 # Check Laravel version
 php artisan --version
-# Laravel 13.11.2 (May 2026)
+# Laravel 13.13.0 (June 2026)
 
 # Check PHP version
 php -v

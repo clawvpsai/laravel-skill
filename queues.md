@@ -298,6 +298,32 @@ class SendWelcomeEmailJob implements ShouldQueue, PreparesForDispatch
 - Early-exit if a business rule disqualifies the job (e.g., user unsubscribed, feature flag off)
 - Throttle at dispatch site without custom middleware
 
+### Bus::bulk() — Batch Dispatch (Laravel 13.13+)
+
+`Bus::bulk()` dispatches multiple jobs in a single call — useful for batch processing:
+
+```php
+use Illuminate\Support\Facades\Bus;
+
+Bus::bulk([
+    new ProcessItemJob(1),
+    new ProcessItemJob(2),
+    new ProcessItemJob(3),
+    // ... hundreds more
+]);
+
+// With queue/connection override
+Bus::bulk([...], queue: 'high-priority', connection: 'redis');
+```
+
+**When to use:**
+- Bulk imports — process hundreds/thousands of items without a loop of `dispatch()`
+- Fan-out operations — same job type across many IDs
+- Cleaner than `foreach` + `dispatch()` — one call, one error handling path
+
+**Note:** `Bus::bulk()` is synchronous by default — jobs are dispatched but not necessarily processed yet. Wrap in queue workers as usual.
+
+
 **Key difference from `__construct`:** `prepareForDispatch()` runs before serialization and queueing. `__construct` runs during dispatch but may serialize arguments. Use `prepareForDispatch` for anything that must be validated against live data right before queuing.
 
 ## Queue Workers

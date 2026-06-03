@@ -314,6 +314,23 @@ $response->assertJsonPaths([
 
 This is cleaner than chaining multiple `assertJsonPath` calls when you need to verify many fields.
 
+
+#### assertJsonPathsCanonicalizing (Laravel 13.13+)
+
+`assertJsonPathsCanonicalizing()` asserts multiple JSON paths where **array order doesn't matter**:
+
+```php
+$response = $this->getJson('/api/posts/1');
+
+$response->assertJsonPathsCanonicalizing([
+    'data.tags',      // array — order of tags elements doesn't matter
+    'data.authors',   // array — order doesn't matter
+    'data.id',        // scalar — must match
+]);
+```
+
+Use this instead of `assertJsonPaths()` when the JSON contains arrays whose element order is non-deterministic (e.g., fetched from DB without ORDER BY, or merged from multiple sources).
+
 ## Session Assertions (Laravel 13.8+)
 
 ```php
