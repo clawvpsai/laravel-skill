@@ -4,7 +4,7 @@
 
 - **Laravel 11** — Still receives security fixes
 - **Laravel 12** — Active development (v12.61.0 as of May 2026)
-- **Laravel 13** — Current latest (v13.13.0 as of June 2026)
+- **Laravel 13** — Current latest (v13.14.0 as of June 2026)
 
 ## Version Selector Prompt
 
@@ -17,7 +17,7 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — June 2026, v13.13.0)
+## Laravel 13 (Latest — June 2026, v13.14.0)
 
 ### New in Laravel 13
 
@@ -33,6 +33,24 @@ Then load the relevant sections below.
 - **New PHP Attributes for Testing:** `#[Group]`, `#[TestProperty]`, `#[UnitTest]`
 - **New PHP Attributes for Queues:** `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]`
 - **Queue Routing** — `Queue::route()` for centralized queue/connection routing by job class
+
+### New in Laravel 13.14 (June 2026, v13.14.0)
+
+- **Lazy refresh hook on all connections** — database connections now register a lazy refresh hook that resets stale connections automatically on use, improving reliability in long-running workers
+- **Cache falsy JSON payloads in HTTP client** — falsy values (null, false, 0, "") are now cached in HTTP client JSON responses. Previously `null` responses were not cached at all
+- **`Request::createFromBase()` Symfony 8.1 compatibility** — fixed compatibility issue when creating Request objects from Symfony 8.1 Request instances
+- **`Message::embed` data attachment fix** — fixed handling of data attachment URLs in mail message embedding, correcting email rendering issues
+- **Cloud logging formatter namespaced** — CloudLogFormatter is now properly namespaced, fixing cloud deployment logging issues
+- **Child queue properties over inherited attributes** — when a job extends another job class, child job properties now correctly take precedence over parent class attributes (e.g., $tries, $timeout) instead of being overwritten
+- **JSON Schema array deserializer** — new `arrayDeserializer` for JSON Schema validation, allowing proper deserialization of array-typed fields from JSON Schema definitions
+- **`InspectedJob` queue name** — InspectedJob now carries the queue name, improving job observability and debugging in cloud queue workers
+- **`#[DebounceFor]` units parameter** — the `#[DebounceFor]` queue attribute now supports explicit time units: `#[DebounceFor(30, 'seconds')]`, `#[DebounceFor(2, 'minutes')]`, etc.
+- **Null header handling fix** — fixed crash when HTTP headers contain null values in the Header class
+
+**Patch release highlights:** v13.14.0 is primarily a bug-fix and compatibility release:
+- Child queue job property inheritance fix (queues using base classes)
+- Falsy HTTP response caching (reduces redundant API calls)
+- Lazy refresh hook (fewer stale DB connection errors in workers)
 
 ### New in Laravel 13.13 (June 2026, v13.13.0)
 
@@ -253,7 +271,7 @@ v12.61.0 is a **patch release** — contains bug fixes and features backported f
 ```bash
 # Check Laravel version
 php artisan --version
-# Laravel 13.13.0 (June 2026)
+# Laravel 13.14.0 (June 2026)
 
 # Check PHP version
 php -v
