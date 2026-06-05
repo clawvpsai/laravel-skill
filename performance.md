@@ -286,6 +286,58 @@ $response = AI::prompt('openai', 'gpt-4o', [
 - **Traditional `where()`/`fulltext()`** — exact term matching, structured filters, known categories
 - **Hybrid** — run both, merge/rank results
 
+## MariaDB Vector Index (Laravel 13.13+)
+
+Laravel 13.13 adds first-class support for **MariaDB vector indexes**, enabling vector/embedding search on MariaDB (instead of just PostgreSQL/pgvector). Requires MariaDB with vector support enabled.
+
+**Migration — create vector column + index:**
+```php
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
+
+// Enable vector extension (run once per database)
+DB::statement('CREATE EXTENSION IF NOT EXISTS vector');
+
+// Migration
+Schema::create('knowledge_articles', function (Blueprint $table) {
+    $table->id();
+    $table->string('title');
+    $table->text('content');
+    $table->vectorIndex(['embedding'], 'vector_index', 'vector_length:1536');
+    $table->timestamps();
+});
+```
+
+**Key parameters:**
+- `['embedding']` — column(s) to index
+- `'vector_index'` — index name
+- `'vector_length:1536'` — embedding dimensions (1536 for OpenAI text-embedding-3-small, 3072 for large)
+
+**Query by similarity (same as pgvector):**
+```php
+$queryEmbedding = Embeddings::embed($searchQuery);
+
+$results = KnowledgeArticle::query()
+    ->whereVectorSimilarTo('embedding', $queryEmbedding)
+    ->orderByRelevance('embedding', $queryEmbedding)
+    ->limit(5)
+    ->get();
+```
+
+**MariaDB vs PostgreSQL for vectors:**
+| | MariaDB | PostgreSQL |
+|---|---|---|
+| Package | `laravel/ai` + MariaDB | `laravel/ai` + pgvector |
+| Index type | `VECTOR` | `vector` extension |
+| Query syntax | Same `whereVectorSimilarTo()` | Same |
+| Production readiness | Newer (Laravel 13.13) | Mature |
+
+**When to use MariaDB over PostgreSQL:**
+- Already running MariaDB (no second database needed)
+- Simpler stack — one DB for everything
+- MariaDB 11.x+ with vector support enabled
+
+
 ## Common Mistakes
 
 1. **N+1 in loops** — always use `with()`

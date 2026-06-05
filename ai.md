@@ -2,7 +2,7 @@
 
 > **Laravel 13 introduces a first-party AI SDK** — unified API across OpenAI, Anthropic, Gemini, and more. Agents, tools, structured output, streaming, embeddings, image generation, and audio transcription — all in one place.
 
-**Package:** `laravel/ai` (bundled in Laravel 13 core)
+**Package:** `laravel/ai` (first-party Laravel package, installed separately)
 **Install:** `composer require laravel/ai` (if not present)
 
 ---

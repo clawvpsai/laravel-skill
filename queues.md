@@ -183,6 +183,7 @@ use Illuminate\Queue\Attributes\Job;
 
 #[Job]
 #[DebounceFor(30)] // only keep the last dispatch if another comes within 30 seconds
+#[DebounceFor(2, 'minutes')] // explicit units (Laravel 13.14+) — cleaner for larger intervals
 class RebuildDocumentJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -200,6 +201,7 @@ class RebuildDocumentJob implements ShouldQueue
 **Debounce at dispatch time** (overrides the class-level attribute):
 ```php
 RebuildDocumentJob::dispatch($docId)->debounce(60);
+RebuildDocumentJob::dispatch($docId)->debounce(2, 'minutes'); // with explicit units (Laravel 13.14+)
 ```
 
 **When to use:**
