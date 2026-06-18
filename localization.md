@@ -62,7 +62,40 @@ __("messages.new_posts", ['count' => $postCount])
 ],
 ```
 
+## Typed Translation Accessors (Laravel 13.15+)
+
+`__()` and `trans()` historically return broad types (`array|string|null` for `__()`, `Translator|array|string` for `trans()`). That works fine in Blade but adds friction in strictly-typed code and static analysis. Laravel 13.15 adds two typed accessors that return concrete types:
+
+```php
+// Returns string|null — useful for single-value translations
+public function label(): ?string
+{
+    return trans()->string('labels.' . $this->name);
+}
+
+// Returns array<string, mixed> — useful for grouped translations
+public function options(): array
+{
+    return trans()->array($this->options_key);
+}
+```
+
+**Mirror of existing typed helpers** — same shape as `config()->string()`, `request()->integer()`, `request()->enum()`, etc.
+
+**When to use:**
+- Eloquent model accessors that return translated text — improves IDE inference and PHPStan/Psalm accuracy
+- Service methods that return translated strings as a known type
+- Anywhere strict typing matters (typed properties, return type declarations)
+
+**Edge case:** If the key is missing, `string()` returns `null` (same as `__()`). Use the null-safe operator `?->` or provide a default:
+```php
+return trans()->string('status.' . $this->code) ?? 'unknown';
+```
+
+Source: [Laravel News — Typed Translation Accessors](https://laravel-news.com/laravel-13-15-0) | [PR #60443](https://github.com/laravel/framework/pull/60443)
+
 ## Pluralization
+
 
 ```php
 // {0} Zero|{1} One|[2,*] Many

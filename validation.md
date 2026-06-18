@@ -139,7 +139,31 @@ public function attributes(): array
 | `before:date` | Must be before this date |
 | `after_or_equal:today` | Must be today or after |
 
+## Security: `date_equals` Validation Bypass Fix (Laravel 13.15+)
+
+**Critical security fix** — the `date_equals` rule used loose comparison (`==`) which allowed invalid date strings to bypass validation against falsy reference dates:
+
+```php
+// BEFORE 13.15 — exploitable:
+// $request->date_equals = "not-a-date";  // parses to null
+// null == strtotime("1970-01-01")  // 0 → loose-equals true!
+$validator->validate([
+    'expires_at' => 'date_equals:2024-01-01',
+]);
+// An invalid date string could pass because `null == 0`
+
+// AFTER 13.15 — strict equality for the equal operator:
+// null === 0 → false → validation correctly fails
+```
+
+**Who is affected:** Any Laravel app exposing `date_equals` to user input (form submissions, API requests, scheduled-task inputs). **Upgrade to Laravel 13.15+** to mitigate.
+
+**Loose comparison preserved for `DateTime` objects** — only the strict-vs-loose change applies to the equal operator. `DateTimeInterface` instances still compare correctly.
+
+Source: [Laravel News — date_equals fix](https://laravel-news.com/laravel-13-15-0) | [PR #60393](https://github.com/laravel/framework/pull/60393)
+
 ## Common Mistakes
+
 
 1. **`required` vs `filled`** — `required` fails on `""`, use `filled` when `0` or `false` are valid
 2. **`unique` without ignoring self** — `unique:users,email,{$user->id}` for updates

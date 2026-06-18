@@ -126,7 +126,42 @@ php artisan boost:install
 php artisan boost:upgrade
 ```
 
+## `php artisan dev` — Dev Process Orchestration (Laravel 13.16+)
+
+Laravel 13.16 ships a first-party `php artisan dev` command that runs your local dev processes (server, queue worker, log tail, Vite, etc.) concurrently — replaces per-project `composer dev` scripts. Configure processes in code via `Illuminate\Foundation\Console\DevCommands`:
+
+```php
+// In a service provider (e.g. AppServiceProvider::boot())
+use Illuminate\Foundation\Console\DevCommands;
+
+DevCommands::artisan('reverb:start');                            // php artisan reverb:start
+DevCommands::artisan('queue:work --tries=1', 'queue')->green(); // named + colored
+DevCommands::register('stripe listen --forward-to ' . config('app.url')); // arbitrary shell
+DevCommands::npm('run dev', 'vite');                              // auto-detects npm/yarn/pnpm/bun
+```
+
+Then run from your project root:
+```bash
+php artisan dev
+```
+
+Default processes (matching `composer dev`): server, queue worker, log tail, Vite. You can override entirely.
+
+**Key behaviors:**
+- **Package-aware** — vendor packages don't auto-register dev commands; only your app code does
+- **NodePackageManager detection** — generic commands like `npm run dev` resolve to the right runner based on lockfiles (npm, yarn, pnpm, bun)
+- **Process names & colors** — second arg names the process (defaults to first segment before space); `->orange()`, `->green()`, etc. for color
+- **Upgrade note** — always upgrade to **v13.16.1** (not 13.16.0) — fixes a bug where `DevCommands` could stop itself from registering
+
+**When to use:**
+- New Laravel 13.16+ projects — remove `composer dev` and `composer dev:install` scripts
+- Teams that want process orchestration in code (versionable, reviewable) instead of `composer.json` scripts
+- Replacing `npx concurrently` or similar tooling
+
+Source: [Laravel News — artisan dev](https://laravel-news.com/laravel-13-16-0) | [PR #60412](https://github.com/laravel/framework/pull/60412)
+
 ## Tinker
+
 
 ```bash
 php artisan tinker

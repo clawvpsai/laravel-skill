@@ -230,6 +230,81 @@ ProcessPostJob::dispatch($postId)->onQueue('high-priority');
 ProcessPostJob::dispatchSync($postId);
 ```
 
+Source: [Laravel 13 PR #60180](https://github.com/laravel/framework/pull/60180)
+
+## Cloud Queue Driver Deepening (Laravel 13.15+)
+
+Several follow-up changes make Laravel Cloud's managed queue driver a first-class connection in 13.15:
+
+- **Managed queues boot before service providers** — jobs are ready before the app finishes booting
+- **`ManagedQueueNotFoundException`** thrown when a configured managed queue is missing (was silently absent before)
+- **FIFO queue name normalization corrected** — Cloud managed FIFO queues now normalize correctly
+- **`Cloud-Request-ID` header emitted in logs** — every log line during cloud queue processing carries the request ID for distributed tracing
+
+```php
+// config/queue.php
+'connections' => [
+    'cloud' => [
+        'driver' => 'cloud',
+        'connection' => 'managed-queue-uuid', // managed queue ID, not a real driver
+    ],
+],
+```
+
+No app code changes required to upgrade — the existing Cloud driver config works as-is.
+
+Source: [Laravel News — Dedicated Cloud Queue](https://laravel-news.com/laravel-13-15-0) | [PR #60199](https://github.com/laravel/framework/pull/60199) | [PR #60276](https://github.com/laravel/framework/pull/60276)
+
+## `Queue::route()` with Enums (Laravel 13.15+)
+
+`Queue::route()` now accepts enum cases for both queue name and connection, matching how the `#[Queue()]` attribute already supports enums:
+
+```php
+use App\Enums\QueueConnection;
+use App\Enums\QueueName;
+use App\Jobs\ProcessPodcast;
+use Illuminate\Support\Facades\Queue;
+
+// String-based (still works)
+Queue::route(ProcessPodcast::class, connection: 'redis', queue: 'podcasts');
+
+// Enum-based (Laravel 13.15+) — type-safe routing
+Queue::route(
+    ProcessPodcast::class,
+    connection: QueueConnection::Redis,
+    queue: QueueName::Podcasts,
+);
+```
+
+**Why it matters:** String-based queue names are typo-prone and lose refactor safety. With enums, renaming a queue name becomes a single-point-of-truth rename. Pairs perfectly with the existing `#[Queue(connection: ..., queue: ...)]` attribute support.
+
+## Queue Attributes on Traits (Laravel 13.16+)
+
+PHP attributes like `#[Job]`, `#[Tries]`, `#[Backoff]`, `#[Timeout]`, `#[FailOnTimeout]`, and `#[DebounceFor]` previously only worked when declared directly on the job class. Laravel 13.16 extends attribute discovery to traits:
+
+```php
+use Illuminate\Queue\Attributes\DebounceFor;
+use Illuminate\Queue\Attributes\Job;
+use Illuminate\Queue\Attributes\Tries;
+
+trait DebouncedJob
+{
+    #[DebounceFor(30, 'seconds')]
+}
+
+#[Job]
+#[Tries(3)]
+class RebuildIndexJob implements ShouldQueue
+{
+    use DebouncedJob; // #[DebounceFor] now applies from this trait
+    // ...
+}
+```
+
+**Use case:** Build reusable job base classes / traits that bake in retry/backoff/debounce semantics without forcing every concrete job to repeat the attributes.
+
+### PendingDispatch Conditionals (Laravel 13.9+)
+
 ### PendingDispatch Conditionals (Laravel 13.9+)
 
 `PendingDispatch` now supports `->when()` and `->unless()` for clean conditional dispatch:

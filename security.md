@@ -309,7 +309,52 @@ storage/*.key
 });
 ```
 
+## Security Fixes from Laravel 13.15+
+
+Two notable security hardenings landed in Laravel 13.15 (June 2026). Apps on Laravel 11/12/13 prior to 13.15 should plan an upgrade.
+
+### 1. `date_equals` Validation Bypass (CVE-class)
+
+The `date_equals` validation rule used loose comparison (`==`). Invalid date strings parse to `null`, and `null == 0` evaluates to `true` in PHP. Result: an invalid date could pass validation against a reference date that parses to a falsy value (e.g., `1970-01-01 00:00:00`).
+
+**Affected versions:** Laravel ≤ 13.14.x  
+**Fixed in:** Laravel 13.15.0  
+**Severity:** Medium — exploitable via any user-controlled input validated by `date_equals`
+
+```php
+// Exploit example (pre-13.15)
+// Request: POST /api/subscribe with { "expires_at": "not-a-date", "renewal_date": "1970-01-01" }
+$validated = $request->validate([
+    'expires_at' => 'date_equals:renewal_date', // passes when it shouldn't
+]);
+```
+
+**Mitigation without upgrade:** Cast dates explicitly in `prepareForValidation()`:
+```php
+protected function prepareForValidation(): void
+{
+    $this->merge([
+        'expires_at' => $this->expires_at ?: null,
+    ]);
+}
+```
+
+### 2. Restricted Route Unserialization
+
+Route caching and resolution use PHP's `unserialize()` internally. Laravel 13.15 restricts the classes accepted during unserialization, reducing the object-injection surface for attackers who can influence cached route data.
+
+**Affected versions:** All prior Laravel versions (long-standing hardening improvement)  
+**Fixed in:** Laravel 13.15.0  
+**Severity:** Low–Medium — only relevant if an attacker can poison the route cache (e.g., write access to `bootstrap/cache/`)
+
+**Practical impact:** Most apps benefit automatically by upgrading. No code changes required — the framework now rejects disallowed classes during unserialization.
+
+**For applications that custom-serialize routes:** Audit any custom `Serializable` implementations on route classes. The new restrictions may require explicit registration via the framework's allowed-classes list.
+
+Source: [Laravel News 13.15](https://laravel-news.com/laravel-13-15-0) | [PR #60391](https://github.com/laravel/framework/pull/60391) | [PR #60393](https://github.com/laravel/framework/pull/60393)
+
 ## Common Mistakes
+
 
 1. **`{!! !!}` with user content** — XSS vulnerability, always sanitize first
 2. **String interpolation in queries** — SQL injection, always use bindings

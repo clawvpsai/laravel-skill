@@ -4,7 +4,7 @@
 
 - **Laravel 11** — Still receives security fixes
 - **Laravel 12** — Active development (v12.61.0 as of May 2026)
-- **Laravel 13** — Current latest (v13.14.0 as of June 2026)
+- **Laravel 13** — Current latest (v13.16.1 as of June 2026)
 
 ## Version Selector Prompt
 
@@ -17,7 +17,7 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — June 2026, v13.14.0)
+## Laravel 13 (Latest — June 2026, v13.16.1)
 
 ### New in Laravel 13
 
@@ -34,7 +34,46 @@ Then load the relevant sections below.
 - **New PHP Attributes for Queues:** `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]`
 - **Queue Routing** — `Queue::route()` for centralized queue/connection routing by job class
 
+### New in Laravel 13.16 (June 16, 2026, v13.16.0 — patch v13.16.1)
+
+- **`php artisan dev` command** — new first-party dev orchestration command. Runs server, queue worker, log tailing, and Vite concurrently — replaces per-project `composer dev` scripts. Configure via `Illuminate\Foundation\Console\DevCommands`. Package-aware (vendor packages are skipped). Auto-detects Node package manager (npm/yarn/pnpm/bun). **Upgrade to v13.16.1** which fixes a registration bug.
+- **`whenFilledEnum()` request helper** — `Request` now has `$request->whenFilledEnum('status', Status::class, fn(Status $s) => ...)` — combines `whenFilled()` + `tryFrom()` + null guard in one call. Invalid enum values silently skip the callback (no throw). Optional default callback runs when the primary callback doesn't.
+- **`withCookies()` on all responses** — promoted from `RedirectResponse` to `ResponseTrait`. Attach multiple cookies to any response type (`JsonResponse`, standard `Response`) in a single call: `response()->json($data)->withCookies([$cookieA, $cookieB])`. Additive, non-breaking.
+- **`array` maintenance mode driver** — new `array` driver joins `file` and `cache`. Designed for **parallel testing** where file driver + `Cache` facade mocking can break tests that call `php artisan up`/`down`. Set `APP_MAINTENANCE_DRIVER=array` in `.env.testing`.
+- **`anyOf` JSON Schema support** — `JsonSchema` now supports `anyOf` and multi-type unions. Deserializer is hardened against unbounded `$ref` expansion (prevents recursion attacks).
+- **Enums in `broadcastAs()`** — broadcast events can return an enum from `broadcastAs()` for the event name; pairs with typed SDK generators so client/server event names stay in sync.
+- **Queue attributes on traits** — `#[Job]`, `#[Tries]`, `#[Backoff]`, `#[Timeout]`, `#[FailOnTimeout]`, `#[DebounceFor]` attributes now work on traits used by jobs (not just on job classes directly).
+- **`Batchable::batching` finished-batch fix** — fixed crash when accessing `Batchable::batching` after a batch has finished.
+- **HTTP client serialization hardening** — request and fake-response serialization is now hardened against malicious input.
+- **Improved return types** — generic types added to `WorkerIdle`, `WorkerLooping`, `listenForSignals`, model scope callbacks, connection callbacks, and `DatabaseTransactionsManager` getters for better static analysis.
+
+**Patch highlights (v13.16.1):** Fixes a bug where `DevCommands` could stop itself from registering when packages attempted to register commands. Always upgrade to 13.16.1 over 13.16.0.
+
+### New in Laravel 13.15 (June 9, 2026, v13.15.0)
+
+- **Typed translation accessors** — `trans()->string($key)` and `trans()->array($key)` return concrete `string` / `array` types instead of `array|string|null`. Mirrors the typed helpers like `config()` and `request()` — improves static analysis and IDE inference. Available on both `trans()` and `__()` helpers.
+- **`JsonSchema::fromArray()` deserializer** — turn a raw JSON Schema array back into `Type` objects (inverse of serialization). Pairs with multi-type union support in the schema builder.
+- **Dedicated Cloud queue driver (deepened)** — Laravel Cloud's managed queue driver is now a first-class connection. Several changes land together:
+  - Managed queues boot **before** service providers (jobs ready before app boots)
+  - Throws `ManagedQueueNotFoundException` when a configured managed queue is missing
+  - FIFO queue name normalization corrected
+  - Request ID header renamed `X-Request-ID` → `Cloud-Request-ID` and now emitted into logs for distributed tracing
+- **Enums in `Queue::route()`** — pass enum cases for both queue and connection when routing jobs: `Queue::route(Job::class, connection: MyQueue::Redis, queue: QueueName::Emails)` instead of strings.
+- **`Prohibitable` on `cache:clear` and `queue:flush`** — both commands now respect the `Prohibitable` interface (already added to `queue:clear`, `config:clear`, `key:generate`).
+- **`Macroable` on `InvokedProcess`** — add macros to `InvokedProcess` for custom subprocess behavior.
+- **`queue:failed` real class name** — fixed bug where `php artisan queue:failed` displayed the wrapped/obfuscated class name instead of the real job class.
+- **Compiled Blade views not left expired** — fixed bug where unchanged compiled Blade views were unnecessarily treated as expired.
+- **Number helper fixes** — `Number::fileSize()` handles negative byte values; `Number::trim()` no longer returns null for `INF`/`NAN`; `Number::pairs()` no longer infinite-loops on negative step and throws on zero step.
+- **Generics on queue routes** — `QueueRoutes::all()` is now properly typed.
+
+**Security fixes in v13.15.0:**
+- **`date_equals` validation bypass** — the `date_equals` rule used loose comparison, so invalid date strings parsing to `null` could pass against reference dates parsing to falsy values (e.g., `1970-01-01`). Fixed by using strict equality for the equal operator while keeping loose comparison for legitimate `DateTime` objects. **Upgrade critical for apps exposing `date_equals` to untrusted input.**
+- **Restricted route unserialization** — route caching/resolution unserialization now restricts accepted classes, reducing object-injection surface during route loading.
+
+**Other fixes:** Infinite recursion when a model scope is defined with a private attribute; infinite recursion when a middleware group references itself; FIFO normalization in Cloud managed queues.
+
 ### New in Laravel 13.14 (June 2026, v13.14.0)
+
 
 - **Lazy refresh hook on all connections** — database connections now register a lazy refresh hook that resets stale connections automatically on use, improving reliability in long-running workers
 - **Cache falsy JSON payloads in HTTP client** — falsy values (null, false, 0, "") are now cached in HTTP client JSON responses. Previously `null` responses were not cached at all

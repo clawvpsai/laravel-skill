@@ -303,7 +303,59 @@ Route::middleware(ThrottlesExceptions::using(function (Request $request, \Throwa
 - Different limits per exception type (e.g., 3 for auth, 10 for general validation)
 - Context-aware limits based on user role or request origin
 
+## Request Helpers — `whenFilledEnum()` (Laravel 13.16+)
+
+The `Request`/`InteractsWithData` trait gains `whenFilledEnum()`, which combines the filled-check, `tryFrom()` enum cast, and null guard into a single call. Saves a lot of boilerplate when filtering by typed enum values:
+
+```php
+use App\Enums\Status;
+use Illuminate\Http\Request;
+
+public function index(Request $request)
+{
+    return Post::query()
+        ->whenFilledEnum('status', Status::class, function (Status $status, $query) {
+            $query->where('status', $status);
+        })
+        ->get();
+}
+```
+
+**Optional default callback** runs when the primary callback doesn't (e.g., invalid enum value, empty input):
+
+```php
+Post::query()
+    ->whenFilledEnum('status', Status::class,
+        fn(Status $s, $q) => $q->where('status', $s),
+        fn($q) => $q->where('status', Status::Active), // default if no valid value
+    )
+    ->get();
+```
+
+**Behavior:**
+- Callback runs only when: the key is filled AND the class is a backed enum AND the value casts to a valid case via `tryFrom()`
+- Invalid enum values silently skip the callback — no exception thrown
+- Perfect for filter endpoints that accept `?status=active`
+
+## `withCookies()` on All Responses (Laravel 13.16+)
+
+The `withCookies()` method moved from `RedirectResponse` to `ResponseTrait`, so you can attach multiple cookies to any response type in a single call — including `JsonResponse`:
+
+```php
+// Multiple cookies in one call (no chaining)
+return response()->json($data)->withCookies([$cookieA, $cookieB, $cookieC]);
+
+// Equivalent pre-13.16 — had to chain
+return response()->json($data)
+    ->withCookie($cookieA)
+    ->withCookie($cookieB)
+    ->withCookie($cookieC);
+```
+
+**Why it matters:** Previously, JSON/API endpoints had to either chain `withCookie()` or fall back to cookies-as-arrays on the response. `withCookies()` is additive (non-breaking) and dramatically cleans up multi-cookie scenarios like OAuth callback endpoints or auth responses.
+
 ## Error Responses
+
 
 ```php
 // Validation errors (422)
