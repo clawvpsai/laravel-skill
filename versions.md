@@ -61,6 +61,7 @@ Then load the relevant sections below.
 - **Enums in `Queue::route()`** — pass enum cases for both queue and connection when routing jobs: `Queue::route(Job::class, connection: MyQueue::Redis, queue: QueueName::Emails)` instead of strings.
 - **`Prohibitable` on `cache:clear` and `queue:flush`** — both commands now respect the `Prohibitable` interface (already added to `queue:clear`, `config:clear`, `key:generate`).
 - **`Macroable` on `InvokedProcess`** — add macros to `InvokedProcess` for custom subprocess behavior.
+- **`Cache::rememberWithWarmth()`** — `Cache::remember()`'s stateful twin. Returns `array{value, bool}` where the bool indicates whether the value came from the cache. Lets you log cache-hit/miss, set `X-Cache` headers, or skip expensive post-processing on a cache hit — without a separate `Cache::has()` round trip. `Cache::remember()` is now a thin wrapper around this. (PR #60385)
 - **`queue:failed` real class name** — fixed bug where `php artisan queue:failed` displayed the wrapped/obfuscated class name instead of the real job class.
 - **Compiled Blade views not left expired** — fixed bug where unchanged compiled Blade views were unnecessarily treated as expired.
 - **Number helper fixes** — `Number::fileSize()` handles negative byte values; `Number::trim()` no longer returns null for `INF`/`NAN`; `Number::pairs()` no longer infinite-loops on negative step and throws on zero step.

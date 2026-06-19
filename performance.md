@@ -349,7 +349,7 @@ $results = KnowledgeArticle::query()
 7. **No transactions for related writes** — partial updates on failure
 8. **Running heavy work synchronously** — block users, timeout issues
 
-## Updated from Research (2026-05-10)
+## Updated from Research (2026-06-19)
 
 ### Semantic Search (pgvector) — Laravel 13
 
@@ -396,3 +396,34 @@ Cache::touch('session.' . $sessionId, 1800); // reset TTL on each activity
 - Returns `bool` — `false` if key doesn't exist or backend doesn't support it.
 
 Source: [Laravel 13 Docs - Cache](https://laravel.com/docs/13.x/cache)
+
+### Cache::rememberWithWarmth() — Know If the Cache Was Hit (Laravel 13.15)
+
+`Cache::rememberWithWarmth()` is the stateful twin of `Cache::remember()`. Same TTL/closure semantics, but it returns a tuple of `[$value, $wasWarm]` so you can tell whether the value came from the cache or was just computed. Useful for instrumentation, response headers, debug logging, or avoiding extra work downstream when the result is fresh.
+
+```php
+use Illuminate\Support\Facades\Cache;
+
+// [$value, $wasWarm] — $wasWarm is true if it was already cached
+[$stats, $wasCached] = Cache::rememberWithWarmth('site.stats', 3600, fn() => $this->computeStats());
+
+// Surface cache-hit info in HTTP responses
+return response()
+    ->json(['stats' => $stats])
+    ->header('X-Cache', $wasCached ? 'HIT' : 'MISS');
+
+// Skip an expensive post-process step when the cached value is already known good
+[$report, $wasCached] = Cache::rememberWithWarmth('weekly-report', 86400, fn() => $this->buildReport());
+if (! $wasCached) {
+    AuditLog::record('report.regenerated', ['user_id' => auth()->id()]);
+}
+```
+
+**Why it exists:** The original PR author (cosmastech) wanted to record cache-hit/miss in trace logs and HTTP headers without an extra `Cache::has()` round trip. The first PR title called it `rememberWithState()` but the author noted that name "is dogshit" and the merged name is `rememberWithWarmth()`.
+
+**Notes:**
+- Return type is `array{TCacheValue, bool}` — first element is the value, second is `true` for cache hit / `false` for cache miss.
+- `Cache::remember()` is now a thin wrapper that returns `rememberWithWarmth(...)[0]`, so existing call sites are unaffected.
+- Pairs well with `Cache::flexible()` — call `Cache::flexible($key, [5, 60], fn() => $data)` then wrap with `rememberWithWarmth()` if you also need warm/cold state.
+
+Source: [PR #60385 — Cache `rememberWithWarmth()`](https://github.com/laravel/framework/pull/60385)
