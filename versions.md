@@ -3,7 +3,7 @@
 ## Active Versions
 
 - **Laravel 11** — Still receives security fixes
-- **Laravel 12** — Active development (v12.61.0 as of May 2026)
+- **Laravel 12** — Active development (v12.62.0 as of June 2026)
 - **Laravel 13** — Current latest (v13.16.1 as of June 2026)
 
 ## Version Selector Prompt
@@ -213,7 +213,7 @@ php artisan boost:install
 
 ---
 
-## Laravel 12 (February 2025, v12.61.0)
+## Laravel 12 (February 2025, v12.62.0)
 
 ### New in Laravel 12
 
@@ -235,16 +235,21 @@ php artisan boost:install
 - Route middleware registered in `bootstrap/app.php` via `$middleware->`
 - `App\Http\Kernel` and `App\Console\Kernel` fully removed
 
-### Laravel 12 Latest Patch (v12.61.0 — May 2026)
+### Laravel 12 Latest Patch (v12.62.0 — June 9, 2026)
 
-v12.61.0 is a **patch release** — contains bug fixes and features backported from Laravel 13, no new breaking features:
-- Worker pausing fixes backported from 13.x
-- Cloud queue support backported from 13.x
-- Infinite recursion fixes for middleware and scopes
-- SQS credential provider fixes
-- Lifecycle deferred event fixes
-- Boot managed queues before service providers boot (backport from 13.11.2)
-- No new features — purely maintenance
+v12.62.0 is a **patch release** — contains bug fixes and features backported from Laravel 13, no new breaking features:
+- **`JsonSchema::fromArray()` deserializer (backport from 13.15)** — turn a raw JSON Schema array back into `Type` objects. Pairs with the new multi-type union support.
+- **Multi-type union support in `JsonSchema` (backport from 13.15)** — `Illuminate\JsonSchema` now supports `anyOf` and multi-type unions.
+- **PostgreSQL `compileColumns()` performance fix (backport from 13.15)** — skips `pg_collation` lookup on PostgreSQL < 9.1.
+- **Cloud queue support (backport from 13.11.2)** — managed queues boot before service providers; `ManagedQueueNotFoundException` thrown when missing; FIFO name normalization corrected.
+- **HTTP attach empty contents preserved (backport from 13.15)** — `GrahamCampbell` fix that prevents empty attachment bodies from being dropped.
+- **`Number` helper fixes (backport from 13.15)** — `Number::trim()` no longer returns null for INF/NAN; `Number::pairs()` no longer infinite-loops when `$by <= 0`; `Number::fileSize()` handles negative byte values.
+- **LocalFilesystemAdapter path separators (backport from 13.15)** — separators are no longer encoded in the Local adapter.
+- **Env parser regex fix (backport from 13.15)** — `Env::addVariableToEnvContents` quoting fix.
+- **Deprecation logging fix (backport from 13.15)** — `config` is now bound before logging the deprecation notice.
+- **queue:failed real class name (backport from 13.15)** — `clementmas` fix so the command shows the actual job class instead of an alias.
+- **SQS / Cloud queue name normalization** — FIFO queue names normalized correctly.
+- **No new features beyond backports** — purely maintenance
 
 ---
 

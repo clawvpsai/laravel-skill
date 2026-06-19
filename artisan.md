@@ -160,6 +160,35 @@ Default processes (matching `composer dev`): server, queue worker, log tail, Vit
 
 Source: [Laravel News — artisan dev](https://laravel-news.com/laravel-13-16-0) | [PR #60412](https://github.com/laravel/framework/pull/60412)
 
+## `Macroable` on `InvokedProcess` (Laravel 13.15+)
+
+Laravel 13.15 adds the `Macroable` trait to `Illuminate\Process\InvokedProcess` so you can extend the running-subprocess object with your own helpers (timeouts, abort signals, custom output transformers, etc.) without subclassing:
+
+```php
+use Illuminate\Support\Facades\Process;
+use Illuminate\Process\InvokedProcess;
+
+// Register a macro once at boot time (e.g. AppServiceProvider)
+InvokedProcess::macro('recordDuration', function (): float {
+    /** @var InvokedProcess $this */
+    return (microtime(true) - $this->startTime) * 1000;
+});
+
+// Use the macro on the result of ->run()
+$process = Process::timeout(10)->run("ffmpeg -i input.mp4 output.mp4");
+$durationMs = $process->recordDuration();
+```
+
+**Useful macros to register:**
+- `recordDuration()` — wall-clock runtime of the subprocess
+- `signal($sig)` — wrapper around `signal()` that pre-validates the signal name
+- `lines($max)` — bounded line-buffer wrapper around the `lazy()` output iterator
+- `abortIf($condition)` — call `signal(SIGTERM)` then `wait()` based on a condition
+
+**Why this matters:** `InvokedProcess` was previously a sealed-shape object — the only way to add helpers was to wrap it. `Macroable` removes the need for a wrapper and keeps call sites clean.
+
+Source: [PR #60392](https://github.com/laravel/framework/pull/60392) | [Laravel 13.15 Release Notes](https://github.com/laravel/framework/releases/tag/v13.15.0)
+
 ## Tinker
 
 

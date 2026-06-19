@@ -430,7 +430,48 @@ class PostCreationTest extends DuskTestCase
 9. **Forgetting to mock HTTP** — real API calls slow tests and can fail unexpectedly
 10. **Using stale old input in redirect tests** — use `assertSessionMissingInput()` after successful form submission
 
-## Updated from Research (2026-05-20)
+## Parallel Testing
+
+Run tests in parallel processes for big speedups on test suites with many integration / DB tests:
+
+```bash
+# Run tests across 4 processes
+php artisan test --parallel
+
+# Run tests across 8 processes, then merge coverage
+php artisan test --parallel --processes=8
+php artisan test --parallel --processes=8 --coverage
+```
+
+Each child process gets its own DB transaction (the `RefreshDatabase` trait auto-uses a per-process DB when `--parallel` is on).
+
+### `array` Maintenance Mode Driver (Laravel 13.16+)
+
+The `array` maintenance mode driver (new in 13.16) is designed for **parallel test runs** that call `php artisan down` / `php artisan up`. The default `file` driver shares state across processes (a `down` in process A is seen by process B → tests fail or interfere with each other), and the `cache` driver breaks if you mock the `Cache` facade in tests.
+
+Add this to your `.env.testing` to use the in-memory array driver:
+
+```dotenv
+APP_MAINTENANCE_DRIVER=array
+```
+
+`MaintenanceMode` then reads/writes the maintenance state from an in-memory array that's scoped to the current PHP process — clean isolation per parallel worker, no file or cache state to race on.
+
+**When to use it:**
+- Parallel test runs (`php artisan test --parallel`) that call `Artisan::call('down')` / `Artisan::call('up')` in feature tests
+- CI pipelines that exercise maintenance-mode behavior without touching real files
+
+**Caveats:**
+- Driver is per-process — `down` set in one test is invisible to the next test in the same process (good for isolation; bad if you assert persistence across tests)
+- Available on Laravel 13.16+ only
+
+Source: [PR #60489](https://github.com/laravel/framework/pull/60489) | [Laravel 13.16 Release Notes](https://github.com/laravel/framework/releases/tag/v13.16.0)
+
+## Updated from Research (2026-06-19)
+
+### Laravel 13.16 (June 2026)
+
+- **`array` maintenance mode driver** — new driver for parallel-testing isolation. Pairs with `APP_MAINTENANCE_DRIVER=array` in `.env.testing` (see section above).
 
 ### Laravel 13.10 (May 2026)
 
