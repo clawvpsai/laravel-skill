@@ -353,6 +353,60 @@ Route caching and resolution use PHP's `unserialize()` internally. Laravel 13.15
 
 Source: [Laravel News 13.15](https://laravel-news.com/laravel-13-15-0) | [PR #60391](https://github.com/laravel/framework/pull/60391) | [PR #60393](https://github.com/laravel/framework/pull/60393)
 
+## Critical: Laravel Passport CVE-2026-39976 (CVSS 7.1 — High)
+
+**Authentication bypass in `client_credentials` tokens** affecting Laravel Passport **13.0.0 → 13.7.0**. Any machine-to-machine token can inadvertently authenticate as a real user.
+
+**Root cause:** The `league/oauth2-server` library sets the JWT `sub` claim to the **client identifier** (since there's no user in a `client_credentials` flow). The Passport token guard then passes this value to `retrieveById()` without validating it's actually a user identifier — so a client_id that happens to match a user ID resolves to that real user.
+
+**Affected:** `laravel/passport` from `13.0.0` to before `13.7.1`  
+**Fixed in:** `laravel/passport` **13.7.1**  
+**Disclosed:** June 2, 2026  
+**Severity:** CVSS 7.1 (High) — full authentication bypass
+
+### Who is affected
+
+Any app using `laravel/passport` ≥ 13.0.0 and exposing `client_credentials` grants to:
+- Internal service-to-service auth
+- Public OAuth client flows
+- Machine-to-machine API tokens
+
+### How to fix
+
+1. **Upgrade immediately:**
+   ```bash
+   composer require laravel/passport:^13.7.1
+   php artisan passport:install
+   ```
+
+2. **Audit for exploit evidence** — look for `client_credentials` token usage where the resolved user isn't expected. Any token issued to a `client_credentials` client that resolved to a real user is a confirmed exploit.
+
+3. **Defense in depth** — even on 13.7.1+, do not reuse user IDs as client IDs. Use UUIDs or prefixed identifiers (`cli_xxx` vs `usr_xxx`) so a `client_id` cannot collide with a `user_id`.
+
+### Mitigation if you cannot upgrade immediately
+
+Add a guard in your `AuthServiceProvider` to reject `client_credentials` token resolution to a non-`null` user:
+
+```php
+// app/Providers/AuthServiceProvider.php
+public function boot(): void
+{
+    Auth::viaRequest('passport-client-credentials', function ($request) {
+        // Force client_credentials flow to never resolve a user
+        $psr = $request->attributes->get('psr_request');
+        $grantType = data_get($psr->getParsedBody(), 'grant_type');
+        if ($grantType === 'client_credentials') {
+            return null; // never authenticate as a user
+        }
+        // ... existing passport token user resolution
+    });
+}
+```
+
+**Note:** This mitigation must be carefully tested — it changes the resolution contract for all `client_credentials` flows.
+
+Source: [CVE-2026-39976 on OpenCVE](https://app.opencve.io/cve/?vendor=laravel) | [Laravel Passport security advisory](https://github.com/laravel/passport/security/advisories)
+
 ## Common Mistakes
 
 
