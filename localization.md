@@ -2,6 +2,15 @@
 
 > Laravel's localization system handles multi-language content, pluralization, number formatting, and locale-aware date presentation.
 
+## ⚠️ Security Warning: Laravel-Lang Packages (May 2026 Supply-Chain Attack)
+
+The `laravel-lang/*` Composer packages (`laravel-lang/lang`, `laravel-lang/attributes`, `laravel-lang/http-statuses`, `laravel-lang/actions`) were compromised on **May 22, 2026** when an attacker rewrote every git tag across all four repos to point at malicious commits.
+
+**Do NOT install these packages today** unless you can pin to a verified pre-2026-05-22 SHA. See [security.md](security.md#critical-laravel-lang-composer-supply-chain-attack-may-22-2026--no-cve) for full IoCs and remediation.
+
+For new projects, use Laravel's built-in `resources/lang/` translation files — no third-party package needed for the vast majority of apps.
+
+
 ## Setup
 
 ```php

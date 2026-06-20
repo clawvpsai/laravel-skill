@@ -407,6 +407,129 @@ public function boot(): void
 
 Source: [CVE-2026-39976 on OpenCVE](https://app.opencve.io/cve/?vendor=laravel) | [Laravel Passport security advisory](https://github.com/laravel/passport/security/advisories)
 
+## Critical: Laravel Reverb RCE — CVE-2026-23524 (CVSS 9.8 — Critical)
+
+**Insecure deserialization (CWE-502)** in Laravel Reverb when horizontal scaling is enabled. Reverb passed data from the Redis PubSub channel directly into PHP's `unserialize()` without restricting which classes could be instantiated — giving any actor who can publish to Redis full **Remote Code Execution**.
+
+**Affected:** `laravel/reverb` **≤ 1.6.3** with `REVERB_SCALING_ENABLED=true`  
+**Fixed in:** `laravel/reverb` **1.7.0**  
+**Disclosed:** January 21, 2026  
+**Severity:** CVSS 9.8 (Critical) — unauthenticated RCE in scaled deployments
+
+### Why it's dangerous
+- Redis servers are commonly deployed **without authentication**
+- Many self-hosted setups bind Redis to a public interface or shared VPC
+- A single malicious publish to the Reverb PubSub channel yields code execution on every Reverb node
+- Only affects multi-node deployments (`REVERB_SCALING_ENABLED=true`) — single-node installs are safe
+
+### How to fix
+1. **Upgrade immediately:**
+   ```bash
+   composer require laravel/reverb:^1.7.0
+   ```
+2. **Verify your scaling config** — even on 1.7.0+, run Redis on a private network with `requirepass` set.
+
+### Mitigation if you cannot upgrade immediately
+```bash
+# Option A: disable horizontal scaling (single-node only)
+REVERB_SCALING_ENABLED=false
+
+# Option B: lock down Redis
+requirepass <strong-password>
+# bind Redis to private IP / localhost only
+# Use a firewall to block external Redis access (port 6379)
+```
+
+**For single-node Reverb installs** (the default for most apps), this CVE does not apply — `REVERB_SCALING_ENABLED` defaults to `false`.
+
+Source: [CVE-2026-23524 on NVD](https://nvd.nist.gov/vuln/detail/CVE-2026-23524) | [GHSA-m27r-m6rx-mhm4](https://github.com/laravel/reverb/security/advisories/GHSA-m27r-m6rx-mhm4)
+
+## Critical: Laravel CRLF Injection — CVE-2026-48019 (CVSS High)
+
+**CRLF injection in Laravel's mail handling** allows attackers who control an email address (e.g., via a contact form) to inject `\r\n` sequences and manipulate outbound email — adding BCC recipients, modifying subject lines, or smuggling extra MIME parts. Underlying root cause: insufficient stripping of CRLF characters before the value reaches Symfony Mailer / Symfony Mime.
+
+**Affected:** All Laravel versions **≤ 13.9.0** and **≤ 12.59.0**  
+**Fixed in:** Laravel **13.10.0** and **12.60.0**  
+**Severity:** High — pre-auth email hijacking on apps that accept user-supplied email addresses
+
+### Who is affected
+Any app that sends mail using a user-supplied email address without further sanitization:
+- Contact forms ("your email" + "recipient")
+- Invite / share-by-email flows
+- Password reset to arbitrary addresses
+- User-to-user messaging
+
+### How to fix
+1. **Upgrade Laravel:**
+   ```bash
+   composer update laravel/framework  # to 13.10.0+ or 12.60.0+
+   ```
+2. **Defense in depth — validate inputs server-side:**
+   ```php
+   $request->validate(['email' => 'required|email:rfc']);
+   // Use Laravel's built-in email validation; Laravel 10+ strips CRLF on validate.
+   ```
+3. **For Laravel 10 apps that can't upgrade** — strip CRLF manually before passing to mail:
+   ```php
+   $email = str_replace(["\r", "\n"], '', $request->input('email'));
+   if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+       abort(422, 'Invalid email');
+   }
+   ```
+
+**Apps on Laravel 13.10.0+ or 12.60.0+ are safe.** No code changes required.
+
+Source: [CVE-2026-48019 on Feedly](https://feedly.com/cve/CVE-2026-48019) | [NVD entry](https://nvd.nist.gov/vuln/detail/CVE-2026-48019)
+
+## Critical: Laravel-Lang Composer Supply-Chain Attack (May 22, 2026 — no CVE)
+
+**Tag-rewrite supply-chain attack** on the Laravel-Lang GitHub organization. An attacker with push access rewrote **every git tag** across four popular Composer packages to point at malicious commits that exfiltrate credentials.
+
+**Disclosed:** May 22, 2026 (rewrites between 22:32 UTC and 23:24 UTC)  
+**Severity:** Critical — RCE backdoor in `src/helpers.php`, exfiltrates CI/cloud secrets  
+**Coverage:** Mend.io MSC-2026-5762, Snyk advisory, GitHub Security Advisory
+
+### Affected packages
+- `laravel-lang/lang`
+- `laravel-lang/attributes`
+- `laravel-lang/http-statuses`
+- `laravel-lang/actions`
+
+Every git tag across all four packages was rewritten. **There is no safe version to pin to** unless you can verify the SHA against a pre-2026-05-22 commit.
+
+### How the backdoor works
+The malicious commits make a two-file change:
+1. Add `"files": ["src/helpers.php"]` to `composer.json` (auto-load trigger)
+2. Inject `src/helpers.php` containing decoy functions plus an anonymous closure that:
+   - Fingerprints the host
+   - Fetches a PHP credential stealer from `https://flipboxstudio[.]info/payload`
+   - Executes it in the background
+   - Drops artifacts in `<sys_get_temp_dir>/.laravel_locale/`
+
+### Indicators of Compromise (IoCs)
+- C2 domain: `flipboxstudio[.]info`
+- Stage-one URL: `hxxps://flipboxstudio[.]info/payload`
+- Stage-two exfil URL: `hxxps://flipboxstudio[.]info/exfil`
+- Commit author: `Your Name <you@example.com>`
+- Commit timestamps: 2026-05-22 22:32 UTC → 2026-05-23 00:00 UTC
+- Modified files (always exactly these two): `composer.json`, `src/helpers.php`
+
+### How to detect & remediate
+1. **Audit `composer.lock`** — for any of the four affected packages, look up the pinned SHA in the upstream repo and check the commit author. Locked pre-2026-05-22 SHAs are safe.
+2. **Check `vendor/laravel-lang/*/composer.json`** — confirm it does **not** contain `"files": ["src/helpers.php"]`.
+3. **Check `vendor/laravel-lang/*/src/helpers.php`** — this file should not exist in any of the four affected packages.
+4. **Search for IoCs on every host** — run `grep -r "flipboxstudio" /` and check for `<sys_get_temp_dir>/.laravel_locale/` artifacts.
+5. **Rotate credentials** — anything the affected servers had access to (AWS, GitHub, npm, DB, etc.) should be considered compromised.
+6. **Pin to verified SHAs** — replace `composer require laravel-lang/lang` with a manually-vetted commit SHA from before 2026-05-22.
+
+### Defense in depth
+- Use **Composer audit** in CI: `composer audit` (or `composer require --dev roave/security-advisories`).
+- Pin all dependencies to **commit SHAs** in `composer.lock` for any third-party package.
+- Run Composer in CI inside a sandboxed runner without access to long-lived secrets.
+- Monitor outbound traffic from CI runners to unknown domains (`flipboxstudio[.]info`).
+
+Source: [StepSecurity writeup](https://www.stepsecurity.io/blog/laravel-lang-supply-chain-attack) | [SecurityWeek](https://www.securityweek.com/laravel-lang-packages-poisoned-for-malware-delivery/) | [Mend.io analysis](https://www.mend.io/blog/laravel-lang-composer-tag-rewrite-supply-chain-attack/) | [Snyk advisory](https://snyk.io/blog/laravel-lang-supply-chain-advisory/)
+
 ## Common Mistakes
 
 
