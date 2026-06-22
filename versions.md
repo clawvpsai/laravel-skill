@@ -2,7 +2,7 @@
 
 ## Active Versions
 
-- **Laravel 11** — Still receives security fixes
+- **Laravel 11** — **End of life** (security support ended March 12, 2026). Upgrade to 12 or 13.
 - **Laravel 12** — Active development (v12.62.0 as of June 2026)
 - **Laravel 13** — Current latest (v13.16.1 as of June 2026)
 

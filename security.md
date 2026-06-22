@@ -530,6 +530,42 @@ The malicious commits make a two-file change:
 
 Source: [StepSecurity writeup](https://www.stepsecurity.io/blog/laravel-lang-supply-chain-attack) | [SecurityWeek](https://www.securityweek.com/laravel-lang-packages-poisoned-for-malware-delivery/) | [Mend.io analysis](https://www.mend.io/blog/laravel-lang-composer-tag-rewrite-supply-chain-attack/) | [Snyk advisory](https://snyk.io/blog/laravel-lang-supply-chain-advisory/)
 
+
+## Critical: plank/laravel-mediable Arbitrary File Upload — CVE-2026-4809 (CVSS 9.3 — Critical, **No Patch**)
+
+### Who is affected
+
+Any Laravel app using `plank/laravel-mediable` through **version 6.4.0** that accepts (or prefers) a **client-supplied MIME type** during file upload handling. The package itself does not enforce a server-side MIME check; the application code decides whether to trust the client's `Content-Type` / `$_FILES[...]['type']`. Apps that rely on the client-supplied MIME for "image" uploads are vulnerable.
+
+### Why it's dangerous
+
+A remote attacker can submit a file containing **executable PHP code** while declaring a benign image MIME type (e.g. `image/jpeg`). If the file is stored in a **web-accessible and executable** location (which is the common `public/uploads` pattern), this leads directly to **remote code execution**. CVSS 9.3.
+
+### How to fix
+
+- **Do not rely on client-supplied MIME.** Re-validate using a server-side check (file extension allowlist + `Symfony\Component\HttpFoundation\File\UploadedFile::getMimeType()` or `guessExtension()` via `symfony/mime`).
+- Move uploads **out of the public web root** if possible; serve them through a controller that enforces auth + content-type.
+- Pin a patched version once `plank/laravel-mediable` ships one (none available at time of writing — vendor had not responded to coordinated disclosure attempts).
+- Consider replacing `plank/laravel-mediable` with `spatie/laravel-medialibrary` (proactive MIME validation + VirusTotal integration in recent versions) until upstream patches.
+
+### Mitigation if you cannot upgrade / replace immediately
+
+```php
+// App\Http\Requests\UploadRequest.php — example server-side check
+public function rules(): array
+{
+    return [
+        'file' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+    ];
+}
+
+// Storage path: NEVER serve uploads directly from public/.
+// Use a route + controller that sets Content-Disposition: attachment
+// and validates the authenticated user has access.
+```
+
+Source: [Feedly CVE feed for Laravel](https://feedly.com/cve/vendors/laravel) | [Snyk advisory DB](https://snyk.io/vuln/CVE-2026-4809)
+
 ## Common Mistakes
 
 
