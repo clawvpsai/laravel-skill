@@ -566,6 +566,77 @@ public function rules(): array
 
 Source: [Feedly CVE feed for Laravel](https://feedly.com/cve/vendors/laravel) | [Snyk advisory DB](https://snyk.io/vuln/CVE-2026-4809)
 
+## Critical: spatie/laravel-medialibrary SSRF + Upload Bypass — CVE-2026-48555 & CVE-2026-48557 (May 29, 2026)
+
+Two related vulnerabilities in the popular `spatie/laravel-medialibrary` package, both fixed in **v11.23.0**. Apps pinned to `<11.23.0` that use `addMediaFromUrl()` or accept user-supplied filenames are affected.
+
+### CVE-2026-48555 — SSRF via `addMediaFromUrl()` (CVSS 7.4 — HIGH)
+
+**Who is affected:** Any Laravel app using `spatie/laravel-medialibrary` **< 11.23.0** that calls `addMediaFromUrl()` with a URL derived from user input (e.g., a "import from URL" feature, avatar upload by URL, attachment fetcher, OG image scraper).
+
+**Why it's dangerous:** The pre-11.23.0 `InteractsWithMedia::addMediaFromUrl()` issues an HTTP request to whatever URL is passed — including private network ranges (169.254.169.254 cloud metadata, 127.0.0.1, internal admin ports). An attacker who can influence the URL can:
+- Read cloud metadata (AWS/GCP/Azure IAM credentials → RCE)
+- Scan and probe internal services (Redis, Elasticsearch, admin UIs)
+- Bypass firewalls / SSRF protections in front of the Laravel app
+
+```php
+// VULNERABLE — passes user-supplied URL straight through
+$model->addMediaFromUrl($request->input('image_url'));
+```
+
+### CVE-2026-48557 — File upload restriction bypass via `FileAdder::defaultSanitizer()` (HIGH)
+
+**Who is affected:** Same scope — `spatie/laravel-medialibrary` **< 11.23.0** apps that rely on the package's built-in sanitizer to block executable extensions.
+
+**Why it's dangerous:** The sanitizer only checks the **last** extension in the filename. Two bypasses:
+- **Double-extension bypass:** `shell.php.jpg` is accepted by the sanitizer (looks like `.jpg`), but `pathinfo()` preserves the inner `.php` stem when the file is saved. On legacy Apache configs with `AddHandler` for `.php`, this can lead to PHP execution.
+- **Incomplete blocklist:** Executable extensions `.php6`, `.shtml`, and `.htaccess` are missing from the default sanitizer blocklist (CWE-184).
+
+### How to fix
+
+```bash
+# Pin to a fixed version
+composer require spatie/laravel-medialibrary:^11.23.0
+composer update spatie/laravel-medialibrary
+```
+
+### Defense-in-depth for `addMediaFromUrl()` (always do this, even after upgrading)
+
+```php
+use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
+
+public function importFromUrl(string $url): void
+{
+    // 1. URL allowlist or strict validation
+    if (!filter_var($url, FILTER_VALIDATE_URL) || !str_starts_with($url, 'https://')) {
+        throw ValidationException::withMessages(['image_url' => 'Must be an https URL.']);
+    }
+
+    $host = parse_url($url, PHP_URL_HOST);
+
+    // 2. Block private / loopback / link-local / metadata ranges
+    if (in_array(gethostbyname($host), ['127.0.0.1', '::1'], true)
+        || preg_match('/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)/', gethostbyname($host))) {
+        throw ValidationException::withMessages(['image_url' => 'Internal addresses not allowed.']);
+    }
+
+    // 3. Avoid following redirects (each hop can pivot to an internal IP)
+    $response = Http::withoutRedirecting()->timeout(10)->get($url);
+
+    if (!$response->successful()) {
+        throw ValidationException::withMessages(['image_url' => 'Could not fetch URL.']);
+    }
+
+    $this->addMediaFromString($response->body())
+        ->usingFileName(Str::random(40) . '.' . guessExtensionFromContentType($response->header('Content-Type')))
+        ->toMediaCollection('imports');
+}
+```
+
+Sources: [NVD CVE-2026-48555](https://nvd.nist.gov/vuln/detail/CVE-2026-48555) | [NVD CVE-2026-48557](https://nvd.nist.gov/vuln/detail/CVE-2026-48557) | [VulnCheck advisory](https://www.vulncheck.com/advisories/spatie-laravel-media-library-ssrf-via-addmediafromurl) | [spatie/laravel-medialibrary 11.23.0 release](https://github.com/spatie/laravel-medialibrary/releases/tag/11.23.0)
+
+
 ## Common Mistakes
 
 
@@ -581,7 +652,7 @@ Source: [Feedly CVE feed for Laravel](https://feedly.com/cve/vendors/laravel) | 
 10. **File uploads without mimes validation** — PHP files executable on server
 
 
-## Updated from Research (2026-05-04)
+## Updated from Research (2026-06-23)
 
 ### Laravel 13 CSRF Enhancement
 
