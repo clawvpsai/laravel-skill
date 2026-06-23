@@ -690,6 +690,87 @@ public function importFromUrl(string $url): void
 Sources: [NVD CVE-2026-48555](https://nvd.nist.gov/vuln/detail/CVE-2026-48555) | [NVD CVE-2026-48557](https://nvd.nist.gov/vuln/detail/CVE-2026-48557) | [VulnCheck advisory](https://www.vulncheck.com/advisories/spatie-laravel-media-library-ssrf-via-addmediafromurl) | [spatie/laravel-medialibrary 11.23.0 release](https://github.com/spatie/laravel-medialibrary/releases/tag/11.23.0)
 
 
+## High: Sharp Laravel CMS Storage Disk Path Confusion — CVE-2026-44692 / GHSA-748w-hm6r-qc7v (June 11, 2026)
+
+Information disclosure in **code16/sharp** (Sharp Laravel CMS), the admin UI for Laravel-based content management. Fixed in **v9.22.0**.
+
+### Who is affected
+
+Any Laravel application integrating `code16/sharp` < **9.22.0** that has one or more configured Storage disks AND exposes Sharp-managed entity download endpoints to authenticated users.
+
+### Why it's dangerous
+
+Sharp exposes a generic file download endpoint used by its administrative interface to retrieve files attached to managed entities. The endpoint enforces authorization by verifying that the requesting user can access the **referenced Sharp entity instance**. However, the **storage disk identifier and file path are taken directly from request parameters** and are NOT validated against the authorized entity instance.
+
+This breaks the binding between the authorization decision and the resource being served. An attacker holding any valid entity reference can substitute the `disk` and `path` parameters to fetch unrelated objects from any configured Laravel Storage disk.
+
+Classified as **CWE-639: Authorization Bypass Through User-Controlled Key**. Access is limited to roots of configured Laravel Storage disks (not arbitrary host filesystem paths), but private disk contents (S3 buckets, secure backups, signed media) can leak.
+
+### Attack vector (requires authentication)
+
+```http
+GET /sharp/download?entity=valid_entity_id&disk=s3&path=secure/financial-report.pdf
+Cookie: sharp_session=...
+```
+
+The endpoint verifies the user can read `valid_entity_id`, then unconditionally returns the file from the `s3` disk at the supplied path — regardless of whether that path is actually attached to that entity.
+
+### How to fix
+
+```bash
+# Pin to fixed version
+composer require code16/sharp:^9.22.0
+composer update code16/sharp
+```
+
+### Hardening (always do this, even on fixed versions)
+
+- **Never mount sensitive disks** (private backups, IAM-credential files, internal-only buckets) under Sharp's `disks:` config — Sharp passes through to the `Storage` facade.
+- Wrap Sharp download endpoints behind an additional auth middleware that re-validates the `(entity, disk, path)` triple against a database mapping.
+- For sensitive content, prefer **signed URLs** with short TTL instead of letting Sharp serve files directly.
+
+Source: [GHSA-748w-hm6r-qc7v](https://github.com/code16/sharp/security/advisories/GHSA-748w-hm6r-qc7v) | [CVE-2026-44692 details](https://www.sentinelone.com/vulnerability-database/cve-2026-44692/) | [vulmon entry](https://vulmon.com/vulnerabilitydetails?qid=CVE-2026-44692)
+
+
+## Medium: Statamic CMS Control Panel Authorization Bypass — CVE-2026-49288 (June 19, 2026)
+
+Missing authorization on Statamic Control Panel fieldtype endpoints. Fixed in **5.73.23** and **6.20.0**.
+
+### Who is affected
+
+Statamic CMS installations running versions **prior to 5.73.23** (5.x line) or **prior to 6.20.0** (6.x line) with authenticated Control Panel users and the affected fieldtype endpoints enabled.
+
+### Why it's dangerous
+
+Prior to the fix, an **authenticated Control Panel user could view metadata and content for resources they were NOT permitted to view**, including:
+
+- Entry titles and custom field values
+- Entry content
+- Asset metadata
+- Existence of users, roles, and groups
+
+Classified as **CWE-200** (Exposure of Sensitive Information), **CWE-862** (Missing Authorization), and **CWE-863** (Incorrect Authorization). The flaw is **read-only disclosure** — no data modification is possible — which is why the CVSS score is **4.3 (Medium)** despite the authorization bypass.
+
+### How to fix
+
+```bash
+# For 5.x line
+composer update statamic/cms:^5.73.23
+
+# For 6.x line
+composer update statamic/cms:^6.20.0
+```
+
+### Hardening (always do this)
+
+- Audit your Statamic user/role definitions: any authenticated CP user with a low-privilege role can still query fieldtype endpoints for resources they nominally cannot access.
+- Review Statamic role/permission scopes — consider segmenting read-only CP roles further.
+- Watch Statamic security advisories for follow-up patches; CVE-2026-49288 was a single fix but the fieldtype endpoint surface is broad.
+
+Source: [OpenCVE CVE-2026-49288](https://app.opencve.io/cve/CVE-2026-49288) | [CVE new Twitter disclosure](https://x.com/CVEnew/status/2068302713285165395)
+
+
+
 ## Common Mistakes
 
 
@@ -705,7 +786,12 @@ Sources: [NVD CVE-2026-48555](https://nvd.nist.gov/vuln/detail/CVE-2026-48555) |
 10. **File uploads without mimes validation** — PHP files executable on server
 
 
-## Updated from Research (2026-06-23)
+## Updated from Research (2026-06-23, cycle 2)
+
+### New CVEs added
+
+- **CVE-2026-44692 / GHSA-748w-hm6r-qc7v** — Sharp Laravel CMS storage disk path confusion (CWE-639). Authenticated file disclosure across configured Storage disks. Fixed in `code16/sharp` 9.22.0 (June 11, 2026).
+- **CVE-2026-49288** — Statamic CMS Control Panel authorization bypass on fieldtype endpoints (CWE-200/862/863). Read-only disclosure of restricted resources. Fixed in `statamic/cms` 5.73.23 and 6.20.0 (June 19, 2026).
 
 ### Laravel 13 CSRF Enhancement
 
