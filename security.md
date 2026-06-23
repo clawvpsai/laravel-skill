@@ -481,6 +481,59 @@ Any app that sends mail using a user-supplied email address without further sani
 
 Source: [CVE-2026-48019 on Feedly](https://feedly.com/cve/CVE-2026-48019) | [NVD entry](https://nvd.nist.gov/vuln/detail/CVE-2026-48019)
 
+## High: Laravel Signed URL Path Confusion — CVE-2026-48041 / GHSA-crmm-hgp2-wgrp (June 8, 2026)
+
+**Path-parsing ambiguity in Laravel's local filesystem driver** lets a generated temporary signed URL be interpreted differently by the server than intended at signing time. Expired temporary URLs may continue to be accepted, requests may resolve to a different resource than the one that was signed, and the upload variant may allow writes to reach an unintended destination.
+
+**Disclosed:** June 8, 2026 (GitHub Security Advisory, laravel/framework)
+**Affected:** Laravel **< 13.12.0** and **< 12.61.1**
+**Fixed in:** Laravel **13.12.0** and **12.61.1**
+**Severity:** Moderate (CVSS v3.1 4.2 MEDIUM — `AV:N/AC:H/PR:L/UI:N/S:U/C:L/I:L/A:N`)
+**CWE:** CWE-116 (Improper Encoding or Escaping of Output)
+
+### Who is affected
+Any Laravel app that uses `URL::temporarySignedRoute()` (or `Storage::temporaryUrl()` on the local driver) to grant time-limited access to private files — uploaded documents, invoices, user avatars, downloads, video streams, S3-style presigned URLs against the `local` disk.
+
+### Why it's dangerous
+- **Expiration bypass:** a signed URL whose `expires` timestamp has passed can still be accepted if the path is parsed ambiguously.
+- **Resource misrouting:** a URL signed for `downloads/invoice-123.pdf` may resolve to a different file on disk.
+- **Upload variant:** writes from a signed upload URL may reach an unintended destination — useful for planting files in arbitrary paths an attacker can later request.
+
+### How to fix
+```bash
+composer update laravel/framework    # to 13.12.0+ or 12.61.1+
+```
+
+### Hardening (always do this, even on fixed versions)
+```php
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Facades\Storage;
+
+// 1. Always use absolute, explicit paths in signed routes — never derive from user input
+URL::temporarySignedRoute(
+    'downloads.show',
+    now()->addMinutes(5),
+    ['path' => 'invoices/' . $invoice->id . '.pdf']
+);
+
+// 2. On the receiving controller, re-validate the resolved path stays inside the expected dir
+Route::get('/download/{path}', function (string $path) {
+    if (! request()->hasValidSignature()) {
+        abort(401);
+    }
+    $base = Storage::disk('private')->path('invoices');
+    $resolved = Storage::disk('private')->path($path);
+    if (! str_starts_with($resolved, $base)) {
+        abort(404);
+    }
+    return response()->download($resolved);
+})->where('path', '.*')->name('downloads.show');
+
+// 3. Keep expiry windows short (5 minutes, not 24 hours)
+```
+
+Source: [GHSA-crmm-hgp2-wgrp](https://github.com/laravel/framework/security/advisories/GHSA-crmm-hgp2-wgrp) | [NVD CVE-2026-48041](https://nvd.nist.gov/vuln/detail/CVE-2026-48041) | [PR #60137](https://github.com/laravel/framework/pull/60137) | [PR #60230](https://github.com/laravel/framework/pull/60230)
+
 ## Critical: Laravel-Lang Composer Supply-Chain Attack (May 22, 2026 — no CVE)
 
 **Tag-rewrite supply-chain attack** on the Laravel-Lang GitHub organization. An attacker with push access rewrote **every git tag** across four popular Composer packages to point at malicious commits that exfiltrate credentials.
