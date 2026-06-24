@@ -3,8 +3,8 @@
 ## Active Versions
 
 - **Laravel 11** — **End of life** (security support ended March 12, 2026). Upgrade to 12 or 13.
-- **Laravel 12** — Active development (v12.62.0 as of June 2026)
-- **Laravel 13** — Current latest (v13.16.1 as of June 2026)
+- **Laravel 12** — Active development (v12.62.0 as of June 2026; bug fixes until Aug 13, 2026, security until Feb 24, 2027)
+- **Laravel 13** — Current latest (v13.17.0 as of June 24, 2026; bug fixes until Q3 2027, security until Mar 17, 2028)
 
 ## Version Selector Prompt
 
@@ -17,11 +17,13 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — June 2026, v13.16.1)
+## Laravel 13 (Latest — June 2026, v13.17.0)
 
 ### New in Laravel 13
 
-- **PHP 8.3 minimum required** (8.2, 8.3, 8.4, 8.5 supported)
+- **PHP 8.3 minimum required** (8.3, 8.4, 8.5 supported — 8.2 dropped vs Laravel 12)
+- **Security fixes until March 17, 2028** (24-month security window per Laravel's policy)
+- **Bug fixes until Q3 2027** (~18 months)
 - **Laravel AI / Boost MCP** — first-party MCP server for AI assistants
   - `/upgrade-laravel-v13` slash command for automated upgrades
   - Interactive HTML responses in Claude/VS Code Copilot
@@ -33,6 +35,36 @@ Then load the relevant sections below.
 - **New PHP Attributes for Testing:** `#[Group]`, `#[TestProperty]`, `#[UnitTest]`
 - **New PHP Attributes for Queues:** `#[Job]`, `#[Job\Backoff()]`, `#[Job\MaxAttempts()]`, `#[Job\Timeout()]`, `#[Job\FailOnTimeout]`
 - **Queue Routing** — `Queue::route()` for centralized queue/connection routing by job class
+
+### New in Laravel 13.17 (June 23, 2026, v13.17.0)
+
+- **Route metadata support** — `Route::metadata([...])` lets you attach arbitrary structured metadata to a route (audit info, feature flags, doc links, internal ownership). Query it back via `Route::getMetadata()` for tooling, dashboard generation, OpenAPI emitters, or to build route inventory reports. PR #60530 by @benbjurstrom.
+- **PostgreSQL transaction pooler support** — first-class support for PgBouncer/Postgres pooler transaction mode in `Illuminate\Database\PostgresConnection`. Important when running Laravel behind serverless/edge platforms (Neon, Supabase, AWS RDS Proxy in transaction mode) where persistent connections are forbidden. PR #60425 by @DGarbs51.
+- **`ShouldNotRetry` exception handler** — new `Illuminate\Contracts\Queue\ShouldNotRetry` interface — when an exception implements it, the queue worker will **fail** the job instead of retrying it, regardless of `$tries` / `maxExceptions`. Use for permanent failures (validation errors, missing records, 4xx upstream errors) that retrying cannot fix. PR #60552 by @alexbowers.
+- **`php artisan dev:list` command** — companion to `php artisan dev` (added in 13.16). Lists every dev command registered for the current project (including vendor packages) so you can verify what's going to run before you run `dev`. PR #60573 by @joetannenbaum.
+- **`--without-migration-data` flag on `DumpCommand`** — `php artisan schema:dump --without-migration-data` now emits **schema only** (no `INSERT` statements) even when migration data is included. Useful for greenfield DB provisioning or shipping schema files to read replicas. PR #60570 by @jackbayliss.
+- **Cache debounce `maxWait` performance fix** — `Cache::flexible()` / `Cache::remember()` with `->debounce(...)->maxWait(...)` no longer re-checks the underlying source on every call when inside the debounce window. Significantly reduces cache hits / DB load for high-frequency debounced keys (rate limiters, hot idempotency keys). PR #60559 by @jackbayliss.
+- **`between()` / `unlessBetween()` timezone-independence fix** — these Eloquent query helpers previously depended on the order of `->timezone()` calls. Now timezone conversion is applied per-value, so the order no longer matters. PR #60518 by @ManicardiFrancesco.
+- **Clear transaction manager state on disconnect** — fixes leaked transactions / open savepoints that survived a DB disconnect. Prevents phantom "current transaction is aborted, commands ignored until end of transaction block" errors after a failover. PR #60574 by @lazerg.
+- **`nightly` framework-install workflow** — new GitHub Actions workflow verifies the framework actually installs cleanly every night (catches regressions in `composer create-project`). PR #60532 by @jackbayliss.
+
+**13.x hardening/cleanup in 13.17:**
+- Tightened array-shape typehints where the first parameter is optional (#60553)
+- Improved `InteractsWithData::when*` return types (#60536)
+- `validateBoolean` / `validateNumeric` now accept `string|int|float` for the validated field type (#60549)
+- Missing `@throws \ReflectionException` / `@throws \InvalidArgumentException` annotations on several helpers (#60535, #60546)
+- `FileStore` cache deserialization fix for short timestamps (#60543)
+- `DevCommands` vendor registration check no longer skips userland frames (#60538)
+- `brick/math` 0.18 allowed (#60560)
+
+**12.x backports included in 13.17:**
+- **Multi-type union support in `Illuminate\JsonSchema`** — pair with the `fromArray()` deserializer from 13.15 (#60462)
+- **Ability to refresh cache locks** — `Cache::restoreLock()` lets you re-acquire a previously-released lock by token (#58349, bytestream)
+- **Guard `JsonSchema` deserializer against unbounded `$ref` expansion** — security fix that prevents attackers from crafting a JSON Schema that expands recursively and DoSes the validator. (Security fix — backported to both 12.x and 13.x.)
+- **New error messages for detecting lost connections** — `Connection::disconnected()` now throws a `LostConnectionException` with the actual driver error, not a generic "gone away" message (#60472)
+- **Postgres `whereDate()` / `whereTime()` crash when column is `Expression`** — fixed (#60540)
+
+**Migration from 13.16.1 → 13.17.0:** no breaking changes. Standard `composer update laravel/framework` is safe.
 
 ### New in Laravel 13.16 (June 16, 2026, v13.16.0 — patch v13.16.1)
 

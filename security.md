@@ -771,6 +771,65 @@ Source: [OpenCVE CVE-2026-49288](https://app.opencve.io/cve/CVE-2026-49288) | [C
 
 
 
+## Critical: Laravel Livewire RCE — CVE-2025-54068 (CVSS 9.8 — Critical, **Active In-The-Wild Exploitation as of June 23, 2026**)
+
+Imperva Threat Research disclosed on **June 23, 2026** that CVE-2025-54068 is being mass-exploited against unpatched Laravel Livewire v3 deployments. The campaign has compromised **6,000+ applications** for credential theft (`.env` files, AWS keys, DB credentials, mail tokens). Initial observations began May 24, 2026.
+
+### Who is affected
+
+Any application running **`livewire/livewire` v3.0.0 through v3.6.3** exposed to the public internet, regardless of whether the Livewire endpoints are reachable. Attackers fingerprint exposed apps and send weaponized POST payloads to Livewire's component-hydration endpoint.
+
+### Why it's dangerous
+
+CVE-2025-54068 is an unauthenticated PHP object-injection (CWE-502) in Livewire v3's hydration pipeline. The framework deserializes client-submitted component data before verifying integrity, allowing a malicious serialized object to be injected. Successful exploitation → **Remote Code Execution** as the web user (usually `www-data`).
+
+CVSS 9.8 (Critical) — network attack vector, no auth, no user interaction, full CIA impact.
+
+The June 2026 campaign specifically targets:
+- `.env` files → exfiltrate to attacker-controlled host
+- AWS / S3 / DigitalOcean / Linode / Stripe API keys
+- Database credentials (then dump & sell)
+- Mail provider credentials (SendGrid, Mailgun, Postmark)
+- Session/cookie theft via `cookie.txt` extraction
+
+### How to fix
+
+```bash
+composer require livewire/livewire:^3.6.4
+composer update livewire/livewire
+```
+
+`3.6.4` adds integrity verification to the hydration step (the patch is **strict** — a single property whose type doesn't match the component signature is rejected).
+
+If you must stay on 3.6.3 temporarily, block the hydration endpoint with WAF rules matching `wire:*.snapshot` and `wire:snapshot.upload` POSTs with suspicious serialized payloads (`O:` followed by a long class name). Imperva's report notes that Cloud WAF rules are blocking 95%+ of the campaign traffic.
+
+### Mitigation if you cannot upgrade immediately
+
+1. **Restrict Livewire routes to authenticated users only** — `Route::middleware(['auth'])->group(function () { Route::livewire(...); });` — CVE-2025-54068 is unauthenticated, so this is a partial mitigation at best.
+2. **WAF rules** — block serialized payloads with `O:` (PHP object) or `a:` (PHP array of objects) in Livewire snapshot fields. Use the Imperva / Cloudflare WAF signatures released for CVE-2025-54068.
+3. **Disable the Livewire snapshot endpoint** — `Livewire::setScriptRoute(null);` (Laravel 11+) removes the auto-registered hydration route. Not viable if you use Livewire components in production.
+4. **Disable `unserialize()` globally** — set `unserialize_callback_func` to a no-op in `php.ini` so that any object instantiation via `unserialize()` is blocked even if a vulnerable code path is reached.
+5. **Audit IoCs** — check for:
+   - Outbound HTTP to non-allowlisted hosts from `www-data` / `php-fpm` user
+   - `.env` files newer than their last known good mtime
+   - Suspicious long POST bodies with `wire:snapshot` + `O:` patterns in Nginx/Apache access logs
+   - New files in `storage/framework/sessions/` that don't match any known user
+
+### Detection — Imperva IoCs (June 23, 2026)
+
+- `POST /livewire/update` with `Content-Type: application/json` and `{"_token": "...", "components": [{"snapshot": "O:..."}]}` 
+- Wire snapshot strings beginning with `O:8:"Symfony\\..."` (Symfony gadget chains) or `O:11:"Illuminate\\..."` (Laravel gadget chains)
+- Outbound connections to `45.x.x.x`, `194.x.x.x` (attacker C2 ranges observed in Imperva report)
+
+### Background context
+
+CVE-2025-54068 was originally disclosed in **July 2025** by Synacktiv researchers, fixed in `livewire/livewire` **3.6.4** (January 2026), but the June 2026 mass-exploitation campaign shows that **most Livewire v3 deployments have not been patched**. The gap between patch availability and adoption (5+ months) is what makes this a high-priority audit item for any Livewire-using app.
+
+**Bottom line:** if you use Livewire v3, run `composer show livewire/livewire` RIGHT NOW. Anything below 3.6.4 is exploitable and being actively targeted.
+
+Source: [Imperva Threat Research report, June 23 2026](https://securityboulevard.com/2026/06/cve-2025-54068-laravel-livewire-credential-theft-campaign-6000-applications-compromised/) | [CVE-2025-54068 on NVD](https://nvd.nist.gov/vuln/detail/CVE-2025-54068) | [Synacktiv original disclosure (July 2025)](https://www.synacktiv.com/en/publications/livewire-remote-command-execution-through-unmarshaling) | [Tenable plugin WAS-115113](https://www.tenable.com/plugins/was/115113)
+
+
 ## Common Mistakes
 
 
@@ -786,12 +845,20 @@ Source: [OpenCVE CVE-2026-49288](https://app.opencve.io/cve/CVE-2026-49288) | [C
 10. **File uploads without mimes validation** — PHP files executable on server
 
 
-## Updated from Research (2026-06-23, cycle 2)
+## Updated from Research (2026-06-24, cycle 3)
 
-### New CVEs added
+### New CVEs added (cycle 3, 2026-06-24)
 
+- **CVE-2025-54068** — Laravel Livewire v3 unauthenticated RCE (CWE-502). **Active mass-exploitation campaign disclosed by Imperva June 23, 2026 (6,000+ apps compromised for credential theft)**. Patch (livewire/livewire 3.6.4) has been out since January 2026 but most deployments remain unpatched. Audit your Livewire v3 usage NOW.
 - **CVE-2026-44692 / GHSA-748w-hm6r-qc7v** — Sharp Laravel CMS storage disk path confusion (CWE-639). Authenticated file disclosure across configured Storage disks. Fixed in `code16/sharp` 9.22.0 (June 11, 2026).
 - **CVE-2026-49288** — Statamic CMS Control Panel authorization bypass on fieldtype endpoints (CWE-200/862/863). Read-only disclosure of restricted resources. Fixed in `statamic/cms` 5.73.23 and 6.20.0 (June 19, 2026).
+
+### Top-priority actions for 2026-06-24
+
+1. **Livewire 3.6.4 upgrade is the #1 security item** — check `composer show livewire/livewire` on every Laravel project you maintain. Anything < 3.6.4 is actively exploited.
+2. **Laravel 13.17.0** if on 13.x — bugfix release, no breaking changes.
+3. **Laravel 12.62.x (latest 12.x)** if on 12.x — picks up the `JsonSchema` security backport and the earlier CRLF injection fix.
+4. **Laravel 11 = EOL** — security support ended March 12, 2026. Plan upgrade to 12 or 13.
 
 ### Laravel 13 CSRF Enhancement
 
