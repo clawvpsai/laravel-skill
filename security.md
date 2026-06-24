@@ -732,6 +732,40 @@ composer update code16/sharp
 Source: [GHSA-748w-hm6r-qc7v](https://github.com/code16/sharp/security/advisories/GHSA-748w-hm6r-qc7v) | [CVE-2026-44692 details](https://www.sentinelone.com/vulnerability-database/cve-2026-44692/) | [vulmon entry](https://vulmon.com/vulnerabilitydetails?qid=CVE-2026-44692)
 
 
+## Medium: Sharp Laravel CMS Quick Creation Authorization Bypass — CVE-2026-53634 / GHSA-vmwx-m75v-qvch (June 10, 2026)
+
+Missing authorization check on Sharp's "Quick Creation Command" `create`/`store` endpoints. Fixed in **code16/sharp v9.22.3**. The patch for **CVE-2026-44692 (v9.22.0)** did NOT cover this issue — a separate, later patch was needed.
+
+### Who is affected
+
+Any Laravel application running `code16/sharp` versions **9.0.0 through 9.22.2** inclusive that:
+- Exposes the Sharp admin interface to authenticated users, AND
+- Has at least one entity with a configured Quick Creation Command handler.
+
+### Why it's dangerous
+
+Sharp's Quick Creation feature exposes short-form `create` and `store` endpoints (separate from the standard Sharp entity form) for inline record creation. These endpoints **did not enforce the standard Sharp entity-level "create" permission check** before the fix. Any authenticated Sharp user (even one explicitly denied `create` permission on the entity) could:
+- Render the Quick Creation form (`GET` create endpoint) for entities they should not touch.
+- Submit the form (`POST` store endpoint) and create new records for those entities.
+
+Classified as **CWE-862: Missing Authorization**. The vulnerability is authenticated (the user must hold a valid Sharp session) and **horizontal** (privilege boundary between Sharp users, not unauthenticated-to-authenticated escalation). Severity is rated Medium (CVSS 3.x: 4.3) because it requires a Sharp account and the impact is limited to record creation within entities that already have a Quick Creation handler configured — but in multi-tenant CMS deployments or any workflow where some editors should be read-only on certain entities, this is a real data-integrity issue.
+
+### How to fix
+
+```bash
+# Pin to fixed version (NOTE: v9.22.0 fixed CVE-2026-44692 but NOT this one — must be 9.22.3+)
+composer require code16/sharp:^9.22.3
+composer update code16/sharp
+```
+
+### Hardening
+
+- After upgrading, audit your `EntityConfiguration` classes: if an entity has a `QuickCreationCommand`, verify the entity's policy correctly returns `false` for users who should not create records. The fix adds the missing check, but defense-in-depth is still worthwhile.
+- Consider disabling Quick Creation on entities where only a subset of users should have create rights — set the Quick Creation handler to `null` and use the full form for authorized users.
+
+Source: [GHSA-vmwx-m75v-qvch](https://github.com/code16/sharp/security/advisories/GHSA-vmwx-m75v-qvch) | [CVE-2026-53634 details](https://app.opencve.io/cve/CVE-2026-53634) | [vulmon entry](https://vulmon.com/vulnerabilitydetails?qid=CVE-2026-53634) | [Sharp v9.22.3 release](https://github.com/code16/sharp/releases/tag/v9.22.3)
+
+
 ## Medium: Statamic CMS Control Panel Authorization Bypass — CVE-2026-49288 (June 19, 2026)
 
 Missing authorization on Statamic Control Panel fieldtype endpoints. Fixed in **5.73.23** and **6.20.0**.
@@ -845,15 +879,13 @@ Source: [Imperva Threat Research report, June 23 2026](https://securityboulevard
 10. **File uploads without mimes validation** — PHP files executable on server
 
 
-## Updated from Research (2026-06-24, cycle 3)
+## Updated from Research (2026-06-24, cycle 4)
 
-### New CVEs added (cycle 3, 2026-06-24)
+### New CVEs added (cycle 4, 2026-06-24)
 
-- **CVE-2025-54068** — Laravel Livewire v3 unauthenticated RCE (CWE-502). **Active mass-exploitation campaign disclosed by Imperva June 23, 2026 (6,000+ apps compromised for credential theft)**. Patch (livewire/livewire 3.6.4) has been out since January 2026 but most deployments remain unpatched. Audit your Livewire v3 usage NOW.
-- **CVE-2026-44692 / GHSA-748w-hm6r-qc7v** — Sharp Laravel CMS storage disk path confusion (CWE-639). Authenticated file disclosure across configured Storage disks. Fixed in `code16/sharp` 9.22.0 (June 11, 2026).
-- **CVE-2026-49288** — Statamic CMS Control Panel authorization bypass on fieldtype endpoints (CWE-200/862/863). Read-only disclosure of restricted resources. Fixed in `statamic/cms` 5.73.23 and 6.20.0 (June 19, 2026).
+- **CVE-2026-53634 / GHSA-vmwx-m75v-qvch** — Sharp Laravel CMS "Quick Creation Command" missing authorization (CWE-862). Authenticated Sharp users without `create` permission on a given entity could render the Quick Creation form and submit new records when that entity had a Quick Creation handler configured. Fixed in `code16/sharp` **9.22.3** (June 10, 2026). The earlier 9.22.0 patch for CVE-2026-44692 did NOT cover this — projects on 9.22.0/9.22.1/9.22.2 must upgrade again to 9.22.3+.
 
-### Top-priority actions for 2026-06-24
+### Top-priority actions for 2026-06-24 (cycle 4)
 
 1. **Livewire 3.6.4 upgrade is the #1 security item** — check `composer show livewire/livewire` on every Laravel project you maintain. Anything < 3.6.4 is actively exploited.
 2. **Laravel 13.17.0** if on 13.x — bugfix release, no breaking changes.
