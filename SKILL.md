@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.0.0
+version: 1.17.0
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
