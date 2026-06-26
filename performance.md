@@ -349,6 +349,12 @@ $results = KnowledgeArticle::query()
 7. **No transactions for related writes** — partial updates on failure
 8. **Running heavy work synchronously** — block users, timeout issues
 
+## Updated from Research (2026-06-26, cycle 5)
+
+- **Cache Debounce `maxWait` Performance Fix (Laravel 13.17+)** — PR #60559 by @jackbayliss fixes `Cache::flexible()` / `Cache::remember()` with `->debounce(...)->maxWait(...)` so the underlying source is not re-checked on every call inside the debounce window. Pre-13.17, hot idempotency keys and rate limit counters could trigger 10–100× the expected closure / DB calls. See the detailed section below.
+
+---
+
 ## Updated from Research (2026-06-19)
 
 ### Semantic Search (pgvector) — Laravel 13
@@ -427,3 +433,31 @@ if (! $wasCached) {
 - Pairs well with `Cache::flexible()` — call `Cache::flexible($key, [5, 60], fn() => $data)` then wrap with `rememberWithWarmth()` if you also need warm/cold state.
 
 Source: [PR #60385 — Cache `rememberWithWarmth()`](https://github.com/laravel/framework/pull/60385)
+
+### Cache Debounce `maxWait` Performance Fix (Laravel 13.17+)
+
+Before 13.17, calling `Cache::flexible()` / `Cache::remember()` with `->debounce(...)->maxWait(...)` would re-evaluate the underlying closure on every call *even while inside the debounce window*, because each call independently checked whether the debounce had elapsed. On hot idempotency keys (rate limiters, payment idempotency tokens, request dedupe) this produced 10–100× the expected closure calls and DB hits.
+
+In 13.17 (PR #60559 by @jackbayliss), once a debounce window is armed the underlying source is not re-checked until the window actually expires — matching the documented intent of `debounce + maxWait`:
+
+```php
+// Pre-13.17: closure called on every call within the debounce window
+// 13.17: closure called only when debounce window expires (or maxWait triggers)
+$value = Cache::flexible($key, [5, 10], fn() => $this->expensiveFetch())
+    ->debounce(2)         // batch duplicate requests within 2s
+    ->maxWait(60);        // but always recompute at least once per 60s
+```
+
+**When this matters:**
+- Idempotency keys for "did this webhook already arrive?" lookups under retry storms
+- Rate limit counters using cache-backed sliding windows
+- Background-job dedupe keys hit from many web workers
+- `Cache::remember()` for short-lived tokens (CSRF nonce, password-reset codes)
+
+**How to verify the fix is active:** add a temporary counter inside the closure and burst-fire 100 requests for the same key within 2 seconds — on 13.17+ the counter increments once (or at most once per `maxWait`); on older versions it increments ~100×.
+
+**Audit checklist:** if you have `->debounce()` chains in production and were seeing DB / cache backend load that did not match your traffic shape, this is the upgrade that fixes it.
+
+See `queues.md` (Debounceable Jobs section) for the parallel queue-job debounce pattern.
+
+Source: [PR #60559 — Reduce cache hits when debouncing with maxWait](https://github.com/laravel/framework/pull/60559) | [Laravel 13.17 Release Notes](https://github.com/laravel/framework/releases/tag/v13.17.0)

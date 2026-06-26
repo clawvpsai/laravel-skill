@@ -181,6 +181,33 @@ php artisan migrate:status           # show which migrations ran
 php artisan migrate --path=database/migrations/custom
 ```
 
+
+## Schema Dump — `--without-migration-data` (Laravel 13.17+)
+
+`php artisan schema:dump` normally emits one SQL file per migration plus a `_migration_data.sql` file containing the `INSERT` statements for any rows inserted during migrations (lookup tables, seed data baked in). In 13.17 (PR #60570), the new `--without-migration-data` flag emits **schema only** — no `INSERT` statements — even when migration data is present:
+
+```bash
+# Default behavior — schema + any migration-time INSERT statements
+php artisan schema:dump
+
+# Schema only — drops the migration-data file
+php artisan schema:dump --without-migration-data
+
+# Combine with --prune to remove migrations after dumping
+php artisan schema:dump --without-migration-data --prune
+```
+
+**When to use it:**
+- Greenfield DB provisioning (no seed data should ship with schema)
+- Shipping schema to read replicas that should only contain replicated data
+- Compliance environments where migration-time inserts must not be auditable separately from application seeds
+- Schema files distributed as composer packages (the `vendor:publish` target should be pure DDL)
+
+**Audit checklist:** if your existing dumps contain a `_migration_data.sql` and you switch to `--without-migration-data`, verify the missing rows were not relied upon by the running app (they would still be inserted by `migrate` itself when you re-run migrations during deploy).
+
+See `deployment.md` (Postgres Transaction Pooler Support / Schema section) for the deploy-side flow.
+
+
 ## Migration Lifecycle Events (Laravel 13.9+)
 
 `MigrationStarted` and `MigrationEnded` events now carry the migration class name (not just connection name) for granular event handling:
@@ -306,6 +333,12 @@ php artisan migrate:fresh --seed       # reset + seed
 6. **No timestamps on pivot tables** — many2many needs `timestamps()` for `withTimestamps()`
 7. **`decimal` vs `float` for money** — always use `decimal(10,2)` for currency, never float
 8. **Nullable timestamps without default** — Laravel expects `nullable()` timestamps to have a default or be set explicitly; can cause "Incorrect datetime value" errors
+
+## Updated from Research (2026-06-26, cycle 5)
+
+- **`schema:dump --without-migration-data` (Laravel 13.17+)** — PR #60570 by @jackbayliss emits **schema only** (no `INSERT` statements) even when migration data is present. Combines with `--prune` to remove migrations after dumping the clean schema file. Use cases: greenfield DB provisioning, shipping schema to read replicas, compliance environments that must not ship seed data with DDL, composer-distributed schema packages. See the detailed section above.
+
+---
 
 ## Updated from Research (2026-05-18)
 

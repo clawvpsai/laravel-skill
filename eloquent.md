@@ -285,10 +285,60 @@ Post::factory()->unpublished()->make();
 6. **Not handling unique constraint violations** — wrap in try/catch or use `firstOrCreate`
 7. **`nestedWhere` with complex AND/OR without parentheses** — always wrap OR groups in `where()` callback to ensure correct precedence
 
+## Postgres Transaction Pooler Support (Laravel 13.17+)
+
+When you run Laravel behind a Postgres connection pooler in **transaction mode** (PgBouncer, Neon, Supabase pooler, AWS RDS Proxy in transaction mode), persistent connections are forbidden — every transaction must run on a freshly checked-out connection. Laravel 13.17 (PR #60425) added first-class support for this in `Illuminate\Database\PostgresConnection`:
+
+```php
+// config/database.php — connection string for transaction-pooler platforms
+'pgsql' => [
+    'driver' => 'pgsql',
+    'host'   => env('DB_HOST'),           // pooler hostname (e.g. ep-xxx.pooler.supabase.com)
+    'port'   => env('DB_PORT', 6543),     // pooler port (6543 for Supabase, 6432 for PgBouncer)
+    'database' => env('DB_DATABASE'),
+    'username' => env('DB_USERNAME'),
+    'password' => env('DB_PASSWORD'),
+    'sslmode' => 'require',
+    // PostgresConnection now resets connection-scoped state (search_path, SET LOCAL,
+    // advisory locks, temp tables) between transactions automatically.
+],
+```
+
+**Why this matters:** without the fix, `SET LOCAL` from one transaction would leak into the next, advisory locks would be held by the wrong session, and prepared statements would target the wrong schema — all silently. With 13.17+, `PostgresConnection::disconnect()` clears the state before returning the connection to the pool.
+
+**Pair with the new disconnect fix:** PR #60574 (same release) clears the transaction manager state on DB disconnect — so if your pooler cuts a connection mid-transaction, the framework no longer leaves a phantom savepoint in the new connection that would later raise "current transaction is aborted, commands ignored until end of transaction block".
+
+**Things that still don't work in transaction mode:**
+- `BEGIN; ... COMMIT;` from raw SQL containing `PREPARE` / `LISTEN`
+- Long-running advisory locks held across multiple HTTP requests (use cache locks instead)
+- Session-scoped `SET` statements (use `SET LOCAL` inside the transaction)
+
+See `deployment.md` (Postgres Transaction Pooler Support section) for connection-string examples for Neon / Supabase / RDS Proxy.
+
+## Transaction State Cleared on Disconnect (Laravel 13.17+)
+
+Before 13.17, a DB disconnect mid-transaction would leave the transaction manager believing an open transaction still existed. The next query on the new connection would fail with the cryptic "current transaction is aborted, commands ignored until end of transaction block" Postgres error — even though the new connection had no transaction at all.
+
+PR #60574 fixes this by resetting the transaction manager when a connection is lost and re-established:
+
+- Phantom savepoints no longer survive a failover
+- Auto-commit returns immediately after a `Connection::disconnect()` cycle
+- Retry helpers (e.g. `DB::transaction($cb, $attempts)`) recover cleanly on transient disconnects
+
+If you see that error in logs after a Postgres failover or pooler rotation, upgrade to 13.17+.
+
+## Updated from Research (2026-06-26, cycle 5)
+
+- **Postgres Transaction Pooler Support (Laravel 13.17+)** — PR #60425 by @DGarbs51 adds first-class support for PgBouncer / Neon / Supabase / RDS Proxy in transaction mode. `PostgresConnection` correctly resets connection-scoped state (`SET LOCAL`, advisory locks, temp tables, `search_path`) between transactions. Pair with the disconnect fix (PR #60574) below. See the detailed section above.
+- **Transaction State Cleared on Disconnect (Laravel 13.17+)** — PR #60574 resets the transaction manager when a connection is lost, eliminating the "current transaction is aborted, commands ignored until end of transaction block" error after a Postgres failover or pooler rotation. See the detailed section above.
+
+---
+
 ## Updated from Research (2026-05-18)
 
 - **SortDirection enum (Laravel 13.8+)** — `Illuminate\Database\Query\SortDirection` provides type-safe `Ascending`/`Descending` values for `orderBy()` instead of string `'asc'`/`'desc'`
 - **nestedWhere()** (Laravel 12+) — cleaner alternative to deeply nested closures for mixed AND/OR conditions
 - **whereRelation()** (Laravel 10+) — `whereRelation('author', 'verified', true)` reads more naturally than `whereHas`
+
 
 Source: [Laravel 13 Docs - Eloquent](https://laravel.com/docs/13.x/eloquent) | [Laravel 12 Query Builder](https://laravel.com/docs/12.x/queries)

@@ -384,6 +384,47 @@ $this->renderable(function (\Illuminate\Validation\ValidationException $e, $requ
 });
 ```
 
+## Route Metadata for OpenAPI Generation (Laravel 13.17+)
+
+`Route::metadata()` is the natural building block for auto-generated OpenAPI / Stoplight specs — attach `summary`, `description`, `tags`, `operationId`, and `security` to each route, then walk `Route::getRoutes()` to emit spec fragments. Survives `route:cache` serialization, so production-built apps still emit specs from cache.
+
+```php
+// routes/api.php
+Route::get('/posts', [PostController::class, 'index'])
+    ->metadata([
+        'openapi' => [
+            'summary'     => 'List posts',
+            'description' => 'Returns paginated posts. Supports filter via ?status=',
+            'tags'        => ['Posts'],
+            'operationId' => 'posts.index',
+            'security'    => [['sanctum' => []]],
+        ],
+    ]);
+
+Route::post('/posts', [PostController::class, 'store'])
+    ->metadata(['openapi' => ['summary' => 'Create post', 'tags' => ['Posts'], 'operationId' => 'posts.store']]);
+
+// Group-level metadata cascades to children — perfect for setting common tags/security
+Route::prefix('v1')->metadata(['openapi' => ['servers' => [['url' => 'https://api.example.com/v1']]]])
+    ->group(__DIR__.'/api-v1.php');
+```
+
+```php
+// Emit OpenAPI spec from route metadata (sketch)
+$openapi = ['openapi' => '3.1.0', 'paths' => []];
+foreach (Route::getRoutes() as $route) {
+    $meta = $route->getMetadata('openapi');
+    if (! $meta) continue;
+    $openapi['paths'][$route->uri()] ??= [];
+    $openapi['paths'][$route->uri()][strtolower($route->methods()[0])] = $meta;
+}
+file_put_contents(public_path('openapi.json'), json_encode($openapi, JSON_PRETTY_PRINT));
+```
+
+**Why it is the right primitive:** previously you had to annotate routes via PHP attributes, custom comments parsed at runtime, or hardcode specs in YAML/JSON that drifts out of sync. Route metadata is colocated with the route, survives route caching, and can drive docs, audit dashboards, feature flags, and ownership reports from a single source of truth.
+
+See `controllers.md` (Route Metadata section) for the full API + group-cascade behavior.
+
 ## CORS
 
 ```php
@@ -414,6 +455,12 @@ $this->renderable(function (\Illuminate\Validation\ValidationException $e, $requ
 6. **Exposing internal errors** — never return `exception->getMessage()` to API clients in production
 7. **Mixing JsonApiResource and JsonResource** — pick one approach per API; mixing makes client code harder
 8. **Missing `type` in JSON:API responses** — JsonApiResource handles this automatically; don't hand-roll responses that omit it
+
+## Updated from Research (2026-06-26, cycle 5)
+
+- **Route Metadata for OpenAPI Generation (Laravel 13.17+)** — `Route::metadata()` is the natural primitive for auto-generated OpenAPI / Stoplight specs. Attach `summary`, `description`, `tags`, `operationId`, `security` per route (survives `route:cache`). Group-level metadata cascades to children for shared `servers` / `securitySchemes`. Walk `Route::getRoutes()` and read `Route::getMetadata('openapi')` to emit spec fragments — replaces attribute-based or comment-based route annotation systems that drift out of sync. See the detailed section above.
+
+---
 
 ## Updated from Research (2026-05-18)
 
