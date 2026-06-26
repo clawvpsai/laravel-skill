@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.17.0
+version: 1.18.0
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -43,6 +43,7 @@ metadata:
 - **`required` passes empty string** — use `required|filled` for actual content
 - **`firstOrCreate` persists immediately** — `firstOrNew` lets you validate before saving
 - **Route model binding defaults to `id`** — override `getRouteKeyName()` for slugs
+- **`Route::metadata()` survives `route:cache`** (Laravel 13.17+) — first-class route metadata via dot notation; use for audit, feature flags, OpenAPI emitters
 
 ## Version Defaults
 

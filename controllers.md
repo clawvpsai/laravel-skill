@@ -65,6 +65,48 @@ class PostController extends Controller
 - `#[Middleware('name')]` — apply middleware to controller or method
 - `#[Authorize('action', [Model::class, 'relation'])]` — authorize with policy
 
+## Route Metadata (Laravel 13.17+)
+
+Attach structured metadata to any route — survives `route:cache` serialization and cascades through route groups. Read it back via dot notation for tooling, dashboards, OpenAPI emitters, or feature-flag/audit gates:
+
+```php
+use Illuminate\Support\Facades\Route;
+
+// Attach metadata to a single route
+Route::get("/users", [UserController::class, "index"])
+    ->metadata([
+        "head" => ["title" => "Users"],
+        "feature_flag" => "user_directory_v2",
+        "owner" => "identity-team",
+        "audit" => ["tier" => "pii", "retention_days" => 90],
+    ]);
+
+// Cascade through route groups
+Route::middleware("auth")->group(function () {
+    Route::get("/billing", BillingController::class)
+        ->metadata(["tier" => "restricted"]);
+});
+
+// Read it back with dot notation
+$route = Route::getRoutes()->match(request());
+$title = $route->getMetadata("head.title", "Default Title");
+$tier = $route->getMetadata("audit.tier");
+```
+
+**Key behaviors:**
+- Metadata persists through `route:cache` (serialized with the route definition)
+- Group cascading — child routes inherit parent metadata; explicit child metadata wins on conflict
+- `getMetadata($key, $default)` — dot notation lookup with optional default
+- Useful for: per-route audit info, feature flags, internal ownership, doc links, dashboard generation, OpenAPI metadata emitters
+
+**Use cases:**
+- Audit dashboards — list every route + tier + retention policy in one query
+- Feature-flag enforcement — middleware reads metadata to decide if the route is gated
+- Auto-generated OpenAPI / Stoplight specs — pull title, description, owner from metadata
+- Multi-team ownership — route ownership/team metadata for incident routing
+
+Source: [Laravel News — Route Metadata](https://laravel-news.com/laravel-13-17-0) | [PR #60530](https://github.com/laravel/framework/pull/60530)
+
 ## Validation
 
 ```php

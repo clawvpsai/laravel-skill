@@ -66,6 +66,14 @@ Then load the relevant sections below.
 
 **Migration from 13.16.1 → 13.17.0:** no breaking changes. Standard `composer update laravel/framework` is safe.
 
+**Where each 13.17 feature lives in this skill (cross-references):**
+- `Route::metadata()` / `Route::getMetadata()` → see `controllers.md` (Route Metadata section)
+- `php artisan dev:list` → see `artisan.md` (Inspect Registered Dev Processes section)
+- `ShouldNotRetry` exception handler → see `queues.md` (ShouldNotRetry Exception Handler section)
+- Postgres transaction pooler support (PgBouncer / Neon / Supabase / RDS Proxy) → see `deployment.md` (Postgres Transaction Pooler Support section)
+- `--without-migration-data` flag on `schema:dump` → see `migrations.md` (Running Migrations section)
+- `Cache::flexible()` / `Cache::remember()` debounce `maxWait` performance fix → see `performance.md` (Cache debounce subsection)
+
 ### New in Laravel 13.16 (June 16, 2026, v13.16.0 — patch v13.16.1)
 
 - **`php artisan dev` command** — new first-party dev orchestration command. Runs server, queue worker, log tailing, and Vite concurrently — replaces per-project `composer dev` scripts. Configure via `Illuminate\Foundation\Console\DevCommands`. Package-aware (vendor packages are skipped). Auto-detects Node package manager (npm/yarn/pnpm/bun). **Upgrade to v13.16.1** which fixes a registration bug.

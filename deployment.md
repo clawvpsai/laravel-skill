@@ -289,6 +289,60 @@ server {
 }
 ```
 
+## Postgres Transaction Pooler Support (Laravel 13.17+)
+
+First-class support for PgBouncer / Postgres pooler **transaction mode** in `Illuminate\Database\PostgresConnection`. Important when running Laravel behind serverless / edge platforms (Neon, Supabase, AWS RDS Proxy in transaction mode) where **persistent connections are forbidden** — the pooler sits between Laravel and Postgres and multiplexes connections on every transaction.
+
+**How it differs from session-mode pooling:**
+- **Session mode** — connection pinned to a backend for the lifetime of the client session (Laravel's default; works fine for long-running workers)
+- **Transaction mode** — connection assigned only for the duration of a transaction; released back to the pool on commit/rollback (required for serverless / edge; saves connections at scale)
+
+**Laravel 13.17 changes:**
+- `PostgresConnection` correctly resets connection-scoped state between transactions when running against a transaction pooler
+- No application-level config required — the driver detects pooler behavior via standard Postgres connection attributes
+- Works with `DB::transaction(...)` calls — commits/rollbacks release the connection cleanly
+
+**When you MUST use this:**
+- Neon serverless Postgres (no session pinning)
+- Supabase's pooled connection string (port 6543, transaction mode)
+- AWS RDS Proxy in transaction mode
+- Any PgBouncer deployment configured with `pool_mode = transaction`
+
+**When you can ignore this:**
+- Direct Postgres connection (no pooler)
+- PgBouncer in `session` mode (works as before)
+- AWS RDS Proxy in `session` mode (still pin-compatible)
+
+**Connection string example for Neon:**
+```
+# .env
+DB_CONNECTION=pgsql
+DB_HOST=ep-cool-darkness-123456.us-east-2.aws.neon.tech
+DB_PORT=5432
+DB_DATABASE=neondb
+DB_USERNAME=neondb_owner
+DB_PASSWORD=npg_xxx
+# Neon also exposes a pooled endpoint on a different host for transaction pooling
+```
+
+**Connection string example for Supabase (transaction pooler):**
+```
+DB_CONNECTION=pgsql
+DB_HOST=aws-0-us-east-1.pooler.supabase.com
+DB_PORT=6543        # transaction pooler port
+DB_DATABASE=postgres
+DB_USERNAME=postgres.PROJECT_REF
+DB_PASSWORD=xxx
+```
+
+**Gotchas (transaction mode limits):**
+- `PREPARE` / `DEALLOCATE` statements don't persist across transactions — Laravel already re-prepares as needed
+- `SET LOCAL` is the only `SET` allowed (it resets at transaction end) — Laravel's `SET search_path` / `SET statement_timeout` should be `SET LOCAL`
+- Advisory locks (`pg_advisory_lock`) **do not work** in transaction mode — use a Redis lock instead
+- `LISTEN` / `NOTIFY` don't work (session-scoped) — use Postgres triggers that write to a queue table instead
+
+Source: [PR #60425](https://github.com/laravel/framework/pull/60425) | [Laravel 13.17 Release Notes](https://github.com/laravel/framework/releases/tag/v13.17.0) | [Neon connection pooling docs](https://neon.tech/docs/connect/connection-pooling)
+
 ## Laravel Octane (Swoole/Roadrunner)
 
 Octane boots the app once and serves requests from memory — dramatically faster than FPM.

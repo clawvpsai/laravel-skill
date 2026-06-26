@@ -160,6 +160,38 @@ Default processes (matching `composer dev`): server, queue worker, log tail, Vit
 
 Source: [Laravel News — artisan dev](https://laravel-news.com/laravel-13-16-0) | [PR #60412](https://github.com/laravel/framework/pull/60412)
 
+## `php artisan dev:list` — Inspect Registered Dev Processes (Laravel 13.17+)
+
+Companion to `php artisan dev`. Lists every dev process registered for the current project — including those from vendor packages (vendor packages are *not* auto-registered for `dev`, but they may register them via the `DevCommands` API and `dev:list` will surface them):
+
+```bash
+php artisan dev:list
+```
+
+**Sample output:**
+```
+  COMMANDS
+  --------
+  artisan reverb:start
+  artisan queue:work --tries=1     [queue]
+  artisan pail --timeout=0
+  npm run dev                       [vite]
+  stripe listen --forward-to https://app.test
+```
+
+**When to use:**
+- Before running `php artisan dev`, verify what is going to start (catches typos, forgotten `DevCommands::register()` calls, or un-removed legacy `composer dev` scripts)
+- During code review — `dev:list` is the canonical list of dev-only processes
+- Debugging "why is my dev server doing X?" — `dev:list` reveals the registered commands
+- Onboarding — new team members can see all dev processes in one shot
+
+**Pairs with `php artisan dev`:**
+- `dev:list` is read-only and safe to run in any environment
+- `dev` actually runs the listed processes concurrently
+- `dev:list` does NOT filter by environment — it shows everything registered regardless of `APP_ENV`
+
+Source: [PR #60573](https://github.com/laravel/framework/pull/60573) | [Laravel 13.17 Release Notes](https://github.com/laravel/framework/releases/tag/v13.17.0)
+
 ## `Macroable` on `InvokedProcess` (Laravel 13.15+)
 
 Laravel 13.15 adds the `Macroable` trait to `Illuminate\Process\InvokedProcess` so you can extend the running-subprocess object with your own helpers (timeouts, abort signals, custom output transformers, etc.) without subclassing:

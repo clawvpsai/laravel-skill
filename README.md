@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-25 12:00 UTC — no new framework release or CVE in the last 24h; skill already tracks all major June 2026 advisories. Last content update: 2026-06-24 (CVE-2026-53634 Sharp).
+**Last research cycle:** 2026-06-26 00:00 UTC — still on Laravel 13.17.0 (no new framework release), no new framework CVEs since 2026-06-24; cross-linked 13.17 features (Route metadata, dev:list, ShouldNotRetry, Postgres pooler) into the topic files where they belong. Last content update: 2026-06-26 (this cycle).
 
 ---
 
@@ -110,7 +110,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 - **18 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~7,400 lines** of production-ready content
+- **~7,580 lines** of production-ready content
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 

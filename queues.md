@@ -614,6 +614,67 @@ Route::get('/queue-health', function () {
 - Tracking queue backpressure and latency trends
 - Capacity planning (are workers keeping up with incoming volume?)
 
+## `ShouldNotRetry` Exception Handler (Laravel 13.17+)
+
+Mark specific exceptions as "never retry this" — when a job throws an exception implementing `ShouldNotRetry`, the queue worker fails the job immediately instead of retrying, regardless of `$tries` / `maxExceptions`. Use for permanent failures (validation errors, missing records, 4xx upstream errors) that retrying cannot fix.
+
+**Two registration paths:**
+
+### 1. Implement on your own exception class
+
+```php
+use Illuminate\Contracts\Queue\ShouldNotRetry;
+
+class PaymentGatewayException extends RuntimeException implements ShouldNotRetry
+{
+    // The interface has no methods — marking it as implemented is enough.
+    // The queue worker inspects the exception and skips retries.
+}
+
+// Any job that throws PaymentGatewayException will fail immediately,
+// consuming 0 additional attempts.
+class ChargeCustomerJob implements ShouldQueue
+{
+    public function handle(): void
+    {
+        // ...
+        throw new PaymentGatewayException("Card declined (no retry possible)");
+    }
+}
+```
+
+### 2. Register a callback in bootstrap for exceptions you don't own
+
+```php
+// bootstrap/app.php
+->withExceptions(function (Exceptions $exceptions) {
+    $exceptions->retry(PaymentGatewayException::class, function () {
+        return false; // never retry
+    });
+
+    // Multiple exceptions at once
+    $exceptions->retry([
+        \Illuminate\Validation\ValidationException::class,
+        \Illuminate\Database\Eloquent\ModelNotFoundException::class,
+        \Symfony\Component\HttpKernel\Exception\NotFoundHttpException::class,
+    ], fn () => false);
+})
+```
+
+**When to use:**
+- Validation exceptions — retrying won't make bad input become good
+- `ModelNotFoundException` / `NotFoundHttpException` — the record is gone, retry won't find it
+- 4xx upstream HTTP errors (vs 5xx) — client error, not transient
+- Authentication/authorization exceptions — never going to succeed without code change
+- "Permanent" gateway errors (card declined, account closed) — retrying won't help
+
+**Migration from `$tries = 1` + `failOnTimeout`:**
+- `ShouldNotRetry` is per-exception, not per-job — more flexible
+- Same job class can have some exceptions retry and others fail immediately
+- Cleaner than wrapping every handler in try/catch with custom retry logic
+
+Source: [PR #60552](https://github.com/laravel/framework/pull/60552) | [Laravel 13.17 Release Notes](https://github.com/laravel/framework/releases/tag/v13.17.0)
+
 ## Failed Jobs
 
 ```bash
