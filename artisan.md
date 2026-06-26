@@ -116,6 +116,23 @@ php artisan schedule:list
 php artisan schedule:list --environment=production
 ```
 
+### `Schedule::between()` / `unlessBetween()` Timezone Fix (Laravel 13.17+)
+
+In 13.17, `between()` and `unlessBetween()` apply timezone conversion **per-value**, so the order of `->timezone()` calls in the chain no longer matters (previously, `->timezone()` had to come **before** `->between()` or it was silently ignored and the scheduler fell back to UTC). PR [#60518](https://github.com/laravel/framework/pull/60518).
+
+```php
+// Both of these now work identically in Laravel 13.17+:
+Schedule::command('report')
+    ->timezone('Europe/Rome')
+    ->between('10:00', '12:00');        // before: only this order worked
+
+Schedule::command('report')
+    ->between('10:00', '12:00')
+    ->timezone('Europe/Rome');           // before: silently used UTC
+```
+
+If you're upgrading a 12.x or pre-13.17 codebase, audit `routes/console.php` for this pattern — it's a common latent bug where evening reports fire at the wrong wall-clock hour.
+
 ## Laravel AI / Boost MCP (Laravel 13+)
 
 ```bash
