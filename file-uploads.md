@@ -220,6 +220,13 @@ $request->validate([
 9. **Use presigned URLs for large uploads** — don't proxy through your server
 10. **Store files outside webroot** — only serve via Storage URLs or signed URLs
 
+> **Third-party packages need separate hardening.** `spatie/laravel-medialibrary` < 11.23.0 has two high-severity issues — CVE-2026-48555 (SSRF via `addMediaFromUrl()`) and CVE-2026-48557 (upload restriction bypass via `defaultSanitizer()`). See `security.md` § "Critical: spatie/laravel-medialibrary SSRF + Upload Bypass" for affected versions and the upgrade command. Same for `plank/laravel-mediable` (CVE-2026-4809, CVSS 9.3, no upstream patch).
+>
+> **Common third-party upload gotchas:**
+> - `spatie/laravel-medialibrary` `addMediaFromUrl()` — validate the URL host against an allowlist before fetching. Never trust user-supplied URLs (SSRF → cloud metadata `169.254.169.254`, internal services, `file://` schemes).
+> - `livewire/livewire` `<livewire:upload>` + `withFileUploads` — always pair with a max-size rule in KB; default is unbounded until you set one.
+> - `intervention/image` < 3.5 — image processing pipeline mishandles EXIF orientation on JPEG; pin to ^3.5.
+
 ## Storage Disk Selection Guide
 
 | Use Case | Disk |
