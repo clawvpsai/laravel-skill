@@ -805,6 +805,40 @@ Source: [OpenCVE CVE-2026-49288](https://app.opencve.io/cve/CVE-2026-49288) | [C
 
 
 
+
+
+## Medium: Statamic CMS Incomplete Fix Follow-up — CVE-2026-49287 (June 17, 2026)
+
+Incomplete remediation of **CVE-2026-41175** (April 22, 2026 — query parameter manipulation allowing loss of content/assets/users via CP, REST, and GraphQL endpoints). The original fix landed in **5.73.20 / 6.13.0** but only patched the **query builder** path. The **same protection was missing from in-memory collection sorting**, so sites that had only upgraded to 5.73.20 / 6.13.0 were still vulnerable via templates that pass visitor-controlled input into a tag's `sort` parameter. Same fix versions also address CVE-2026-49288: **5.73.23** (5.x) and **6.20.0** (6.x).
+
+### Who is affected
+
+Statamic CMS installations running versions **5.73.20 ≤ v < 5.73.23** (5.x line) or **6.13.0 ≤ v < 6.20.0** (6.x line) **AND** using front-end templates that pipe request input into a collection tag's sort parameter — e.g. `{{ collection:posts sort="{get:sort}" }}`. Not exploitable on default templates; only on templates explicitly written to sort by visitor input.
+
+### Why it's dangerous
+
+Manipulating sort parameters could result in the **loss of content and assets** (delete-by-rogue-sort-key). The CP / REST / GraphQL exploitation surface from CVE-2026-41175 is **not** re-opened here — this is specifically the in-memory collection path. CWE-20 (Improper Input Validation) and CWE-862 (Missing Authorization). CVSS score not yet published, but impact is content/asset loss (integrity), which can be severe for editorial sites.
+
+### How to fix
+
+```bash
+# For 5.x line (one jump past 5.73.20 already-applied)
+composer update statamic/cms:^5.73.23
+
+# For 6.x line (one jump past 6.13.0 already-applied)
+composer update statamic/cms:^6.20.0
+```
+
+If you patched CVE-2026-41175 on April 22, you must patch again — **the original fix was incomplete**. Sites that have never applied either patch must reach **5.73.23+ / 6.20.0+** to be fully covered against both CVE-2026-41175 and CVE-2026-49287.
+
+### Hardening
+
+- Audit every front-end template that uses `sort=` / `orderBy=` parameters — never pipe raw `{{ get:... }}` request input into a sort parameter. Use an allowlist: `{{ sort = get:sort | explode:-, is_in:allowed_sorts ? get:sort : 'date' }}`.
+- Treat this as a class of bug: any time user input flows into a query modifier (sort, orderBy, where, filter), it must be allowlisted server-side. The same pattern that let CVE-2026-41175 through query params also let CVE-2026-49287 through sort.
+- After upgrading, grep your templates for `sort=` and `orderBy=` and verify each is allowlisted.
+
+Source: [NVD CVE-2026-49287](https://nvd.nist.gov/vuln/detail/CVE-2026-49287) | [Tenable CVE-2026-49287](https://www.tenable.com/cve/CVE-2026-49287) | [CVE-2026-41175 (parent advisory)](https://nvd.nist.gov/vuln/detail/CVE-2026-41175)
+
 ## Critical: Laravel Livewire RCE — CVE-2025-54068 (CVSS 9.8 — Critical, **Active In-The-Wild Exploitation as of June 23, 2026**)
 
 Imperva Threat Research disclosed on **June 23, 2026** that CVE-2025-54068 is being mass-exploited against unpatched Laravel Livewire v3 deployments. The campaign has compromised **6,000+ applications** for credential theft (`.env` files, AWS keys, DB credentials, mail tokens). Initial observations began May 24, 2026.

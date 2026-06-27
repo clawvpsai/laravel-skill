@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-26 18:00 UTC — still on Laravel 13.17.0 (no new framework release since June 23; `Unreleased` section in upstream CHANGELOG is empty); no new framework CVEs in the last 6h. This cycle closed the 13.17 cross-link gaps that the prior cycles left behind: `api.md` now has a Route-metadata-driven OpenAPI generation section (the highest-value use case for the feature), `performance.md` has the `Cache::flexible()` / `Cache::remember()` debounce+maxWait perf-fix section that `versions.md` already pointed at, `eloquent.md` has the Postgres transaction-pooler + clear-on-disconnect fix, and `migrations.md` has the `--without-migration-data` schema dump flag. SKILL.md bumped to v1.18.2. Last content update: 2026-06-26 (this cycle).
+**Last research cycle:** 2026-06-27 00:02 UTC — still on Laravel 13.17.0 (no new framework release since June 23; upstream CHANGELOG still empty). Found one missing CVE: **CVE-2026-49287** (Statamic CMS incomplete fix follow-up to CVE-2026-41175 — same protection missing from in-memory collection sorting; fixed in 5.73.23 / 6.20.0). Added to `security.md` right after CVE-2026-49288, with a hardening note about always allowlisting `sort=` / `orderBy=` template parameters. SKILL.md bumped to v1.18.3. Last content update: 2026-06-27 (this cycle).
 
 ---
 
@@ -110,7 +110,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 - **18 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~7,785 lines** of production-ready content
+- **~7,792 lines** of production-ready content
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 
