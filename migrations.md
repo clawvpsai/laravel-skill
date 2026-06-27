@@ -116,6 +116,39 @@ $table->timestamp('updated_at')->useCurrentOnUpdate();      // ON UPDATE CURRENT
 $table->timestamp('published_at')->nullable();  // must be nullable if not always set
 ```
 
+### ⚠️ Y2K38 / 2038 Problem — Use `dateTime()` for Future-Dated Records
+
+MySQL's `TIMESTAMP` type stores a 32-bit Unix epoch and **overflows on 2038-01-19 03:14:07 UTC**.
+Laravel's default `timestamps()` emits `TIMESTAMP` columns, which is fine for `created_at` /
+`updated_at` (always "now") but **breaks** for any column that may legitimately hold a future date
+(subscription expirations, scheduled publishing, calendar events, audit retention beyond 2038, etc.).
+Active community discussion: [laravel/framework#60593](https://github.com/laravel/framework/discussions/60593)
+(posted 2026-06-26, "Unanswered" as of this writing).
+
+```php
+// ❌ WRONG — overflows past 2038-01-19 03:14:07 UTC
+$table->timestamp('expires_at')->nullable();     // MySQL TIMESTAMP, 32-bit
+$table->timestamp('scheduled_for')->nullable();
+$table->timestamp('published_after')->nullable();
+
+// ✅ RIGHT — DATETIME stores year up to 9999, no 2038 boundary
+$table->dateTime('expires_at')->nullable();
+$table->dateTime('scheduled_for')->nullable();
+$table->dateTime('published_after')->nullable();
+
+// ✅ RIGHT — `timestamps()` itself is safe (always stores NOW); only user-defined future
+//    date columns need DATETIME. Document this in code review checklists.
+```
+
+**Practical rule:** if a column can ever hold a date more than ~12 years in the future
+(subscriptions, scheduling, regulatory retention, calendars, contracts, wills, leases),
+use `dateTime()` not `timestamp()`. Audit existing schemas with:
+```bash
+grep -rE 'timestamp\([a-z_]+\)' database/migrations/ | grep -v 'created_at\|updated_at\|deleted_at\|useCurrent'
+```
+Note: on PostgreSQL `TIMESTAMP` is already 64-bit and unaffected by the 2038 boundary — the
+problem is MySQL/MariaDB specific. SQLite uses strings and is also unaffected.
+
 ## Indexes
 
 ```php
@@ -333,6 +366,7 @@ php artisan migrate:fresh --seed       # reset + seed
 6. **No timestamps on pivot tables** — many2many needs `timestamps()` for `withTimestamps()`
 7. **`decimal` vs `float` for money** — always use `decimal(10,2)` for currency, never float
 8. **Nullable timestamps without default** — Laravel expects `nullable()` timestamps to have a default or be set explicitly; can cause "Incorrect datetime value" errors
+9. **Using `timestamp()` for future-dated columns** — MySQL `TIMESTAMP` overflows at 2038-01-19 03:14:07 UTC. Use `dateTime()` for `expires_at`, `scheduled_for`, retention dates, calendar events, or anything that may legitimately hold a date > 12 years out. See Y2K38 section above. ([laravel/framework#60593](https://github.com/laravel/framework/discussions/60593))
 
 ## Updated from Research (2026-06-26, cycle 5)
 

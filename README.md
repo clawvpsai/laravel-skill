@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-27 00:02 UTC — still on Laravel 13.17.0 (no new framework release since June 23; upstream CHANGELOG still empty). Found one missing CVE: **CVE-2026-49287** (Statamic CMS incomplete fix follow-up to CVE-2026-41175 — same protection missing from in-memory collection sorting; fixed in 5.73.23 / 6.20.0). Added to `security.md` right after CVE-2026-49288, with a hardening note about always allowlisting `sort=` / `orderBy=` template parameters. SKILL.md bumped to v1.18.3. Last content update: 2026-06-27 (this cycle).
+**Last research cycle:** 2026-06-27 06:08 UTC — still on Laravel 13.17.0 (no new framework release since June 23; upstream CHANGELOG still empty; no new CVEs in window). Found one actionable community gap: **Y2K38 / 2038 timestamp limitation** ([laravel/framework#60593](https://github.com/laravel/framework/discussions/60593), posted 2026-06-26) — Laravel's default `timestamps()` emits MySQL `TIMESTAMP` columns that overflow at 2038-01-19 03:14:07 UTC. Added a dedicated **⚠️ Y2K38 / 2038 Problem** section to `migrations.md` with the `dateTime()` for future-dated records pattern, a `grep` audit one-liner, and a new Common Mistakes #9 entry. PostgreSQL/SQLite unaffected. SKILL.md bumped to v1.18.4. Last content update: 2026-06-27 06:08 UTC (this cycle).
 
 ---
 
