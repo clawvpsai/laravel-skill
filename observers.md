@@ -228,6 +228,59 @@ class PostObserver
 4. **Storing unserializable data in events** — events get queued; file handles, connections can't serialize
 5. **Overusing events** — for simple cases, just put logic directly in controller or service
 
+## Laravel `#[Boot]` and `#[Initialize]` Model Attributes (Pre-Laravel 13, missing from older docs)
+
+These PHP attributes let you hang lifecycle logic off individual model methods instead of overriding `boot()` or wrapping everything in an observer:
+
+```php
+use App\Models\Post;
+use Illuminate\Database\Eloquent\Attributes\Boot;
+use Illuminate\Database\Eloquent\Attributes\Initialize;
+use Illuminate\Support\Str;
+
+class Post extends Model
+{
+    // #[Boot] runs ONCE when the model class is first booted — like static::created() inside boot()
+    #[Boot]
+    public static function registerEvents(): void
+    {
+        static::creating(fn (Post $post) => $post->slug = Str::slug($post->title));
+        static::updating(fn (Post $post) => Cache::forget("post:{$post->getKey()}"));
+    }
+
+    // #[Initialize] runs EVERY time a new instance is hydrated — like a constructor hook without overriding __construct()
+    #[Initialize]
+    public function setDefaults(): void
+    {
+        $this->attributes['status'] ??= 'draft';
+        $this->attributes['uuid'] ??= (string) Str::uuid();
+    }
+}
+```
+
+**When to use what:**
+- `#[Boot]` — register **static** event listeners, global scopes, or anything that should only happen once per class lifecycle. Replaces the body of `protected static function boot()`.
+- `#[Initialize]` — set per-instance defaults that aren't covered by `$attributes` defaults (e.g., randomized UUIDs, computed initial state). Runs after `__construct()` and after the database has hydrated attributes.
+- Observer class — when logic is heavy or shared across many models. `#[ObservedBy]` is still preferred for cross-cutting concerns (audit logs, cache invalidation, search index sync).
+
+**`#[Scope]` (related attribute):**
+```php
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
+
+class Post extends Model
+{
+    #[Scope]
+    public function published(Builder $query): void
+    {
+        $query->whereNotNull('published_at');
+    }
+}
+// Usage: Post::query()->published()->get();
+```
+
+**Pair with `#[ObservedBy]`** — `#[Boot]` handles in-model event listeners; `#[ObservedBy]` attaches a full observer class. They compose cleanly on the same model.
+
 ## Updated from Research (2026-05-14)
 
 ### `#[ObservedBy]` Attribute (Laravel 13)
@@ -248,3 +301,11 @@ class PostObserver
 - Prefer `#[ObservedBy]` over service provider observer registration for new code
 
 Sources: [Laravel 13 Docs - Eloquent Observers](https://laravel.com/docs/13.x/eloquent#observers) | [Laravel 13 Docs - Events](https://laravel.com/docs/13.x/events) | [Laravel News - PHP Attributes](https://laravel-news.com/laravel-13-attributes)
+
+
+### `#[Boot]` and `#[Initialize]` Model Attributes
+
+- **`#[Boot]`** — PHP attribute on a static method, runs once when the model class is first booted. Replaces the body of `static function boot()`. Use for event listeners, global scopes, anything that should fire once per class lifecycle.
+- **`#[Initialize]`** — PHP attribute on an instance method, runs every time a new instance is hydrated (after `__construct()` and DB hydration). Use for randomized UUIDs, computed defaults, anything `$attributes` defaults can't cover.
+- **`#[Scope]`** — attribute on a query-scope method, lets you write `#[Scope] public function published(Builder $query): void` without the `scope` prefix.
+- All three shipped pre-Laravel 13 but were missing from this skill.

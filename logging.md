@@ -146,6 +146,77 @@ Laravel 13.6 adds a native `JsonFormatter` for Monolog that outputs structured J
 ],
 ```
 
+## `Context` Facade (Laravel 11+ — Recommended Over `shareContext()`)
+
+Laravel ships a first-class `Context` facade for capturing per-request (or per-job, per-command) contextual data that's automatically appended to every log entry and survives the queue boundary:
+
+```php
+use Illuminate\Support\Facades\Context;
+
+// Add a single key
+Context::add('trace_id', (string) Str::uuid());
+
+// Add multiple at once
+Context::add([
+    'url'      => $request->url(),
+    'hostname' => gethostname(),
+    'user_id'  => auth()->id(),
+]);
+
+// Add only if not already set
+Context::addIf('tenant', $tenantId);
+
+// Read back
+$traceId = Context::get('trace_id');
+Context::has('trace_id'); // bool
+Context::all();           // ['trace_id' => '...', 'url' => '...']
+Context::forget('url');   // remove one key
+Context::flush();         // clear everything
+
+// Stack semantics — push multiple values under one key
+Context::push('job_history', "Job queued: MyFirstJob");
+Context::push('job_history', "Job queued: MySecondJob");
+Context::get('job_history');
+// ['Job queued: MyFirstJob', 'Job queued: MySecondJob']
+
+// Hidden context — included in jobs but NOT written to logs (good for PII or secrets)
+Context::addHidden('internal_session_token', $token);
+```
+
+**Auto-attached to log entries:**
+```
+[2026-06-28 18:00:00] production.INFO: Retrieving commits for [laravel/framework] {"repository":"laravel/framework"} {"hostname":"prod-web-1","trace_id":"a158c456-..."}
+```
+The `{...}` block at the end is the `Context` payload — automatically merged into every log call in scope.
+
+**Survives queued jobs:** when a request dispatches a job, the `Context` state is serialized with the job payload and restored when the worker runs `handle()`. So a `trace_id` set in middleware flows through the HTTP request → queue dispatch → queue handler → outbound HTTP call automatically.
+
+**Hidden context** (`Context::addHidden()`) is also carried to queued jobs but is excluded from log output. Use for tokens, internal IDs, or PII that you need in code but don't want in your log aggregator (Datadog, CloudWatch, etc.).
+
+**Middleware pattern (recommended over `shareContext()`):**
+```php
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
+
+class AssignTraceContext
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        Context::add('trace_id', (string) Str::uuid());
+        Context::add('url', $request->url());
+        Context::addHidden('api_token', $request->bearerToken());
+        return $next($request);
+    }
+}
+```
+
+**`Log::shareContext()` vs `Context::add()`:** `shareContext()` is a legacy alias for `Context::add()`. Prefer the `Context` facade in new code — it's the documented public API, has the full feature set (push, hidden, all, flush), and matches the docs.
+
 ## Common Mistakes
 
 1. **`Log::info` in production loops** — spamming logs in tight loops fills disk fast
@@ -172,3 +243,10 @@ Laravel 13.6 adds a native `JsonFormatter` for Monolog that outputs structured J
 - **JsonFormatter (Laravel 13.6+)** — native `Monolog\Formatter\JsonFormatter` support for structured JSON log output, ideal for log aggregation pipelines
 
 Source: [Laravel Logging](https://laravel.com/docs/13.x/logging)
+
+
+### `Context` Facade (Laravel 11+)
+
+- `Illuminate\Support\Facades\Context` is the documented public API for per-request/job context that auto-attaches to log entries and survives the queue boundary.
+- Methods: `add`, `addIf`, `push`, `get`, `has`, `all`, `forget`, `flush`. `addHidden()` for context that flows to queued jobs but is excluded from log output (PII, tokens).
+- `Log::shareContext()` is a thin wrapper over `Context::add()`. Prefer the `Context` facade in new code.

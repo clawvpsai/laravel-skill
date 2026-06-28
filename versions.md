@@ -413,3 +413,22 @@ Laravel framework **v13.17.0** (June 23, 2026) remains the latest stable as of 2
 - **Composer 2.9.8+** (mainline) — required for CVE-2026-45793, CVE-2026-40261, CVE-2026-40176 fixes
 - **Composer 2.2.28+** (LTS line) — required for same fixes on LTS track
 - **Composer 1.10.28+** — final patch on the Composer 1.x line (consider migrating to 2.x; 1.x is EOL for new features)
+
+
+### Ecosystem Update (2026-06-28, cycle 8)
+
+#### No new Laravel framework version
+
+Laravel framework **v13.17.0** (June 23, 2026) remains the latest stable as of 2026-06-28 18:00 UTC. v13.18 has not been tagged yet. Track [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for the next release.
+
+#### Skill maintenance pass — oldest topic files refreshed
+
+No new CVEs found this cycle (the four cycle-7 CVEs — Composer 45793/40261/40176 + Statamic 54244 — remain the most pressing). Instead, refreshed four topic files that hadn't been touched since May 25 (34+ days), filling documented-but-skipped feature gaps:
+
+- **`observers.md`** (cycle 5 → cycle 8) — added `#[Boot]` and `#[Initialize]` model lifecycle attribute section. These PHP attributes have shipped since Laravel 11 but were missing from the skill. Lets you hang lifecycle logic off individual model methods without overriding `boot()` or wrapping in an observer. Also added `#[Scope]` for inline local-scope methods.
+- **`validation.md`** (cycle 5 → cycle 8) — added `#[FailOnUnknownFields]` attribute for Form Requests (Laravel 13+, defense-in-depth against mass-assignment probing / unknown-field leakage). Added `Password::toPasswordRulesString()` (Laravel 13.9+) for the JS hint string consumed by browser password managers via the `passwordrules` HTML attribute.
+- **`logging.md`** (cycle 5 → cycle 8) — added full `Context` facade section. Replaces the older `Log::shareContext()` pattern with the documented public API: `Context::add()`, `addIf()`, `push()`, `all()`, `forget()`, `flush()`, plus `addHidden()` for context that survives the queue boundary but is excluded from log output (PII, tokens).
+- **`auth.md`** (cycle 5 → cycle 8) — added Laravel 13 starter-kit + Fortify integration section showing how to enable passkeys in a single feature flag (`Features::passkeyAuthentication()` / `Features::passkeyRegistration()`) without writing WebAuthn boilerplate. Includes passkey recovery guidance (always keep email + password fallback).
+
+SKILL.md bumped to **v1.19.1** (cycle-8 maintenance, no new framework version).
+

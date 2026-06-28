@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-28 12:00 UTC (cycle 7) — Laravel 13.17.0 still latest. Found **four** actionable CVEs since cycle 6. Most urgent: three Composer CVEs (**CVE-2026-45793** GitHub token leak, CVSS 7.5; **CVE-2026-40261** + **CVE-2026-40176** Perforce command injection) — fixed in Composer 2.9.8 / 2.2.28 / 1.10.28. Added a new `Updated from Research (2026-06-28, cycle 7)` section to `security.md` with full mitigation playbook, audit commands, and workarounds. Inserted a **step 0 `composer self-update`** into `deployment.md`'s production deploy steps. Also documented **CVE-2026-54244** (Statamic Live Preview authorization bypass, June 26 2026, patch pending). SKILL.md bumped to v1.19.0; ~8,350 lines now. Last content update: 2026-06-28 12:00 UTC (this cycle).
+**Last research cycle:** 2026-06-28 18:00 UTC (cycle 8) — Laravel 13.17.0 still latest; no new framework release, no new CVEs. Refreshed the four oldest topic files (`observers.md`, `validation.md`, `logging.md`, `auth.md`, all last touched May 25) with documented-but-missing Laravel 11/13 features: `#[Boot]` / `#[Initialize]` model attributes, `#[FailOnUnknownFields]` Form Request attribute, `Context` facade (replaces the older `Log::shareContext()` pattern), `Password::toPasswordRulesString()`, and Laravel 13 starter-kit/Fortify `Features::passkeyAuthentication()` integration. SKILL.md bumped to v1.19.1; ~8,500 lines now. Last content update: 2026-06-28 18:00 UTC (this cycle).
 
 ---
 
@@ -110,7 +110,8 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~8,350 lines** of production-ready content
+- **~8,500 lines** of production-ready content
+- **Update cadence:** Every 6 hours via OpenClaw cron — 8 cycles in last 2 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 

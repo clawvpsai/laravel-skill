@@ -139,6 +139,63 @@ public function attributes(): array
 | `before:date` | Must be before this date |
 | `after_or_equal:today` | Must be today or after |
 
+## `#[FailOnUnknownFields]` Attribute (Laravel 13+)
+
+Reject requests that include fields NOT declared in your `rules()` array. Useful defense-in-depth against mass-assignment probing and accidental field leakage:
+
+```php
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Foundation\Http\Attributes\FailOnUnknownFields;
+
+#[FailOnUnknownFields]
+class UpdatePostRequest extends FormRequest
+{
+    public function rules(): array
+    {
+        return [
+            'title' => ['required', 'string', 'max:255'],
+            'body'  => ['required', 'string'],
+            // anything else in the request payload → 422 with "field is not allowed"
+        ];
+    }
+}
+```
+
+**Behaviour:**
+- Without the attribute → unknown fields are silently ignored (current default).
+- With `#[FailOnUnknownFields]` (no args) → fail on any unknown field.
+- `#[FailOnUnknownFields(allow: ['_token', '_method'])]` → whitelist specific unknown fields (commonly needed for CSRF token + form method spoofing).
+
+**When to use:**
+- Public APIs that accept JSON payloads (no HTML form constraints).
+- Admin endpoints where users might submit extra fields and get confused why "nothing happened".
+- Defense-in-depth on top of `$fillable` — `$fillable` protects the model; `#[FailOnUnknownFields]` fails fast at validation so you don't even reach the model.
+
+## `Password::toPasswordRulesString()` (Laravel 13.9+)
+
+Convert any `Password` rule instance into the JS hint string consumed by the `passwordrules` HTML attribute, used by browsers' built-in password managers and the `zxcvbn` style validators:
+
+```php
+use Illuminate\Validation\Rules\Password;
+
+$rules = Password::min(12)
+    ->max(64)
+    ->mixedCase()
+    ->numbers()
+    ->symbols()
+    ->toPasswordRulesString();
+// 'minlength: 12; maxlength: 64; required: lower; required: upper; required: digit; required: special;'
+```
+
+**Pair with the `passwordrules` attribute in your Blade form** (the new Laravel 13 starter kits do this automatically via `Password::defaults()`):
+```blade
+<input type="password" name="password" passwordrules="{{ Password::defaults()->toPasswordRulesString() }}">
+```
+
+**Why this matters:** Before 13.9, you had to hand-write the `passwordrules` string — easy to drift from your server-side `Password::` rule. Now you derive both from the same source. If you change `Password::min(12)` to `Password::min(14)`, the HTML hint updates automatically.
+
 ## Security: `date_equals` Validation Bypass Fix (Laravel 13.15+)
 
 **Critical security fix** — the `date_equals` rule used loose comparison (`==`) which allowed invalid date strings to bypass validation against falsy reference dates:
@@ -179,3 +236,15 @@ Source: [Laravel News — date_equals fix](https://laravel-news.com/laravel-13-1
 - `Rule::when()` method allows conditional rule application
 
 Source: [Laravel Validation](https://laravel.com/docs/13.x/validation)
+
+
+### `#[FailOnUnknownFields]` Form Request Attribute (Laravel 13+)
+
+- `#[FailOnUnknownFields]` on a Form Request class fails validation when the payload contains fields NOT in `rules()`. Optional `allow:` argument whitelists specific unknown fields (`_token`, `_method`).
+- Defense-in-depth against mass-assignment probing. Pairs with `$fillable` — `$fillable` protects the model; this fails fast at validation.
+
+### `Password::toPasswordRulesString()` (Laravel 13.9+)
+
+- Converts a `Password` rule instance to the JS hint string consumed by the `passwordrules` HTML attribute (browser password managers, zxcvbn-style validators).
+- Single source of truth: change `Password::min(12)` → `Password::min(14)`, the HTML hint auto-updates.
+- New Laravel 13 starter kits auto-render this attribute on new-password inputs via `Password::defaults()`.

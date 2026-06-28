@@ -167,6 +167,45 @@ Route::middleware('passkey')->group(function () {
 - **Platform authenticator** — device-bound (Touch ID, Windows Hello, phone unlock)
 - **Cross-platform authenticenticator** — roaming key (security key, phone as FIDO2 key)
 
+## Laravel 13 Starter Kits — Passkey Login Out of the Box
+
+The Laravel 13 starter kits (React, Vue, Svelte, Livewire) ship with **passkey login UI pre-wired** when you choose the "Passkey" option during `laravel new`. Under the hood it's `laravel/passkeys` + Fortify wired into the auth controllers, so you get:
+
+- Registration form with "Add passkey" button (calls `Passkeys::generateRegistrationOptions()`).
+- Login form with "Sign in with passkey" button (calls `Passkeys::generateAuthenticationOptions()`).
+- Automatic credential storage on `$user->passkeys()`.
+- Fallback to password + email verification if no passkey is registered.
+
+**To enable on an existing app (Laravel 13+):**
+```bash
+# 1. Install the passkeys package
+composer require laravel/passkeys
+php artisan passkeys:install
+
+# 2. Enable in Fortify (config/fortify.php)
+'features' => [
+    Features::registration(),
+    Features::resetPasswords(),
+    Features::passkeyAuthentication(), // ← enables passkey login flow
+    Features::passkeyRegistration(),  // ← enables in-app passkey enrollment
+],
+
+# 3. Front-end: render the passkey script where needed
+@include('passkeys::script')
+# or in non-Blade — see laravel/passkeys README for Vue/React components
+```
+
+**Laravel 13 `Features::passkeyAuthentication()` / `Features::passkeyRegistration()`** are first-party Fortify feature flags that wire the routes, controllers, and Blade components for you. You don't write a single line of WebAuthn code unless you need custom authenticator selection logic.
+
+**When to roll your own vs use Fortify:**
+- Use Fortify + starter kit if you want the standard "device-bound biometric" flow on first-party web UIs.
+- Roll your own (using `laravel/passkeys` directly) if you need:
+  - Cross-platform roaming authenticator support with custom UI flows.
+  - Passkey-only login on a SPA without Fortify (call `Passkeys::generateAuthenticationOptions()` from your Vue/React component and POST the assertion back).
+  - Custom challenge storage (e.g., Redis instead of session) for distributed / multi-node setups.
+
+**Passkey recovery:** passkeys are device-bound. If the user loses their device and has no other passkey registered, they MUST fall back to password + email verification. **Always require at least one verified email + password as a recovery path** — don't ship passkey-only auth on a critical app without a fallback.
+
 ## Policies
 
 ```bash
@@ -320,3 +359,10 @@ php artisan fortify:install
 - **Passkeys (WebAuthn)** — Laravel 13 introduces first-party passkey support via `laravel/passkeys`. Passwordless, phishing-resistant authentication using asymmetric cryptography.
 
 Source: [Laravel 13 Docs - Sanctum](https://laravel.com/docs/13.x/sanctum) | [Laravel Passkeys](https://laravel.com/docs/13.x/passkeys) | [CSRF](https://laravel.com/docs/13.x/csrf)
+
+
+### Laravel 13 Starter Kit Passkey Integration
+
+- Laravel 13 starter kits (React/Vue/Svelte/Livewire) ship passkey login UI pre-wired when you choose "Passkey" during `laravel new`. Uses `laravel/passkeys` + Fortify under the hood.
+- Enable in existing apps via `Features::passkeyAuthentication()` and `Features::passkeyRegistration()` flags in `config/fortify.php` — no WebAuthn boilerplate to write.
+- Always require email + password recovery path on critical apps — passkeys are device-bound.
