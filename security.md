@@ -1162,3 +1162,49 @@ pm.request_terminate_timeout = 30s
 ```
 
 Plus a `RejectSlowBodies` middleware (see section above) as application-level defense in depth.
+
+## Updated from Research (2026-06-28, cycle 6)
+
+### New CVEs added (cycle 6, 2026-06-28)
+
+- **CVE-2026-33080** — Filament v4/v5 Table Summarizer Stored XSS (CVSS 7.3 HIGH, disclosed March 20, 2026). Filament Table summarizers render database values directly without HTML escaping, so a user with write access to any column rendered by a summarizer (e.g., `Sum`, `Average`, `Count`) can inject `<script>` that fires in the admin panel context. Affects `filament/filament` 4.0.0–4.8.4 and 5.0.0–5.3.4. **Fixed in 4.8.5 and 5.3.5** — upgrade `composer require filament/filament:^4.8.5` (or `^5.3.5`) and audit any custom `Summarizer` subclass that returns user-controlled HTML. [SentinelOne](https://www.sentinelone.com/vulnerability-database/cve-2026-33080) | [Filament v4.8.5 release](https://github.com/filamentphp/filament/releases/tag/v4.8.5) | [Filament v5.3.5 release](https://github.com/filamentphp/filament/releases/tag/v5.3.5)
+- **CVE-2026-48500** — Filament v3 Stored XSS (related family, fixed in **3.3.52**). If you are still on Filament 3.x (LTS track), this is the parallel patch — `composer require filament/filament:^3.3.52`. [NVD record](https://nvd.nist.gov/vuln/detail/CVE-2026-48500)
+
+**Why this matters for Laravel apps:** Filament is the most-installed admin panel package in the Laravel ecosystem. The summarizer XSS is exploitable by any authenticated user with write access to a summarized column, which is almost always broader than the developer assumes ("admins only" is often just "any logged-in back-office user"). A single low-privileged staff account can pivot to admin-context script execution and steal other users' session cookies.
+
+**Audit command** — find every Filament app you maintain and check the version:
+
+```bash
+# From inside each Laravel project that uses Filament
+composer show filament/filament | grep -E '^versions'
+# If the version is < 4.8.5 (v4/v5) or < 3.3.52 (v3 LTS), upgrade now.
+```
+
+**Defensive pattern for custom summarizers** — when overriding `Summarizer` to render rich content, force-escape any user-influenced fragment:
+
+```php
+use Filament\Tables\Columns\Summarizers\Summarizer;
+use Illuminate\Support\HtmlString;
+
+Summarizer::make('total')
+    ->formatStateUsing(function ($state) {
+        // WRONG — XSS if $state can contain HTML
+        return new HtmlString("<strong>{$state}</strong>");
+
+        // RIGHT — escape first, then wrap
+        return new HtmlString('<strong>' . e($state) . '</strong>');
+    });
+```
+
+### Top-priority actions for 2026-06-28 (cycle 6)
+
+1. **Slow JSON Stream hardening (cycle 5)** — still the #1 active finding; verify `client_body_timeout` + `client_min_rate` are in every JSON API nginx block.
+2. **Filament upgrade** — `composer require filament/filament:^4.8.5` (v4/v5) or `^3.3.52` (v3 LTS). Audit custom `Summarizer` classes for unsafe `HtmlString` output.
+3. **Livewire 3.6.4** — still actively exploited. Verify every project.
+4. **Laravel 13.17.0** if on 13.x; **Laravel 12.62.x** if on 12.x.
+5. **Laravel 11 = EOL** (security ended March 12, 2026) — plan migration to 12 or 13.
+
+### Cross-references added in cycle 6
+
+- Filament CVEs documented in `security.md` (this section)
+- Same Filament XSS pattern (raw user input rendered as HTML) reinforces the **`{!! !!}` rule** in `blade.md` — see Common Mistakes #1 there

@@ -70,7 +70,7 @@ php artisan --version
 
 | Version | Status | PHP | Key Features |
 |---|---|---|---|
-| **Laravel 13** | ✅ Latest (v13.17.0, June 23 2026) | 8.3+ | AI/Boost MCP, Reverb, new attributes, PHP 8.4/8.5 |
+| **Laravel 13** | ✅ Latest (v13.17.0, June 23 2026 — still current) | 8.3+ | AI/Boost MCP, Reverb, new attributes, PHP 8.4/8.5 |
 | Laravel 12 | Stable | 8.2+ | Bootstrap 5, Vite, per-second rate limiting |
 | Laravel 11 | Security fixes | 8.1+ | Cleaner bootstrap, health endpoint |
 
@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-27 06:08 UTC — still on Laravel 13.17.0 (no new framework release since June 23; upstream CHANGELOG still empty; no new CVEs in window). Found one actionable community gap: **Y2K38 / 2038 timestamp limitation** ([laravel/framework#60593](https://github.com/laravel/framework/discussions/60593), posted 2026-06-26) — Laravel's default `timestamps()` emits MySQL `TIMESTAMP` columns that overflow at 2038-01-19 03:14:07 UTC. Added a dedicated **⚠️ Y2K38 / 2038 Problem** section to `migrations.md` with the `dateTime()` for future-dated records pattern, a `grep` audit one-liner, and a new Common Mistakes #9 entry. PostgreSQL/SQLite unaffected. SKILL.md bumped to v1.18.4. Last content update: 2026-06-27 06:08 UTC (this cycle).
+**Last research cycle:** 2026-06-28 06:02 UTC (cycle 6) — Laravel 13.17.0 still latest (no 13.17.1/13.18 release yet). No new framework CVEs in window. Found two actionable third-party CVEs: **CVE-2026-33080** (Filament v4/v5 Table Summarizer Stored XSS, CVSS 7.3, fixed in 4.8.5/5.3.5) and **CVE-2026-48500** (Filament v3 LTS parallel patch, fixed in 3.3.52). Added a new `Updated from Research (2026-06-28, cycle 6)` section to `security.md` with audit command, `Summarizer` defensive pattern, and a new `new HtmlString($userInput)` rule. Also refreshed `blade.md` (oldest untouched file at May 25) with `@once` / `@pushOnce` 13.x cross-include fix, anonymous component props pattern, and a new Common Mistake #6 mirroring the Filament CVE. SKILL.md bumped to v1.18.5 (fixes version drift from cycle 5). Last content update: 2026-06-28 06:02 UTC (this cycle).
 
 ---
 
@@ -110,7 +110,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 - **18 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~7,792 lines** of production-ready content
+- **~8,148 lines** of production-ready content
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 

@@ -231,6 +231,50 @@ View::composer('layouts.app', function (View $view) {
 View::composer('partials.*', fn(View $view) => $view->with('theme', 'dark'));
 ```
 
+
+
+## `@once` / `@pushOnce` (Stacks Without Duplicates, Laravel 13.x Improved)
+
+Use `@once` to emit a block of HTML/JS/CSS exactly once per render cycle (e.g., a one-time modal include, an analytics snippet). `@pushOnce` does the same for `@stack` content:
+
+```blade
+{{-- Renders the script tag exactly once, even if included 10 times via @include --}}
+@once
+    @push('scripts')
+        <script src="{{ asset('js/charts.js') }}"></script>
+    @endpush
+@endonce
+
+{{-- In your layout: --}}
+<head>
+    @stack('scripts')
+</head>
+```
+
+**Laravel 13.x improvement:** `@once` and `@pushOnce` now correctly track identity across `@include` chains, partial components, and `<x-dynamic-component>` — previously nested includes could each render the block if the tracking was reset by an intervening directive. This matters for admin layouts that include the same partial from multiple sub-views.
+
+**When NOT to use:** if you actually want the block to render on every include (e.g., a per-row form input), use `@push` (not `@pushOnce`).
+
+## Anonymous Component Props (Laravel 13.x)
+
+For one-off components (e.g., a single alert in one view), anonymous components let you define the view AND its props in one file:
+
+```blade
+{{-- resources/views/components/alert.blade.php --}}
+@props(['type' => 'info', 'message'])
+
+<div class="alert alert-{{ $type }}">
+    {{ $message }}
+</div>
+```
+
+Used as:
+```html
+<x-alert type="success" :message="$post->title" />
+<x-alert message="Default info type" />
+```
+
+Anonymous components are auto-discovered from `resources/views/components/`. Use them when you don't need a class-based component with logic — keeps the file count down for tiny presentational pieces.
 ## Common Mistakes
 
 1. **`{!! !!}` with user-submitted content** — XSS vulnerability
@@ -238,10 +282,17 @@ View::composer('partials.*', fn(View $view) => $view->with('theme', 'dark'));
 3. **Not using `@csrf` in forms** — CSRF token missing, request rejected
 4. **Forgetting `@method` for PUT/PATCH/DELETE** — wrong HTTP method, 419 error
 5. **Old `{{$var}}` (no space)** — deprecated in Laravel 10, use `{{ $var }}`
+6. **`new HtmlString($userInput)`** — `HtmlString` is the *class-based* equivalent of `{!! !!}` and bypasses escaping. CVE-2026-33080 (Filament) was a real-world instance of this — always `e($value)` before wrapping. Use `{{ }}` / `e()` first, then wrap in `HtmlString` only for known-safe HTML
+
+## Updated from Research (2026-06-28, cycle 6)
+
+- **`@once` / `@pushOnce` 13.x fix** — identity now persists across nested `@include` and `<x-dynamic-component>` (previously could re-render the block when tracking was reset by an intervening directive). Critical for shared admin partials.
+- **Anonymous component props** — define props inline in the component view with `@props([...])`; auto-discovered from `resources/views/components/`. Skips the class file for one-off presentational components.
+- **New Common Mistake #6** — `new HtmlString($userInput)` is the class-based equivalent of `{!! !!}` and skips escaping. Same root cause as CVE-2026-33080 in Filament. Always `e($value)` before wrapping.
 
 ## Updated from Research (2026-05)
 
 - **@fonts Directive (Laravel 13.7+)** — `@fonts` generates `<link rel="preload">` tags for Vite-managed fonts, improving Core Web Vitals.
 - **@props Directive** — pass all public constructor properties to a component view inline without `->with()`.
 
-Source: [Laravel 13 Blade](https://laravel.com/docs/13.x/blade)
+Source: [Laravel 13 Blade](https://laravel.com/docs/13.x/blade) | [Laravel 13 Components](https://laravel.com/docs/13.x/blade#components)

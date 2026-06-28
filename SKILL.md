@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.18.4
+version: 1.18.5
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -39,6 +39,7 @@ metadata:
 - **Queue jobs serialize models as IDs** — re-fetch on process, model may be stale/deleted
 - **`DB::transaction()` rolls back on exceptions only** — `exit`/timeout bypasses it
 - **`{!! !!}` skips escaping** — XSS vector, use `{{ }}` by default
+- **`new HtmlString($userInput)` also bypasses escaping** — class-based `{!! !!}`. Always `e($value)` before wrapping (CVE-2026-33080 in Filament was a real-world instance of this pattern)
 - **Middleware order matters** — earlier wraps later execution
 - **`required` passes empty string** — use `required|filled` for actual content
 - **`firstOrCreate` persists immediately** — `firstOrNew` lets you validate before saving
