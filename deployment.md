@@ -245,7 +245,12 @@ volumes:
 ```
 
 ### Nginx Docker Config
+
 ```nginx
+# Define rate-limit zones once in the http {} block (outside any server {})
+limit_req_zone $binary_remote_addr zone=api_rl:10m rate=10r/s;
+limit_conn_zone $binary_remote_addr zone=api_conn:10m;
+
 server {
     listen 80;
     server_name yourapp.com;
@@ -270,6 +275,19 @@ server {
     gzip on;
     gzip_types text/plain text/css application/json application/javascript;
 
+    # ============================================================
+    # Slow JSON Stream DoS mitigations (Laravel Tier 1, CVSS 7.5)
+    # Disclosed 2026-06-27 — see security.md for full details
+    # ============================================================
+    # Hard ceiling: close any body that takes longer than 10 s to read
+    client_body_timeout 10s;
+    # Minimum average read rate (bytes/s); closes drip attacks at 1 B/s
+    client_min_rate 1024;
+    # Cap body size — defense in depth for large-payload attacks
+    client_max_body_size 10m;
+    # Limit concurrent connections per IP (must reference the zone above)
+    limit_conn api_conn 10;
+
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }
@@ -279,6 +297,15 @@ server {
         fastcgi_pass app:8080;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
+
+        # Per-request fastcgi timeout — backstop in case nginx misses
+        fastcgi_read_timeout 30s;
+    }
+
+    # API routes — add explicit rate limiting on top of body timeouts
+    location /api/ {
+        limit_req zone=api_rl burst=20 nodelay;
+        try_files $uri /index.php?$query_string;
     }
 
     # Static assets (no PHP)
@@ -288,8 +315,9 @@ server {
     }
 }
 ```
-
 ## Postgres Transaction Pooler Support (Laravel 13.17+)
+
+
 
 First-class support for PgBouncer / Postgres pooler **transaction mode** in `Illuminate\Database\PostgresConnection`. Important when running Laravel behind serverless / edge platforms (Neon, Supabase, AWS RDS Proxy in transaction mode) where **persistent connections are forbidden** — the pooler sits between Laravel and Postgres and multiplexes connections on every transaction.
 
@@ -447,6 +475,60 @@ memory_limit = 256M
 post_max_size = 64M
 upload_max_filesize = 64M
 ```
+
+
+## PHP-FPM Pool Hardening (Slow JSON Stream backstop — 2026-06-28)
+
+The Slow JSON Stream attack (disclosed June 27, 2026 — Tier 1 for Laravel, CVSS 7.5) showed that PHP-FPM workers can be pinned for minutes by a single chunked JSON request with no body-read timeout. Even with nginx `client_body_timeout 10s` in front, you need a backstop at the FPM layer because nginx can be bypassed (Octane, Cloudflare passthrough, internal services).
+
+```ini
+; /etc/php/8.4/fpm/pool.d/www.conf
+[www]
+user = www-data
+group = www-data
+
+pm = dynamic
+pm.max_children = 20            ; tune to RAM: ~100 MB per worker on a 2 GB host
+pm.start_servers = 4
+pm.min_spare_servers = 2
+pm.max_spare_servers = 6
+
+; Recycle workers after 500 requests — prevents unbounded RSS growth under
+; sustained slow-body attacks where each worker accumulates buffer state
+pm.max_requests = 500
+
+; Hard kill for any request over 30 s — this is the PHP-level equivalent of
+; nginx's client_body_timeout. Last line of defense if nginx is bypassed.
+pm.request_terminate_timeout = 30s
+
+; Track slow workers
+slowlog = /var/log/php-fpm/www-slow.log
+request_slowlog_timeout = 10s
+
+; Tighten per-request resource limits
+php_admin_value[memory_limit] = 256M
+php_admin_value[post_max_size] = 10m
+php_admin_value[upload_max_filesize] = 10m
+php_admin_value[max_execution_time] = 30
+```
+
+**Quick verification after deploy:**
+
+```bash
+# Check the effective config
+sudo php-fpm8.4 -tt
+
+# Confirm workers recycle
+sudo tail -f /var/log/php-fpm/www-slow.log
+
+# Test the timeout yourself — should return 504 after 30 s
+curl -X POST -H "Transfer-Encoding: chunked" -H "Content-Type: application/json" \
+  --max-time 60 \
+  --data-binary $'0\r\n\r\n' \
+  https://yourapp.com/api/test
+```
+
+**Why `request_terminate_timeout` is the critical setting:** when nginx is bypassed (Laravel Octane/RoadRunner exposed directly, or internal services), there is no upstream body timeout — `request_terminate_timeout` is what closes the FPM worker so it can serve the next request. Without it, a single blocked request ties up a worker until OOM.
 
 ## Common Mistakes
 

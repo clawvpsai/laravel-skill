@@ -381,3 +381,16 @@ Before working on any Laravel task:
 ---
 
 Sources: [Laravel 13 Release Notes](https://laravel.com/docs/13.x/releases) | [GitHub Releases](https://github.com/laravel/framework/releases) | [Packagist](https://packagist.org/packages/laravel/framework)
+
+---
+
+## Ecosystem Update (2026-06-28, cycle 5)
+
+### Slow JSON Stream DoS Disclosure — Tier 1 for Laravel
+
+PHP/Laravel is now flagged as **Tier 1 (CVSS 7.5 HIGH)** in the cr0hn "Slow JSON Stream" DoS research (June 27, 2026). No framework version update mitigates this — the fix is at the deployment layer (nginx `client_body_timeout` + `client_min_rate` + PHP-FPM `request_terminate_timeout`). See `security.md` for the full mitigation playbook.
+
+### No New Framework Version (Laravel 13.17.0 still latest)
+
+As of June 28, 2026, Laravel framework **v13.17.0** (June 23, 2026) remains the latest. Laravel 13.18 has not been released yet. Track [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for the next tag.
+

@@ -898,6 +898,193 @@ CVE-2025-54068 was originally disclosed in **July 2025** by Synacktiv researcher
 Source: [Imperva Threat Research report, June 23 2026](https://securityboulevard.com/2026/06/cve-2025-54068-laravel-livewire-credential-theft-campaign-6000-applications-compromised/) | [CVE-2025-54068 on NVD](https://nvd.nist.gov/vuln/detail/CVE-2025-54068) | [Synacktiv original disclosure (July 2025)](https://www.synacktiv.com/en/publications/livewire-remote-command-execution-through-unmarshaling) | [Tenable plugin WAS-115113](https://www.tenable.com/plugins/was/115113)
 
 
+
+## Critical: "Slow JSON Stream" DoS — Tier 1 Vulnerability for PHP/Laravel (CVSS 7.5 — High, disclosed 2026-06-27)
+
+Daniel García (cr0hn) published full-disclosure research on **June 27, 2026** for a low-bandwidth denial-of-service attack targeting HTTP APIs that accept `application/json` bodies. **PHP/Laravel is classified as Tier 1 (worst impact)** — measured at **258 MB/min RSS growth**, exhausting a 512 MB PHP worker pool in **under 2 minutes** with only 64 concurrent connections sending at <1 kbps. No CVE has been assigned yet (paper is "pending review" as of 2026-06-27) but the proof-of-concept attack tool (`slowjson`), a 41-target Docker testbed, and the complete paper are publicly available on GitHub.
+
+### Why this matters for Laravel
+
+The testbed tested 32 application frameworks plus 9 infrastructure components. **PHP/Laravel was the single most severe result** — 258 MB/min RSS growth at C=64, classified **Tier 1 (immediate observable impact)** with CVSS **7.5 HIGH**. A commodity host is sufficient to exhaust an unhardened Laravel worker pool.
+
+Laravel's JSON request pipeline has no built-in body-read timeout. Once an attacker sends a syntactically valid JSON prefix (`{"items":[{"a":1},`) using `Transfer-Encoding: chunked` and drips one byte per second, the worker thread blocks **at two layers simultaneously**:
+
+1. **HTTP layer** — waiting for the chunk terminator `0\r\n\r\n` that never arrives
+2. **JSON parser layer** — waiting for the closing `}`/`]` token
+
+Because each delivered byte is a legal prefix of a complete JSON document, the parser **cannot reject** the connection early. Every blocked connection holds an FPM worker until OOM.
+
+### How the attack works
+
+```http
+POST /api/orders HTTP/1.1
+Host: target.example.com
+Transfer-Encoding: chunked
+Content-Type: application/json
+
+1
+{
+6
+"items
+1
+":[
+14
+{"sku":"A1","qty
+```
+
+The attacker drips one chunk per second. `Content-Length` is never sent — only `Transfer-Encoding: chunked`. Each chunk is a legal JSON prefix. The PHP-FPM worker blocks on `php://input` read forever. **64 such connections saturate a default FPM pool of 5–10 workers within 90 seconds.**
+
+### Mitigations (do all of these — no single one is sufficient)
+
+#### 1. nginx: aggressive body-read timeout + minimum read rate
+
+The default `client_body_timeout 60s` is **not safe** — it resets on each chunk, so an attacker can drip 1 byte every 59 s indefinitely. You need both a hard ceiling AND a minimum read rate:
+
+```nginx
+server {
+    # ... existing config ...
+
+    # Hard ceiling: close any body that takes longer than 10 s
+    client_body_timeout 10s;
+
+    # Minimum average read rate (bytes/second); attacker must deliver this much
+    # or nginx closes the connection. Default is 0 (disabled) — vulnerable.
+    client_body_buffer_size 16k;
+    client_min_rate 1024;          # 1 KB/s minimum sustained rate
+
+    # Cap body size so the attacker's prefix can never grow unboundedly
+    client_max_body_size 10m;
+
+    # Optional: limit concurrent open connections per IP to slow the attack
+    limit_conn api_conn 10;        # max 10 concurrent per IP at the `api_conn` zone
+}
+```
+
+Pair with a `limit_req` zone on the API location:
+
+```nginx
+# In the http {} block — define the zone once
+limit_req_zone $binary_remote_addr zone=api_rl:10m rate=10r/s;
+
+server {
+    location /api/ {
+        # Allow burst of 20 requests, then enforce 10 r/s per IP
+        limit_req zone=api_rl burst=20 nodelay;
+
+        # Pass to PHP-FPM
+        try_files $uri /index.php?$query_string;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+        include fastcgi_params;
+    }
+}
+```
+
+#### 2. PHP-FPM: reduce worker lifetime + smaller pool
+
+A `pm.max_requests` cap forces workers to recycle after handling N requests, so memory leaks from long-running workers don't accumulate under sustained low-bandwidth attacks:
+
+```ini
+; /etc/php/8.4/fpm/pool.d/www.conf
+pm = dynamic
+pm.max_children = 20            ; tune to your RAM (≈ 100 MB per worker)
+pm.start_servers = 4
+pm.min_spare_servers = 2
+pm.max_spare_servers = 6
+pm.max_requests = 500           ; recycle after 500 requests — prevents unbounded RSS growth
+pm.request_terminate_timeout = 30s   ; hard kill for any request over 30 s — backstop in case nginx misses
+```
+
+`request_terminate_timeout` is the **PHP-level body-read timeout** equivalent of `client_header_timeout`. It's the last line of defense if nginx is bypassed (Octane, RoadRunner, Cloudflare passthrough).
+
+#### 3. Application-level: reject chunked uploads with a max read time
+
+For Laravel apps serving JSON APIs, you can add a middleware that aborts any request whose body takes longer than N seconds to fully arrive. This is **defense in depth** — nginx is the primary defense, this is the fallback:
+
+```php
+// app/Http/Middleware/RejectSlowBodies.php
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+class RejectSlowBodies
+{
+    public function handle(Request $request, Closure $next, int $maxSeconds = 5): Response
+    {
+        // Only enforce on requests with a body that the framework will parse
+        if (in_array($request->method(), ['POST', 'PUT', 'PATCH'], true)
+            && str_contains((string) $request->header('Content-Type'), 'application/json')) {
+
+            $start = microtime(true);
+
+            // Force the body to be parsed — this is where blocking I/O happens
+            $request->json()->all();
+
+            $elapsed = microtime(true) - $start;
+
+            if ($elapsed > $maxSeconds) {
+                abort(408, 'Request body read timeout');
+            }
+        }
+
+        return $next($request);
+    }
+}
+```
+
+Register globally (or on the `api` group only):
+
+```php
+// bootstrap/app.php
+->withMiddleware(function (Middleware $middleware) {
+    $middleware->api(prepend: [
+        \App\Http\Middleware\RejectSlowBodies::class . ':5',
+    ]);
+})
+```
+
+#### 4. Reverse proxy / WAF (Cloudflare, AWS CloudFront, Fastly)
+
+If you're behind Cloudflare or another managed reverse proxy:
+
+- **Cloudflare** — Enterprise customers can set body-read timeouts via the WAF custom rules. The free tier buffers full requests at the edge before forwarding, which mitigates Slow JSON Stream automatically (because the body is never streamed to your origin in chunks).
+- **AWS CloudFront / ALB** — set `Origin Read Timeout` to ≤ 30 s. ALB defaults to 60 s idle timeout — reduce it.
+- **Fastly** — VCL `bereq.between_bytes_timeout` defaults to 10 s; verify it's set.
+
+### What does NOT protect you
+
+- `APP_DEBUG=false` — unrelated, the attack works on production configs
+- Rate limiting alone (login throttling) — this isn't a brute-force attack
+- `client_max_body_size 1m` — the attack uses a tiny body, the limit is the read time, not the size
+- `php artisan throttle` middleware — counts requests, doesn't bound body read time
+- WAF rules matching `Content-Length` — the attack uses `Transfer-Encoding: chunked`, no Content-Length is sent
+- ModSecurity OWASP CRS — tested in the research and **classified Tier 2 (vulnerable)** — default rules do not bound body read time
+
+### Detection — what to look for
+
+- Sudden spike in PHP-FPM worker count (`pm status` or `ps -ef | grep php-fpm`) — all workers stuck in `accept`/`read` state
+- Long-tail latency on `/healthz` or `/up` health checks (the attack blocks workers serving ALL routes, including non-JSON ones, once FPM is exhausted)
+- nginx access logs showing `POST /api/*` connections held open for >30 s with `Transfer-Encoding: chunked` from the same client IP
+- PHP-FPM `slow.log` populated with requests that took >30 s on `php://input` parse
+
+### TL;DR action list (in order of priority)
+
+1. **`client_body_timeout 10s`** in every nginx server block that proxies JSON APIs
+2. **`client_min_rate 1024`** (or higher) — the only effective nginx defense because it bounds the per-connection read rate, not just total time
+3. **`pm.request_terminate_timeout = 30s`** in PHP-FPM pool config as a backstop
+4. **Audit Cloudflare/ALB/CloudFront edge timeouts** — same principle, same defaults to harden
+5. **Add the `RejectSlowBodies` middleware** to defense-in-depth
+
+Source: [Slow JSON Stream paper (cr0hn, June 2026)](https://cr0hn.com/papers/slow-json-stream/) | [GitHub: cr0hn/slowjson (attack CLI + Docker testbed)](https://github.com/cr0hn/slowjson) | [r/netsec disclosure thread, June 27 2026](https://www.reddit.com/r/netsec/) | [PHP-FPM pool configuration reference](https://www.php.net/manual/en/install.fpm.configuration.php)
+
+## Slowloris / R.U.D.Y. — Historical Note (pre-2011 mitigation, still relevant)
+
+Slowloris (header-drip, 2009) is fully mitigated in nginx by `client_header_timeout 10s` (the default). R.U.D.Y. / Slow POST (2011) uses `Content-Length` and is detectable by WAFs. **Slow JSON Stream (2026) is different** — it uses `Transfer-Encoding: chunked` with no declared size, evading all existing WAF detection. The body-read timeout equivalent of `client_header_timeout` does not exist by default in any major framework (including Laravel). See the section above for Laravel-specific mitigations.
+
+
+
+
 ## Common Mistakes
 
 
@@ -942,3 +1129,36 @@ Laravel 13's per-second rate limiting via `RateLimiter::for()` enables granular 
 Laravel 13 supports CSP headers via middleware. Nonce-based CSP is the modern approach for allowing inline scripts safely.
 
 Source: [Laravel 13 Docs - CSRF](https://laravel.com/docs/13.x/csrf) | [Laravel 13 Docs - Rate Limiting](https://laravel.com/docs/13.x/rate-limiting)
+
+## Updated from Research (2026-06-28, cycle 5)
+
+### New findings added (cycle 5, 2026-06-28)
+
+- **Slow JSON Stream DoS** — Daniel García (cr0hn) full-disclosure paper published June 27, 2026. PHP/Laravel classified **Tier 1 (CVSS 7.5 HIGH)** with 258 MB/min RSS growth at C=64 — a 512 MB worker pool is exhausted in under 2 minutes. The attack uses `Transfer-Encoding: chunked` + a syntactically valid JSON prefix dripped at 1 byte/sec, evading all WAFs that match on `Content-Length`. Laravel has **no built-in body-read timeout**; mitigation requires nginx `client_body_timeout` + `client_min_rate` + PHP-FPM `request_terminate_timeout`. Full PoC, paper, and 41-target Docker testbed at [github.com/cr0hn/slowjson](https://github.com/cr0hn/slowjson). See the "Critical: Slow JSON Stream DoS" section above for the full mitigation playbook.
+
+### Top-priority actions for 2026-06-28 (cycle 5)
+
+1. **Slow JSON Stream hardening is the #1 new item** — add `client_body_timeout 10s` + `client_min_rate 1024` to every nginx server block that proxies JSON APIs, and `pm.request_terminate_timeout = 30s` to PHP-FPM pool config. A single commodity attacker host can take down a default Laravel app in under 2 minutes.
+2. **Livewire 3.6.4 upgrade remains #1 from cycle 4** — still being actively exploited (6,000+ apps compromised as of June 23, 2026).
+3. **Laravel 13.17.0** if on 13.x — bugfix release, no breaking changes.
+4. **Laravel 12.62.x (latest 12.x)** if on 12.x — picks up the `JsonSchema` security backport and the earlier CRLF injection fix.
+5. **Laravel 11 = EOL** — security support ended March 12, 2026. Plan upgrade to 12 or 13.
+
+### nginx + PHP-FPM hardening checklist (2026-06-28)
+
+The Slow JSON Stream research exposed that **body-read timeouts are absent from default configs of every major framework**. Add this to your deployment playbook:
+
+```nginx
+# In every server {} that proxies JSON APIs
+client_body_timeout 10s;
+client_min_rate 1024;
+client_max_body_size 10m;
+```
+
+```ini
+# /etc/php/8.4/fpm/pool.d/www.conf
+pm.max_requests = 500
+pm.request_terminate_timeout = 30s
+```
+
+Plus a `RejectSlowBodies` middleware (see section above) as application-level defense in depth.
