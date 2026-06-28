@@ -1208,3 +1208,82 @@ Summarizer::make('total')
 
 - Filament CVEs documented in `security.md` (this section)
 - Same Filament XSS pattern (raw user input rendered as HTML) reinforces the **`{!! !!}` rule** in `blade.md` — see Common Mistakes #1 there
+
+## Updated from Research (2026-06-28, cycle 7)
+
+### Composer self-update — three CVEs in the supply chain (March–May 2026)
+
+Every PHP/Laravel host depends on Composer. **All three Composer CVEs below are still widely unpatched in the wild** because `composer self-update` is opt-in. Add it to your deployment runbook.
+
+| CVE | Disclosed | CVSS | Fixed in | Issue |
+|---|---|---|---|---|
+| **CVE-2026-45793** | 2026-05-13 | 7.5 HIGH | **2.9.8 / 2.2.28 / 1.10.28** | GitHub `GITHUB_TOKEN` and GitHub App installation tokens leaked in plaintext to CI logs when their new hyphenated format (`gh*_-*…`) failed Composer's legacy validation regex. **Rotate tokens if you ran affected versions.** |
+| **CVE-2026-40261** | 2026-04-15 | — | **2.9.6 / 2.2.27** | Command injection in `Perforce::syncCodeBase()` — crafted source reference allowed shell metacharacters. Exploitable even if you don't use Perforce (the VCS driver is loaded on demand). |
+| **CVE-2026-40176** | 2026-04-15 | — | **2.9.6 / 2.2.27** | Command injection in `Perforce::generateP4Command()` — Perforce `port`, `user`, `client` params in a malicious root `composer.json` were interpolated into a shell command without escaping. Limited to root project config. |
+
+**Why this matters for Laravel apps:** A malicious `composer.json` in a fresh-cloned repo can pivot to RCE during `composer install` even when the application itself has no Perforce integration. CVE-2026-40261 specifically does **not** require Perforce usage — the vulnerable method is reachable when the source driver parses certain source references.
+
+**Verify your Composer version:**
+```bash
+composer --version
+# Composer version 2.9.8 (or higher in the 2.9.x line)
+# Composer version 2.2.28 (or higher in the 2.2 LTS line)
+```
+
+**Update now:**
+```bash
+composer self-update           # mainline
+composer self-update --2       # LTS 2.2.x
+# or, in CI / Docker:
+composer self-update --2 --no-interaction
+```
+
+**Audit past exposure to CVE-2026-45793 (token leak):**
+```bash
+# Search recent GitHub Actions run logs for "invalid characters" errors that mention tokens.
+# Tokens printed in CI logs must be considered compromised and rotated.
+gh api /repos/{owner}/{repo}/actions/runs \
+  --jq '.workflow_runs[] | select(.conclusion=="failure") | .id' \
+  | head -20
+# For each failed run, check the logs for leaked GITHUB_TOKEN / gh*_ prefixes.
+```
+
+**Workarounds if you can't immediately upgrade Composer:**
+- CVE-2026-40261: install with `--prefer-dist` or set `preferred-install: dist` so source-sync is skipped.
+- CVE-2026-40176: never run `composer install` on an untrusted root `composer.json` you haven't read.
+- CVE-2026-45793: rotate GitHub tokens and tighten CI `permissions:` (default to read-only).
+
+Source: [Packagist blog — CVE-2026-45793](https://blog.packagist.com/composer-2-9-8-and-2-2-28-fix-github-actions-token-disclosure-in-error-messages/) | [Composer 2.9.6 release notes](https://github.com/composer/composer/releases/tag/2.9.6) | [Packagist blog — Perforce CVEs](https://blog.packagist.com/composer-2-9-6-perforce-driver-command-injection-vulnerabilities/) | [GHSA-f9f8-rm49-7jv2](https://github.com/composer/composer/security/advisories/GHSA-f9f8-rm49-7jv2) | [GHSA-gqw4-4w2p-838q](https://github.com/advisories/GHSA-gqw4-4w2p-838q) | [GHSA-wg36-wvj6-r67p](https://github.com/advisories/GHSA-wg36-wvj6-r67p) | [14-hour supply-chain anatomy writeup](https://github.com/graycoreio/github-actions-magento2/discussions/261)
+
+### Statamic CVE-2026-54244 — Live Preview authorization bypass (June 26, 2026)
+
+**Disclosed:** June 26, 2026 (two days before this cycle).
+**Severity:** Medium — incorrect authorization (CWE-862 family).
+**Affected:** Statamic CMS prior to the upcoming patch versions. The advisory was published June 26; check [statamic/cms releases](https://github.com/statamic/cms/releases) for the fixed version — patches typically ship within 1–3 days.
+
+**What it is:** Statamic's **Live Preview** feature allows view-only CP users (read-only role, no edit permission) to submit Live Preview content updates — actions that should be reserved for users with edit privileges. The Live Preview endpoint does not enforce the same authorization checks as the normal update endpoint, so a read-only user can mutate draft content during preview.
+
+**Why this matters for Laravel apps:** Statamic is one of the most-installed Laravel-native CMS packages. If you host a Statamic site with multiple CP roles, the read-only role is a common audit/governance primitive — assumed safe to grant to junior staff or external reviewers. CVE-2026-54244 breaks that assumption.
+
+**Mitigation until the Statamic patch ships:**
+1. **Restrict the Live Preview route** behind your reverse proxy if you don't use Live Preview at all — block `POST /cp/preview*` (or whatever prefix your Statamic install uses) and verify your `cp/` route map.
+2. **Audit recent draft mutations** in Statamic's revision history for content the read-only role shouldn't have been able to touch.
+3. **Temporarily downgrade read-only CP users to no CP access** if Live Preview can't be disabled.
+4. **Watch `github.com/statamic/cms/security/advisories`** for the patch release and upgrade immediately.
+
+Source: [GitLab advisory — CVE-2026-54244](https://advisories.gitlab.com/composer/statamic/cms/CVE-2026-54244/) | [Statamic releases](https://github.com/statamic/cms/releases)
+
+### Top-priority actions for 2026-06-28 (cycle 7)
+
+1. **`composer self-update` to ≥ 2.9.8 / 2.2.28** — three CVEs (CVE-2026-45793 + the two Perforce ones) make this the highest-impact action of the cycle. Audit any CI that may have logged leaked GitHub tokens.
+2. **Slow JSON Stream hardening (cycle 5)** — still the #1 active finding; verify `client_body_timeout` + `client_min_rate` are in every JSON API nginx block.
+3. **Filament upgrade** — `composer require filament/filament:^4.8.5` (v4/v5) or `^3.3.52` (v3 LTS). Audit custom `Summarizer` classes for unsafe `HtmlString` output.
+4. **Statamic upgrade** — verify every Statamic install is on 5.73.23 / 6.20.0+ (from cycle 6) and watch the upcoming Live Preview patch for CVE-2026-54244.
+5. **Livewire 3.6.4** — still actively exploited. Verify every project.
+6. **Laravel 13.17.0** if on 13.x; **Laravel 12.62.x** if on 12.x.
+7. **Laravel 11 = EOL** (security ended March 12, 2026) — plan migration to 12 or 13.
+
+### Cross-references added in cycle 7
+
+- **Composer CVEs** documented in `security.md` (this section) — new "Composer self-update" workflow added to `deployment.md`
+- **Statamic CVE-2026-54244** added alongside the existing Statamic CVE-2026-49287/49288 cycle-6 entries in `security.md`

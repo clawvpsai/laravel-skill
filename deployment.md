@@ -37,6 +37,13 @@ MAIL_FROM_ADDRESS="hello@yourapp.com"
 ## Production Deployment Steps
 
 ```bash
+# 0. Update Composer itself first — three CVEs (CVE-2026-45793 token leak + two Perforce command injections)
+#    were disclosed in 2026 and fixed in 2.9.8 / 2.2.28 / 1.10.28. `composer install` runs the
+#    binary you're updating, so do this OUTSIDE the deploy job that runs composer install — in a
+#    separate step, a Docker build layer, or your AMI/image build.
+composer self-update           # or: composer self-update --2 (LTS 2.2.x)
+composer --version             # verify ≥ 2.9.8 or ≥ 2.2.28
+
 # 1. Clone/pull code
 git pull origin main
 

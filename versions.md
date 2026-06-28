@@ -394,3 +394,22 @@ PHP/Laravel is now flagged as **Tier 1 (CVSS 7.5 HIGH)** in the cr0hn "Slow JSON
 
 As of June 28, 2026, Laravel framework **v13.17.0** (June 23, 2026) remains the latest. Laravel 13.18 has not been released yet. Track [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for the next tag.
 
+
+### Ecosystem Update (2026-06-28, cycle 7)
+
+#### No new Laravel framework version
+
+Laravel framework **v13.17.0** (June 23, 2026) remains the latest stable as of 2026-06-28 12:00 UTC. v13.18 has not been tagged yet. Track [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for the next release.
+
+#### New CVEs in the Laravel ecosystem (cycle 7)
+
+- **CVE-2026-45793** (Composer, May 13, 2026, CVSS 7.5 HIGH) — GitHub `GITHUB_TOKEN` and GitHub App installation tokens leaked in plaintext to CI logs when their new hyphenated format failed Composer's legacy validation regex. Fixed in **Composer 2.9.8 / 2.2.28 / 1.10.28**. If you ran affected versions in CI, **rotate tokens immediately**. See `security.md` for the full mitigation playbook.
+- **CVE-2026-40261** (Composer Perforce, April 15, 2026) — command injection in `Perforce::syncCodeBase()`. Exploitable even when not using Perforce (source-driver loaded on demand). Fixed in Composer 2.9.6 / 2.2.27.
+- **CVE-2026-40176** (Composer Perforce, April 15, 2026) — command injection in `Perforce::generateP4Command()` via malicious root `composer.json` Perforce params. Fixed in Composer 2.9.6 / 2.2.27.
+- **CVE-2026-54244** (Statamic, June 26, 2026) — Live Preview authorization bypass allowing read-only CP users to submit content updates. Patch pending at time of writing; watch the [Statamic releases feed](https://github.com/statamic/cms/releases). See `security.md`.
+
+#### Composer version recommendations (updated cycle 7)
+
+- **Composer 2.9.8+** (mainline) — required for CVE-2026-45793, CVE-2026-40261, CVE-2026-40176 fixes
+- **Composer 2.2.28+** (LTS line) — required for same fixes on LTS track
+- **Composer 1.10.28+** — final patch on the Composer 1.x line (consider migrating to 2.x; 1.x is EOL for new features)

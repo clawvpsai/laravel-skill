@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-28 06:02 UTC (cycle 6) — Laravel 13.17.0 still latest (no 13.17.1/13.18 release yet). No new framework CVEs in window. Found two actionable third-party CVEs: **CVE-2026-33080** (Filament v4/v5 Table Summarizer Stored XSS, CVSS 7.3, fixed in 4.8.5/5.3.5) and **CVE-2026-48500** (Filament v3 LTS parallel patch, fixed in 3.3.52). Added a new `Updated from Research (2026-06-28, cycle 6)` section to `security.md` with audit command, `Summarizer` defensive pattern, and a new `new HtmlString($userInput)` rule. Also refreshed `blade.md` (oldest untouched file at May 25) with `@once` / `@pushOnce` 13.x cross-include fix, anonymous component props pattern, and a new Common Mistake #6 mirroring the Filament CVE. SKILL.md bumped to v1.18.5 (fixes version drift from cycle 5). Last content update: 2026-06-28 06:02 UTC (this cycle).
+**Last research cycle:** 2026-06-28 12:00 UTC (cycle 7) — Laravel 13.17.0 still latest. Found **four** actionable CVEs since cycle 6. Most urgent: three Composer CVEs (**CVE-2026-45793** GitHub token leak, CVSS 7.5; **CVE-2026-40261** + **CVE-2026-40176** Perforce command injection) — fixed in Composer 2.9.8 / 2.2.28 / 1.10.28. Added a new `Updated from Research (2026-06-28, cycle 7)` section to `security.md` with full mitigation playbook, audit commands, and workarounds. Inserted a **step 0 `composer self-update`** into `deployment.md`'s production deploy steps. Also documented **CVE-2026-54244** (Statamic Live Preview authorization bypass, June 26 2026, patch pending). SKILL.md bumped to v1.19.0; ~8,350 lines now. Last content update: 2026-06-28 12:00 UTC (this cycle).
 
 ---
 
@@ -108,9 +108,9 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 ## 📊 Skill Stats
 
-- **18 topic files** covering full Laravel development lifecycle
+- **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~8,148 lines** of production-ready content
+- **~8,350 lines** of production-ready content
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 

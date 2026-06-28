@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.18.5
+version: 1.19.0
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -27,6 +27,7 @@ metadata:
 | Model lifecycle, observers, events | `observers.md` | Decoupled logic |
 | DB schema, seeding, index management | `migrations.md` | Schema management |
 | Log channels, structured logging, monitoring | `logging.md` | Debugging & monitoring |
+| Composer self-update, CVE-2026-45793 / 40176 / 40261, supply chain | `security.md` (Composer section) + `deployment.md` step 0 | Updating Composer in deploy pipeline |
 | Translations, locales, pluralization | `localization.md` | i18n/l10n |
 | Rules, Form Requests, custom validators | `validation.md` | Input validation |
 
