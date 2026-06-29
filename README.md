@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-28 18:00 UTC (cycle 8) — Laravel 13.17.0 still latest; no new framework release, no new CVEs. Refreshed the four oldest topic files (`observers.md`, `validation.md`, `logging.md`, `auth.md`, all last touched May 25) with documented-but-missing Laravel 11/13 features: `#[Boot]` / `#[Initialize]` model attributes, `#[FailOnUnknownFields]` Form Request attribute, `Context` facade (replaces the older `Log::shareContext()` pattern), `Password::toPasswordRulesString()`, and Laravel 13 starter-kit/Fortify `Features::passkeyAuthentication()` integration. SKILL.md bumped to v1.19.1; ~8,500 lines now. Last content update: 2026-06-28 18:00 UTC (this cycle).
+**Last research cycle:** 2026-06-29 00:00 UTC (cycle 9) — Laravel 13.17.0 still latest; no new framework release, no new CVEs. Refreshed the three oldest topic files (`testing.md` 9d, `ai.md` 9d, `localization.md` 8d) with documented-but-missing Laravel 11/13+ patterns: `assertInvalid()`/`assertValid()`/`assertOnlyInvalid()` + `Exceptions` facade (Laravel 11+ generic validation assertions and exception reporting), full Pest 3 architecture testing (`->arch()->preset()->laravel()`), mutation testing, nested describes + `after()` callbacks; AI SDK vs Laravel MCP vs Laravel Boost distinction matrix, embedding caching (`Embeddings::for(...)->cache(seconds: 3600)`), `->queue()` for long-running AI calls, prompt caching via `providerOptions(['cache_control' => [...]])`; URL routing for locale prefix + lazy translation loading (JSON-only / namespaces / DB+cache) + `php artisan i18n:check` CI command for missing-translation detection. SKILL.md bumped v1.19.1 → v1.20.0; ~9,400 lines now. Last content update: 2026-06-29 00:00 UTC (this cycle).
 
 ---
 
@@ -110,7 +110,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~8,500 lines** of production-ready content
+- **~9,400 lines** of production-ready content
 - **Update cadence:** Every 6 hours via OpenClaw cron — 8 cycles in last 2 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone

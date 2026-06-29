@@ -464,6 +464,149 @@ class SupportAgentTest extends TestCase
 
 ---
 
+---
+
+## AI SDK vs Laravel MCP vs Laravel Boost — Don't Confuse Them
+
+Laravel ships **three distinct AI-related products** that are easy to mix up. Use this matrix to pick the right one:
+
+| Product | Package | Purpose | Direction |
+|---|---|---|---|
+| **Laravel AI SDK** | `laravel/ai` | Build agents that **call** AI providers (OpenAI, Anthropic, Gemini). Embeddings, structured output, RAG, streaming. | Your app → AI |
+| **Laravel MCP** | `laravel/mcp` | Expose your Laravel app as an **MCP server** so external AI clients (Claude Desktop, Cursor) can call your tools/resources/prompts. | AI client → Your app |
+| **Laravel Boost** | `laravel/boost` (dev) | Dev-time MCP server that gives **AI coding assistants** (Claude Code, Cursor, Copilot) deep context about your Laravel app — real routes, schema, config, logs, artisan commands. | AI assistant ↔ Your dev environment |
+
+**When to use which:**
+
+- **AI SDK** → you want your app to USE AI features (chat, embeddings, image gen, RAG, agents).
+- **MCP** → you want AI clients to invoke your app's actions (e.g., a Cursor user runs an "Update user profile" tool that hits your Laravel endpoint).
+- **Boost** → install in your dev repo so AI coding assistants stop hallucinating Laravel patterns; they get real routes/schema/config via MCP.
+
+**They compose**: install Boost for dev, use the AI SDK in production code, AND expose parts of your app as MCP servers if external AI clients should drive it.
+
+Source: [Laravel AI SDK, Boost, and MCP: Which Tool Do You Need?](https://laravel.com/blog/laravel-ai-sdk-boost-or-mcp-which-tool-do-you-need) | [Laravel MCP Docs](https://laravel.com/docs/13.x/mcp) | [Laravel Boost](https://laravel.com/docs/13.x/boost)
+
+---
+
+## Embedding Caching — Avoid Duplicate API Calls
+
+Embedding generation is one of the most expensive AI operations (per-token pricing + rate limits). Laravel 13 ships first-class caching via the AI SDK config + `->cache(...)`:
+
+```php
+// config/ai.php
+'caching' => [
+    'embeddings' => [
+        'cache' => true,            // enable global caching
+        'driver' => null,            // null = use default cache store
+        'ttl' => 86400,              // 1 day default
+    ],
+],
+
+// Then anywhere you generate embeddings:
+$response = Embeddings::for(['Napa Valley has great wine.'])
+    ->cache(seconds: 3600) // per-call override: cache for 1 hour
+    ->generate();
+
+// Stringable helper — also accepts cache argument
+$embeddings = Str::of('Napa Valley has great wine.')->toEmbeddings(cache: true);
+$embeddings = Str::of('Napa Valley has great wine.')->toEmbeddings(cache: 3600); // explicit TTL
+```
+
+**When the cache hits:**
+- No outbound API call → no token cost, no rate-limit pressure
+- Latency drops from ~300ms to ~1ms (cache lookup)
+
+**When to override TTL:**
+- Short TTL (60s) for ephemeral text like live chat messages (rarely re-queried)
+- Long TTL (7d+) for static knowledge base content (refunds policy, product docs)
+- Never cache for unique-per-user inputs (chat history) — the cache hit rate will be 0% and you're paying for the cache lookup
+
+Source: [Laravel AI SDK Docs — Caching Embeddings](https://laravel.com/docs/13.x/ai-sdk)
+
+---
+
+## Queue Long-Running AI Calls — `->queue()` Instead of `->prompt()`
+
+Audio transcription, large document analysis, image generation, and full-document summarization can take 5–60 seconds. Don't block the HTTP request — queue them:
+
+```php
+// ❌ Blocks the request for 30s on transcription
+$transcript = AI::transcribe('openai', ['file' => $audio, 'model' => 'whisper-1']);
+
+// ✅ Returns immediately; result is processed on a queue worker
+$job = AI::transcribe('openai', ['file' => $audio, 'model' => 'whisper-1'])
+    ->queue();
+
+// Or with completion callbacks — fired after the queued job finishes
+$job = AI::generate('openai', 'gpt-4o', ['prompt' => "Summarize this article..."])
+    ->queue(
+        onComplete: fn($result) => $article->update(['summary' => $result]),
+        onFailure:  fn($e)      => Log::error('AI summary failed', ['error' => $e->getMessage()]),
+    );
+```
+
+**How it works under the hood:**
+- `->queue()` dispatches a queued job to your default queue connection
+- The job re-invokes the AI SDK with the same parameters
+- `onComplete` / `onFailure` callbacks run in the queue worker context — they have full DB access, can dispatch notifications, etc.
+
+**Required setup:**
+- A queue worker must be running: `php artisan queue:work` (or Horizon / Cloud managed queues)
+- For long AI calls, bump the job timeout: `->tries(1)->timeout(300)` (5 min)
+
+Source: [Laravel AI SDK, Boost, and MCP](https://laravel.com/blog/laravel-ai-sdk-boost-or-mcp-which-tool-do-you-need)
+
+---
+
+## Prompt Caching — Cut AI Costs 90% on Repeated System Prompts
+
+If you have a large system prompt (legal context, brand voice guide, knowledge dump) processed thousands of times per day, every request pays full price for those input tokens. **Anthropic** and **OpenAI** both support prompt caching — and the Laravel AI SDK surfaces it via `providerOptions`:
+
+```php
+// Agent with Anthropic prompt caching enabled
+use Laravel\Ai\Enums\Lab;
+
+class LegalReviewAgent
+{
+    // ...
+    public function providerOptions(): array
+    {
+        return [
+            // Anthropic — mark the system prompt as cacheable for 5 minutes
+            'cache_control' => ['type' => 'ephemeral', 'ttl' => '5m'],
+        ];
+    }
+}
+
+#[Provider(Lab::Anthropic)]
+class CachedSummarizerAgent
+{
+    // OpenAI — automatic caching for prompts >1024 tokens (no config needed)
+    // Just make sure your system prompt is consistent across calls
+}
+```
+
+**How the savings work (Anthropic example):**
+- First call: full price for the system prompt (~10K tokens = $0.03)
+- Subsequent calls within 5 min: **90% discount** on cached tokens (~$0.003 instead of $0.03)
+- At 10K calls/day with 5K-token cached prompt: **~$270/day saved** vs uncached
+
+**When prompt caching pays off:**
+- Agent with a fixed large system prompt + many requests per minute
+- RAG pipelines that always prepend the same instructions before varying context
+- Anything where the system prompt is the same across >100 requests/hour
+
+**When it doesn't help:**
+- Unique system prompts per call (different agents, different instructions)
+- Very small prompts (<500 tokens — caching overhead may exceed savings)
+- Very low traffic (<10 calls/hour — cache rarely hits before TTL expires)
+
+**Note:** As of mid-2026, the Laravel AI SDK passes `cache_control` to Anthropic automatically when set in `providerOptions()`. For OpenAI, caching is automatic when the prompt exceeds 1024 tokens and the prefix matches a recent request — no explicit config needed.
+
+Source: [Laravel AI issue #119 — Prompt caching](https://github.com/laravel/ai/issues/119) | [Anthropic Prompt Caching Docs](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)
+
+---
+
 ## Common Mistakes
 
 1. **No tools on agent** — agent is just an LLM call with no actions. Always add tools for real utility.
@@ -476,10 +619,21 @@ class SupportAgentTest extends TestCase
 8. **No sub-agent isolation** — putting too many tools on one agent bloats token count and confuses the model. Use sub-agents (`CanActAsTool`) for specialized workflows.
 9. **Forgetting provider filter in `FileSearch`** — searching across all stores is slow and noisy. Always filter by metadata (`where: [...]`) when possible.
 10. **Sub-agent without `CanActAsTool`** — works, but the parent gets a generic description. Always implement `CanActAsTool` for production agents so the LLM knows exactly when to delegate.
+11. **Blocking AI calls in HTTP requests** — audio transcription, image gen, and large-doc summarization take 5–60s. Use `->queue()` instead of `->prompt()` so the HTTP request returns immediately and a queue worker handles the call.
+12. **No embedding cache for repeated inputs** — knowledge base articles, FAQs, and product descriptions get re-embedded on every search query. Use `->cache(seconds: 3600)` or enable globally via `ai.caching.embeddings.cache = true` in config.
+13. **Confusing AI SDK with Laravel MCP/Boost** — AI SDK is for your app to call AI providers; Laravel MCP is for exposing your app as an MCP server for external AI clients; Laravel Boost is a dev tool for AI coding assistants. Installing the wrong one wastes hours.
+14. **Unique system prompts killing prompt-cache savings** — Anthropic/OpenAI cache only hits on a consistent prompt prefix. If every request has a different system prompt, you pay full price on every call.
 
 ---
 
-## Updated from Research (2026-06-19)
+## Updated from Research (2026-06-29)
+
+### Cycle 9 additions (2026-06-29)
+
+- **AI SDK vs Laravel MCP vs Laravel Boost** — three distinct products. AI SDK = your app calls AI providers. Laravel MCP = expose your app as an MCP server for external AI clients. Laravel Boost = dev-time MCP server giving AI coding assistants deep context about your Laravel app. They compose.
+- **Embedding caching** — `Embeddings::for([...])->cache(seconds: 3600)->generate()` or globally via `ai.caching.embeddings.cache = true` in config. Also `Str::of($text)->toEmbeddings(cache: true)`. Avoid duplicate API calls + rate-limit pressure for repeated inputs (knowledge base, FAQs).
+- **`->queue()` for long-running AI calls** — replaces blocking `->prompt()` for audio transcription, large doc analysis, image gen. Dispatched as a queue job with `onComplete` / `onFailure` callbacks. Requires a running queue worker (`php artisan queue:work`).
+- **Prompt caching for cost** — Anthropic via `providerOptions(['cache_control' => ['type' => 'ephemeral', 'ttl' => '5m']])`. OpenAI automatic for prompts >1024 tokens. 90% discount on cached input tokens; pays off for agents with large fixed system prompts + high request volume.
 
 - Laravel 13 ships first-party AI SDK covering: agents, tools, structured output, streaming, embeddings, image generation, audio transcription
 - Agents are PHP classes with `instructions()` and `tools()` methods — not closures or strings

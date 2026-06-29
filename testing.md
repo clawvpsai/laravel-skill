@@ -204,6 +204,206 @@ $this->assertDatabaseMissing('posts', ['id' => $deletedId]);
 $this->assertDatabaseCount('posts', 5);
 ```
 
+## Validation Assertions — Use `assertInvalid` / `assertValid` (Laravel 11+)
+
+Laravel 11 deprecated the legacy `assertJsonValidationErrors()` and `assertSessionHasErrors()` in favor of the **generic** `assertInvalid()` and `assertValid()` methods. These work uniformly for **JSON responses and session-flashed errors** — the same call covers API and web testing:
+
+```php
+// ❌ Old (Laravel 10 and earlier) — JSON-only
+$response->assertJsonValidationErrors(['title', 'body']);
+
+// ❌ Old — session-only (web form)
+$response->assertSessionHasErrors(['title', 'body']);
+
+// ✅ New (Laravel 11+) — works for BOTH JSON and session flows
+$response->assertInvalid(['title', 'body']);
+$response->assertValid(['title', 'body']);          // opposite: assert these did NOT error
+$response->assertOnlyInvalid(['title', 'body']);    // assert ONLY these fields errored
+
+// Assert specific error message text (substring match)
+$response->assertInvalid([
+    'title' => 'required',                    // error message contains "required"
+    'email' => 'valid email address',         // error message contains "valid email address"
+]);
+
+// Custom error bag (e.g., default vs registration form bag)
+$response->assertInvalid(['email'], errorBag: 'register');
+```
+
+**Why the new API wins:**
+- One assertion method for both API (`422 JSON`) and web (`302 redirect + session`) tests
+- Drop the duplicated logic of writing `assertJsonValidationErrors` for APIs and `assertSessionHasErrors` for web forms
+- `assertOnlyInvalid()` catches the common bug where a validator errors on extra fields you forgot to check
+
+## Exception Assertions — `Exceptions` Facade (Laravel 11.5+)
+
+Stop wrapping tests in try/catch blocks to assert exceptions. Laravel's `Exceptions` facade inspects the reportable flow directly:
+
+```php
+use Illuminate\Support\Facades\Exceptions;
+
+// Assert a specific exception was reported by the handler
+Exceptions::assertReported(WelcomeException::class);
+Exceptions::assertReportedCount(3);                       // reported exactly 3 times
+Exceptions::assertNotReported(WelcomeException::class);   // was NOT reported (e.g., ignored)
+
+// Assert no exceptions were reported at all (great for "happy path" tests)
+Exceptions::assertNothingReported();
+
+// Re-throw the first reported exception (useful for debugging failures)
+Exceptions::throwFirstReported();
+```
+
+**Combine with `withoutExceptionHandling()` for the inverse pattern** — when you DO expect the exception to bubble up uncaught (e.g., 500 tests):
+
+```php
+public function test_missing_model_returns_500(): void
+{
+    $this->withoutExceptionHandling();
+
+    try {
+        $this->get('/posts/999999');
+        $this->fail('Expected ModelNotFoundException was not thrown.');
+    } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        $this->assertEquals(999999, $e->getModel()->id ?? null);
+    }
+}
+```
+
+**Pattern: assert on response status instead of the facade for negative tests.** When an exception is EXPECTED to be thrown (422 → ValidationException, 403 → AuthorizationException), the handler intercepts it — assert on the response status code:
+
+```php
+$response = $this->postJson('/api/posts', []); // missing fields
+$response->assertStatus(422)->assertInvalid(['title']);
+```
+
+## Pest 3 — Architecture Testing, Mutation Testing, Arch Presets
+
+Pest 3 ships first-class tools for catching design-level and behavioral bugs that pure unit tests miss.
+
+```bash
+composer require pestphp/pest --dev --with-all-dependencies
+php artisan pest:install
+composer require pestphp/pest-plugin-laravel --dev
+```
+
+### Architectural Testing — `arch()` preset
+
+```php
+// tests/Architecture/HttpTest.php
+use function Pest\test;
+
+// Default Laravel preset — controllers must be suffixed "Controller",
+// have only index/show/create/store/edit/update/destroy as public methods, etc.
+test('app follows Laravel conventions')
+    ->arch()
+    ->preset()
+    ->laravel();
+
+// Custom rules on top of the preset
+test('controllers do not query the DB directly')
+    ->arch()
+    ->expect('App\\Http\\Controllers')
+    ->not->toUse('DB::query', 'DB::select');
+
+test('models extend Eloquent\\Model')
+    ->arch()
+    ->expect('App\\Models')
+    ->toExtend('Illuminate\\Database\\Eloquent\\Model');
+
+test('enums are backed strings')
+    ->arch()
+    ->expect('App\\Enums')
+    ->toBeStringBackedEnums();
+
+// Domain guard — production code must not import testing utilities
+test('production code stays out of tests')
+    ->arch()
+    ->expect('App')
+    ->not->toUse('Tests', 'Pest');
+```
+
+### Architectural Testing — other useful assertions
+
+```php
+test('classes are final or explicitly not')
+    ->arch()
+    ->expect('App\\Services')
+    ->toBeFinal();   // or ->not->toBeFinal()
+
+test('methods are typed')
+    ->arch()
+    ->expect('App\\Http\\Controllers')
+    ->toHaveMethodsDocumented();
+
+test('no protected methods leak')
+    ->arch()
+    ->expect('App\\Services')
+    ->not->toHaveProtectedMethods();
+
+test('strict equality everywhere')
+    ->arch()
+    ->expect('App')
+    ->toUseStrictEquality();
+```
+
+### Mutation Testing — verify your tests actually catch bugs
+
+Mutation testing injects small bugs (e.g., `>` becomes `>=`, `true` becomes `false`) and runs your test suite — if the suite still passes, you have an uncaught mutation, meaning your tests don't actually exercise that code path.
+
+```bash
+composer require pestphp/pest-plugin-mutator --dev
+./vendor/bin/pest --mutate
+```
+
+Reports show **mutation score** — the % of injected bugs your suite catches. Aim for 80%+ on critical paths (controllers, services, value objects).
+
+### Nested Describes + `after()` callback
+
+```php
+describe('PostController', function () {
+    describe('store', function () {
+        // Shared setup for this group only
+        beforeEach(fn() => $this->user = User::factory()->create());
+
+        after(fn() => Storage::disk('public')->deleteDirectory('uploads'));
+
+        it('creates a post', function () { /* ... */ });
+        it('validates required fields', function () { /* ... */ });
+    });
+
+    describe('destroy', function () { /* ... */ });
+});
+```
+
+Source: [Pest 3 release notes](https://pestphp.com/docs/pest3-now-available) | [Pest Architecture Testing](https://pestphp.com/docs/arch-testing)
+
+## Parallel Testing — Best Practices
+
+`php artisan test --parallel` is a big speedup on test suites with >200 tests or heavy DB integration. Caveats:
+
+```bash
+# Run with 4 workers (default)
+php artisan test --parallel
+
+# Explicit worker count
+php artisan test --parallel --processes=8
+
+# Parallel + coverage (Laravel 11+)
+php artisan test --parallel --processes=8 --coverage
+
+# Stop after first failure (useful in CI)
+php artisan test --parallel --stop-on-failure
+```
+
+**Per-worker DB isolation.** `RefreshDatabase` automatically creates per-worker test databases (e.g., `laravel_test_1`, `laravel_test_2`) when `--parallel` is on. No manual config.
+
+**Set `APP_MAINTENANCE_DRIVER=array` in `.env.testing`** (Laravel 13.16+) when your tests call `Artisan::call('down')` / `Artisan::call('up')`. The default `file` driver shares state across workers — a `down` in worker 1 is seen by worker 2 → tests fail or interfere.
+
+**Don't share state across tests.** If a test sets a config value, in-memory Cache::put, or singleton binding, that state will NOT be visible to other workers. Use `config()->set('key', 'value')` **inside** the test, or write to the DB, or use a per-worker cache prefix.
+
+**Run integration tests serially if they touch external systems** (real S3 bucket, shared Redis instance). Parallel workers will collide on bucket keys / queue names.
+
 ## Mocking
 
 ```php
@@ -467,7 +667,15 @@ APP_MAINTENANCE_DRIVER=array
 
 Source: [PR #60489](https://github.com/laravel/framework/pull/60489) | [Laravel 13.16 Release Notes](https://github.com/laravel/framework/releases/tag/v13.16.0)
 
-## Updated from Research (2026-06-19)
+## Updated from Research (2026-06-29)
+
+### Cycle 9 additions (2026-06-29)
+
+- **`assertInvalid()` / `assertValid()` / `assertOnlyInvalid()` (Laravel 11+)** — generic validation assertions that work for both JSON API responses and session-flashed web form errors. Replaces the split `assertJsonValidationErrors()` / `assertSessionHasErrors()` API. Supports substring matching against error messages: `$response->assertInvalid(['title' => 'required'])`.
+- **`Exceptions` facade (Laravel 11.5+)** — `Exceptions::assertReported()`, `assertReportedCount()`, `assertNotReported()`, `assertNothingReported()`, `throwFirstReported()`. Replaces try/catch boilerplate for asserting exceptions were reported by the handler.
+- **Pest 3 — Architecture Testing** — `test()->arch()->preset()->laravel()` enforces Laravel conventions (controller suffix, allowed public methods, etc). Plus custom rules: `->toBeFinal()`, `->toUseStrictEquality()`, `->toHaveMethodsDocumented()`, `->not->toHaveProtectedMethods()`.
+- **Pest 3 — Mutation Testing** — `./vendor/bin/pest --mutate` (requires `pestphp/pest-plugin-mutator`) reports a mutation score — the % of injected bugs your test suite catches. Aim for 80%+ on critical paths.
+- **Pest 3 — nested describes + `after()` callback** — group tests with `describe('group', fn() => ...)` blocks inside other describes; `after(fn() => ...)` runs cleanup scoped to that describe.
 
 ### Laravel 13.16 (June 2026)
 

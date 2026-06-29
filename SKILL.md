@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.19.1
+version: 1.20.0
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -35,6 +35,16 @@ metadata:
 | `Context` facade for log context | `logging.md` (Context facade section) | Request/job-scoped context that auto-attaches to logs and survives queue dispatch |
 | `Password::toPasswordRulesString()` | `validation.md` (Password rules section) | Derive JS `passwordrules` HTML hint from server-side `Password::` rule |
 | `Features::passkeyAuthentication()` / `passkeyRegistration()` | `auth.md` (Starter Kits section) | Laravel 13 starter-kit + Fortify passkey integration |
+| `assertInvalid()` / `assertValid()` / `assertOnlyInvalid()` | `testing.md` (Validation Assertions section) | Laravel 11+ generic validation assertions for JSON + session flows |
+| `Exceptions` facade (`assertReported`, `assertNothingReported`, `throwFirstReported`) | `testing.md` (Exception Assertions section) | Laravel 11.5+ clean exception assertions without try/catch |
+| Pest 3 architecture testing (`->arch()->preset()->laravel()`, `->toBeFinal()`, `->toHaveMethodsDocumented()`) | `testing.md` (Pest 3 section) | Enforce Laravel conventions + design rules in CI |
+| Pest 3 mutation testing (`pest --mutate`) | `testing.md` (Pest 3 section) | Verify tests actually catch injected bugs |
+| Laravel AI SDK vs Laravel MCP vs Laravel Boost | `ai.md` (matrix section) | Pick the right product: AI SDK = app calls AI; MCP = expose app as MCP server; Boost = dev-time AI assistant context |
+| Embedding caching (`Embeddings::for(...)->cache(seconds: ...)`) | `ai.md` (Embedding Caching section) | Skip duplicate API calls for repeated inputs (knowledge base, FAQs) |
+| `->queue()` for long-running AI calls | `ai.md` (Queue Long-Running AI Calls section) | Audio transcription, image gen, large-doc summarization — don't block HTTP |
+| Prompt caching (`providerOptions(['cache_control' => [...]])`) | `ai.md` (Prompt Caching section) | Anthropic / OpenAI 90% discount on cached input tokens for agents with fixed system prompts |
+| `php artisan i18n:check` (missing translation detector) | `localization.md` (Detecting Missing Translations section) | CI integration to fail builds on incomplete translations |
+| Lazy translation loading (JSON-only, lazy namespaces, DB+cache) | `localization.md` (Lazy Translation Loading section) | Avoid loading thousands of keys on every request for large apps |
 
 
 ## Critical Rules (Never Forget)
