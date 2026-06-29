@@ -38,7 +38,12 @@ class PostObserver
 
     public function restored(Post $post): void
     {
-        // Restored from soft delete
+        // Restored from soft delete.
+        //
+        // Laravel 13.17+ (PR #60605): the `restored` event fires ONLY when the
+        // underlying save() succeeded. If a `saving` listener returned `false`
+        // (or the DB rejected the row), the event will NOT fire — check
+        // `restore()`'s boolean return before assuming restoration happened.
     }
 
     public function retrieved(Post $post): void
@@ -207,7 +212,11 @@ class PostObserver
 
     public function restored(Post $post): void
     {
-        // Optionally restore related records
+        // Optionally restore related records.
+        //
+        // Laravel 13.17+ (PR #60605): this only fires when the underlying
+        // save() succeeded. If a `saving` listener returned false, this event
+        // is skipped — check the boolean return of `$model->restore()` instead.
     }
 }
 ```
@@ -281,7 +290,10 @@ class Post extends Model
 
 **Pair with `#[ObservedBy]`** — `#[Boot]` handles in-model event listeners; `#[ObservedBy]` attaches a full observer class. They compose cleanly on the same model.
 
-## Updated from Research (2026-05-14)
+## Updated from Research (2026-06-29)
+
+- **Soft-delete `restore()` event gating (PR #60605, 13.17+)** — the `restored` model event now only fires when the underlying `save()` actually returned true. Before 13.17 it fired unconditionally, which made `static::restored(fn() => $x = true)`-based tests report success even when a `saving` listener had cancelled the restore. Always check the return value of `$model->restore()` (boolean) instead of relying on the event firing.
+
 
 ### `#[ObservedBy]` Attribute (Laravel 13)
 

@@ -530,6 +530,43 @@ Event::listen(WorkerIdle::class, function (WorkerIdle $event, array $payload) {
 - Emit "queue depth = 0" metrics for dashboards
 - Trigger health check to report "idle and healthy"
 
+### `WorkerStopping` Event Now Exposes `jobsProcessed` + `lastJobProcessedAt` (Laravel 13.17+)
+
+Before 13.17, the `WorkerStopping` event had only `$status`, `$workerOptions`, and `$reason` — you couldn't tell how many jobs the worker processed in its lifetime or when the last one finished. As of PR #60592, two new public properties are attached to every stop:
+
+```php
+use Illuminate\Queue\Events\WorkerStopping;
+
+Event::listen(WorkerStopping::class, function (WorkerStopping $event) {
+    Log::info('queue worker stopping', [
+        'reason'             => $event->reason?->value,
+        'jobs_processed'     => $event->jobsProcessed,
+        'last_job_at'        => $event->lastJobProcessedAt
+            ? \Carbon\Carbon::createFromTimestamp($event->lastJobProcessedAt)
+            : null,
+        'idle_seconds'       => $event->lastJobProcessedAt
+            ? now()->getTimestamp() - $event->lastJobProcessedAt
+            : null,
+    ]);
+
+    // Optional: push to a metric stream for capacity dashboards
+    Metrics::gauge('queue.worker.jobs_processed', $event->jobsProcessed);
+});
+```
+
+**New properties:**
+- `$jobsProcessed` (`int|null`) — total jobs the worker handled across the whole process
+- `$lastJobProcessedAt` (`int|float|null`) — Unix timestamp of the last job that finished (null if the worker never processed one)
+- Existing `$status`, `$workerOptions`, `$reason` are unchanged
+
+**Use cases:**
+- Capacity / lifetime dashboards — see how many jobs a worker actually ran before SIGTERM/restart
+- Graceful-shutdown debugging — measure the gap between last job and stop signal
+- Auto-scaling telemetry — derive worker utilization from `jobsProcessed / uptime`
+- Side-effect hooks that need a "last batch checkpoint" trigger
+
+Source: [PR #60592 — expose jobs processed count and last job timestamp on WorkerStopping](https://github.com/laravel/framework/pull/60592)
+
 ## SQS Large Payload Disk Storage (Laravel 13.9+)
 
 SQS has a 256KB message size limit. For jobs with large payloads (serialized models, bulk data), Laravel 13.9 can offload the body to a local disk (or S3) and send only a reference through SQS:
@@ -749,7 +786,10 @@ $batch->failed(); // number of failures
 6. **No retry backoff** — hammer the failing service with immediate retries
 7. **Duplicate dispatches causing double-processing** — use `#[DebounceFor]` for bursty workloads where only the last dispatch matters
 
-## Updated from Research (2026-05-20)
+## Updated from Research (2026-06-29)
+
+- ** event payload (PR #60592, 13.17+)** — new public  and  properties allow lifetime-job-count and graceful-shutdown-gap dashboards without dirty reflection hacks.
+
 
 - **SQS Large Payload Disk Storage (Laravel 13.9+)** — payloads exceeding SQS 256KB limit are offloaded to local disk or S3 automatically. Configure via `payload_disk` and `payload_disk_config` in the SQS queue connection. Eliminates manual setup of SQS Extended Client.
 - **Cloud Queue Metrics (Laravel 13.9+)** — first-party `Queue::connection()->metrics()` API exposes `jobsReceived()`, `jobsProcessed()`, `jobsFailed()`, and `averageLatency()` for monitoring dashboards and health checks.

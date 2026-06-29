@@ -8,11 +8,17 @@ php artisan make:controller PostController --model=Post --requests
 
 # Plain resource (no create/edit)
 php artisan make:controller PostController --model=Post --api
+
+# Single-action (invokable) controller — generates __invoke()
+php artisan make:controller ProvisionServer --invokable
 ```
 
 **Routes file (`routes/web.php`):**
 ```php
 Route::resource('posts', PostController::class);
+
+// Register an invokable controller — pass class, no method name
+Route::post('/server', ProvisionServer::class);
 
 // Nested (posts.comments)
 Route::resource('posts.comments', CommentController::class);
@@ -34,6 +40,44 @@ class PostController extends Controller
     public function edit(Post $post) { /* GET /posts/{post}/edit */ }
     public function update(Request $request, Post $post) { /* PUT/PATCH /posts/{post} */ }
     public function destroy(Post $post) { /* DELETE /posts/{post} */ }
+}
+```
+
+## Single Action Controllers (`__invoke`)
+
+Use one controller class per non-CRUD endpoint when the action is complex enough to deserve its own class — webhook handlers, OAuth callbacks, billing webhooks, action endpoints that don't fit the 7-method resource model:
+
+```php
+class ProvisionServer extends Controller
+{
+    public function __invoke(ProvisionServerRequest $request)
+    {
+        $server = $this->provisioner->provision($request->validated());
+        return response()->json(['id' => $server->id], 201);
+    }
+}
+```
+
+```php
+// Route definition — pass class, no method
+Route::post('/servers', ProvisionServer::class)->middleware('auth');
+Route::match(['get', 'post'], '/webhooks/stripe', StripeWebhook::class);
+```
+
+**Why `__invoke` over a named method:**
+- Each action can have its own typed FormRequest (each webhook can validate a different payload)
+- Each action can have its own constructor with narrow dependencies (`StripeWebhook` injects only `StripeClient`, not the full `BillingService`)
+- Easy to extract into a package without dragging in 6 unrelated sibling actions
+- Plays nice with `Route::macro()` for ASP.NET-style action grouping
+
+**Combine with `#[Middleware]` / `#[Authorize]` attributes:**
+
+```php
+#[Middleware('auth:sanctum')]
+#[Authorize('create', Server::class)]
+class ProvisionServer extends Controller
+{
+    public function __invoke(ProvisionServerRequest $request) { /* ... */ }
 }
 ```
 
@@ -63,7 +107,25 @@ class PostController extends Controller
 
 **Key attributes:**
 - `#[Middleware('name')]` — apply middleware to controller or method
-- `#[Authorize('action', [Model::class, 'relation'])]` — authorize with policy
+- `#[Authorize('action', [Model::class, 'relation])` — authorize with policy
+
+## Route Patterns (Global Constraints)
+
+```php
+// Apply globally — every {id} in the entire app must now match \d+
+Route::pattern('id', '[0-9]+');
+Route::pattern('slug', '[a-z0-9-]+');
+Route::pattern('uuid', '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+
+// Numeric alternative to missing implicit binding
+Route::pattern('year', '[0-9]{4}');
+Route::get('/archive/{year}', function (int $year) { /* ... */ })->whereYear('year');
+```
+
+**Where this bites:**
+- After declaring `Route::pattern('id', '\\d+')` globally, `posts/{post}` with implicit binding works, but `/posts/notanid` will now 404 instead of triggering a `ModelNotFoundException` — make sure tests expect 404, not 500.
+- Place `Route::pattern()` calls in `bootstrap/app.php` or a service provider's `boot()` — they only need to be registered once per process.
+- Don't combine with `Route::where()` on the same parameter — the per-route `where()` already wins for that route.
 
 ## Route Metadata (Laravel 13.17+)
 
@@ -106,6 +168,46 @@ $tier = $route->getMetadata("audit.tier");
 - Multi-team ownership — route ownership/team metadata for incident routing
 
 Source: [Laravel News — Route Metadata](https://laravel-news.com/laravel-13-17-0) | [PR #60530](https://github.com/laravel/framework/pull/60530)
+
+## API Versioning & Route Group Conventions
+
+```php
+// routes/api.php
+Route::prefix('v1')->name('api.v1.')->middleware(['auth:sanctum'])->group(function () {
+    Route::apiResource('posts', PostController::class);
+    Route::post('/posts/{post}/publish', PublishPost::class)
+        ->metadata(['feature_flag' => 'publish_v2']);
+});
+
+Route::prefix('v2')->name('api.v2.')->middleware(['auth:sanctum'])->group(function () {
+    // ...
+});
+```
+
+**Convention checklist:**
+- **Prefix with version** (`/v1`, `/v2`) + name with `api.v1.*` so URL helpers generate stable names
+- **Keep middleware ordered** (auth:sanctum → throttle → binding → controller), don't repeat per route
+- **Bind one API resource per version group** — never cross-link between versions
+- **Use `Route::apiResource()`** instead of `Route::resource()` for JSON-only endpoints (skips `create` / `edit`)
+- **Sunset version**: when deprecating `/v1`, add a `Sunset` HTTP header via middleware that reads `Route::getMetadata('sunset')` — return the date customers must migrate by
+
+**HEAD request cache headers (Laravel 13.17.1+):**
+
+Before 13.17.1, the `SetCacheHeaders` middleware did not set `Cache-Control` / `ETag` on `HEAD` requests — a real gotcha for CDN cache-warming scripts and `link rel="preload"` audits. As of PR #60589 (13.17.1+) the middleware applies to HEAD as expected. If you can't upgrade yet, force cache headers explicitly:
+
+```php
+// Workaround for 13.16 and earlier
+public function show(Post $post)
+{
+    $response = response()->json($post);
+    if (request()->isMethod('HEAD')) {
+        $response->setCache(['public', 'max_age' => 60]);
+    }
+    return $response;
+}
+```
+
+Source: [PR #60589 — fix cache headers not set on HEAD requests](https://github.com/laravel/framework/pull/60589)
 
 ## Validation
 
@@ -235,10 +337,15 @@ try {
 4. **Wrong HTTP method** — PUT/PATCH for update, POST for create, DELETE for destroy
 5. **Not using route model binding** — manual `Post::find($id)` bypasses middleware
 6. **Validation errors not flashed** — ensure `Back` or `withErrors` is called
+7. **Using a 7-method resource for one-off actions** — webhooks, OIDC callbacks, billing redirects are not CRUD. Use `__invoke()` controllers instead.
+8. **Forgetting `Route::pattern()` after upgrading** — global constraints override implicit binding. Tests that expected `ModelNotFoundException` will now see a 404 and start failing.
 
 
-## Updated from Research (2026-05)
+## Updated from Research (2026-06-29)
 
-- **Laravel 13 Controller Attributes** — New `#[Middleware]` and `#[Authorize]` PHP attributes allow declarative middleware and authorization directly on controller classes and methods, replacing constructor-based middleware registration.
+- **Single Action Controllers (`__invoke`)** — One controller per non-CRUD endpoint. Combine with `#[Middleware]` / `#[Authorize]` for typed, narrowly-scoped action classes.
+- **`Route::pattern()` global constraints** — `Route::pattern('id', '\d+')` applies to every route in the app. Watch for 404 vs `ModelNotFoundException` after applying.
+- **HEAD request cache headers fix (PR #60589)** — `SetCacheHeaders` middleware now applies to `HEAD` requests as of 13.17.1+. Fixes CDN cache-warming scripts that previously saw no `Cache-Control` / `ETag` on HEAD probes.
+- **API versioning convention** — `prefix('vN')->name('api.vN.')` keeps URL helpers stable; use `Route::apiResource()` instead of `Route::resource()` for JSON-only endpoints; add `Sunset` HTTP header for deprecated versions via metadata.
 
-Source: [Laravel 13 Docs - Controllers](https://laravel.com/docs/13.x/controllers)
+Source: [Laravel 13 Docs - Controllers](https://laravel.com/docs/13.x/controllers) | [Laravel 13 Docs - Routing](https://laravel.com/docs/13.x/routing) | [PR #60589 HEAD cache fix](https://github.com/laravel/framework/pull/60589)

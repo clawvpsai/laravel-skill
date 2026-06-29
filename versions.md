@@ -57,6 +57,21 @@ Then load the relevant sections below.
 - `DevCommands` vendor registration check no longer skips userland frames (#60538)
 - `brick/math` 0.18 allowed (#60560)
 
+### Late-June 2026 Bug Fixes Merged Into 13.x (post-v13.17.0, will ship in v13.17.1+)
+
+No new minor release yet, but several behavioral fixes already on `13.x` and worth tracking:
+
+- **`schedule:work` graceful shutdown** — `SIGINT`/`SIGTERM`/`SIGQUIT` now stops new runs cleanly and waits for in-flight `schedule:run` subprocesses to finish (was hard-killed mid-task before). PR #60616 (commit ffa562df, 2026-06-28). Covered in `artisan.md`.
+- **`WorkerStopping` event payload** — new public `\$jobsProcessed` and `\$lastJobProcessedAt` properties; previously only `\$status`/`\$workerOptions`/`\$reason`. PR #60592 (commit fde9dd43, 2026-06-26). Covered in `queues.md`.
+- **Soft-delete `restore()` event gating** — `restored` model event now fires only when the underlying `save()` returns `true`; before, it fired unconditionally even when a `saving` listener cancelled the restore. PR #60605 (commit eb473d3c, 2026-06-26). Covered in `observers.md`.
+- **HEAD requests now set cache headers** — `SetCacheHeaders` middleware applies to `HEAD` requests (was a 13.16 regression — CDN cache-warming scripts and link-preload audits were silently missing `Cache-Control`/`ETag`). PR #60589 (commit a1ecec74, 2026-06-25). Covered in `controllers.md`.
+- **`RateLimited` middleware `releaseAfter` `__sleep` fix** — rate-limit release timestamps now serialize through `__sleep()`, so jobs that serialize/unserialize (e.g. via `dispatch($job->afterCommit())`) don't lose their throttle window. PR #60609 (commit a679b90b, 2026-06-27). Listed for awareness — main API unchanged.
+- **Soft-delete `restoring` not fired when restore fails** — sibling to the `restored` fix above; same PR #60605 ensures `restoring` is gated the same way.
+- **Conditional return types on several methods** — `Paginator::fragment()`, `Route::domain()`, `Password/File/Email` rule `defaults()`, `__()`, `Lottery::`, `Arr::`, `ComponentAttributeBag::` all narrow return types when the first arg is non-null. PHPStan/Psalm ergonomics. PR #60586 (commit 4eef2ca8, 2026-06-25).
+- **`Json` parsing for top-level zero bodies** — a literal `0` body used to be coerced to `[]`; fixed. PR #60614 (commit 1c0c8fb5, 2026-06-28). Watch for edge case: numeric strings hitting `Request::json()` on PUT/PATCH endpoints.
+
+Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for `v13.17.1` (or `v13.18.0` if enough features accumulate) — these fixes will land there.
+
 **12.x backports included in 13.17:**
 - **Multi-type union support in `Illuminate\JsonSchema`** — pair with the `fromArray()` deserializer from 13.15 (#60462)
 - **Ability to refresh cache locks** — `Cache::restoreLock()` lets you re-acquire a previously-released lock by token (#58349, bytestream)

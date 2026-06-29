@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.20.0
+version: 1.21.0
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -40,6 +40,12 @@ metadata:
 | Pest 3 architecture testing (`->arch()->preset()->laravel()`, `->toBeFinal()`, `->toHaveMethodsDocumented()`) | `testing.md` (Pest 3 section) | Enforce Laravel conventions + design rules in CI |
 | Pest 3 mutation testing (`pest --mutate`) | `testing.md` (Pest 3 section) | Verify tests actually catch injected bugs |
 | Laravel AI SDK vs Laravel MCP vs Laravel Boost | `ai.md` (matrix section) | Pick the right product: AI SDK = app calls AI; MCP = expose app as MCP server; Boost = dev-time AI assistant context |
+| Single action controllers (`__invoke`) | `controllers.md` (Single Action Controllers section) | Webhook handlers, OIDC callbacks, billing redirects — actions that don't fit the 7-method resource model |
+| `Route::pattern()` global constraints | `controllers.md` (Route Patterns section) | Force `{id}` to match `\d+` (or any regex) app-wide; watch 404 vs `ModelNotFoundException` in tests |
+| HEAD request cache headers (PR #60589) | `controllers.md` (API Versioning section) | 13.17.1+ finally sets `Cache-Control` / `ETag` on HEAD; CDN cache-warming scripts broke before |
+| `WorkerStopping` `jobsProcessed` + `lastJobProcessedAt` (PR #60592) | `queues.md` (WorkerStopping section) | Lifetime-job-count and graceful-shutdown-gap dashboards without dirty reflection hacks |
+| `schedule:work` graceful signal handling (PR #60616) | `artisan.md` (schedule:work section) | Long-lived scheduler in Docker/K8s/supervisord exits cleanly on SIGTERM, lets in-flight runs finish |
+| Soft-delete `restore()` event gating (PR #60605) | `observers.md` (restored callback note) | Laravel 13.17+ only fires `restored` when the underlying save() actually succeeded — check the boolean return |
 | Embedding caching (`Embeddings::for(...)->cache(seconds: ...)`) | `ai.md` (Embedding Caching section) | Skip duplicate API calls for repeated inputs (knowledge base, FAQs) |
 | `->queue()` for long-running AI calls | `ai.md` (Queue Long-Running AI Calls section) | Audio transcription, image gen, large-doc summarization — don't block HTTP |
 | Prompt caching (`providerOptions(['cache_control' => [...]])`) | `ai.md` (Prompt Caching section) | Anthropic / OpenAI 90% discount on cached input tokens for agents with fixed system prompts |
@@ -62,6 +68,8 @@ metadata:
 - **`firstOrCreate` persists immediately** — `firstOrNew` lets you validate before saving
 - **Route model binding defaults to `id`** — override `getRouteKeyName()` for slugs
 - **`Route::metadata()` survives `route:cache`** (Laravel 13.17+) — first-class route metadata via dot notation; use for audit, feature flags, OpenAPI emitters
+- **`schedule:work` now catches signals** (Laravel 13.17+, PR #60616) — `SIGINT`/`SIGTERM`/`SIGQUIT` stop new runs cleanly and let in-flight `schedule:run` finish; long-lived scheduler processes no longer need wrapper scripts
+- **HEAD request cache headers** (Laravel 13.17.1+, PR #60589) — `SetCacheHeaders` middleware now applies to `HEAD`. Before: CDN cache-warm scripts got no `Cache-Control`/`ETag`. Force cache headers explicitly if stuck on 13.16
 
 ## Version Defaults
 

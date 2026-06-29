@@ -133,6 +133,38 @@ Schedule::command('report')
 
 If you're upgrading a 12.x or pre-13.17 codebase, audit `routes/console.php` for this pattern — it's a common latent bug where evening reports fire at the wrong wall-clock hour.
 
+## `schedule:work` — Graceful Shutdown on SIGINT / SIGTERM / SIGQUIT (Laravel 13.17+)
+
+Before 13.17, running the scheduler as a long-lived process (`php artisan schedule:work` in a Docker container, a Kubernetes pod, or `supervisord`) was risky: on `SIGTERM` (pod eviction) the process got killed mid-task — any in-flight `schedule:run` could be torn apart, leaving the task half-done. As of PR #60616 (13.17+), `schedule:work` traps `SIGINT` / `SIGTERM` / `SIGQUIT`, stops starting new runs, waits for any in-flight `schedule:run` to finish, then exits cleanly — the same behavior `queue:work` has had since 5.x.
+
+```bash
+# In Docker / systemd / supervisord — long-lived scheduler
+php artisan schedule:work
+
+# Send a graceful-stop (e.g. on container shutdown):
+kill -TERM <pid>   # exits with 0 once in-flight runs complete
+```
+
+**How it behaves:**
+- Receives signal → flips internal `shouldQuit = true`
+- Stops launching new `schedule:run` subprocesses
+- Waits for every `schedule:run` already started to exit (sub-processes are `Symfony\Component\Process\Process` instances tracked in `$executions`)
+- Returns `SUCCESS` once `$executions` is empty
+- **In-flight schedules still complete** — important for billing / email / report jobs that must not be cut off mid-write
+
+**Before 13.17 (workaround):** wrap `php artisan schedule:work` in a script that traps SIGTERM and runs `artisan schedule:list` last (no-op) so the kernel doesn't tear the process apart. With 13.17+ you can rely on native signal handling.
+
+**Container recipe (unchanged, but now safe):**
+
+```dockerfile
+# Dockerfile
+CMD ["php", "artisan", "schedule:work"]
+```
+
+Pair with a Kubernetes `terminationGracePeriodSeconds: 60` (or longer than your longest scheduled task) so the kubelet waits for in-flight runs.
+
+Source: [PR #60616 — schedule:work catch signals](https://github.com/laravel/framework/pull/60616)
+
 ## Laravel AI / Boost MCP (Laravel 13+)
 
 ```bash
@@ -298,3 +330,9 @@ php artisan config:show app
 4. **No `--withoutOverlapping()` on queue:work** — duplicate workers fight over jobs
 5. **Scheduling without cron entry** — `schedule:run` never fires without server cron
 6. **`env()` outside config files** — after `config:cache`, env becomes null everywhere
+7. **`schedule:work` killed mid-task on container shutdown** — on Laravel <13.17, `SIGTERM` tears the process apart during a `schedule:run`. Upgrade to 13.17+ (PR #60616) for graceful signal handling, or set `terminationGracePeriodSeconds: 60+` in Kubernetes so the kernel doesn't cut in-flight tasks.
+
+## Updated from Research (2026-06-29)
+
+- **`schedule:work` graceful signal handling (PR #60616, 13.17+)** — `SIGINT` / `SIGTERM` / `SIGQUIT` now stops new runs cleanly and waits for in-flight `schedule:run` subprocesses to finish before exiting. Long-lived scheduler processes in containers can finally rely on native signal handling instead of wrapper scripts.
+
