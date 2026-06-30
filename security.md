@@ -1105,6 +1105,7 @@ Slowloris (header-drip, 2009) is fully mitigated in nginx by `client_header_time
 ### New CVEs added (cycle 4, 2026-06-24)
 
 - **CVE-2026-53634 / GHSA-vmwx-m75v-qvch** — Sharp Laravel CMS "Quick Creation Command" missing authorization (CWE-862). Authenticated Sharp users without `create` permission on a given entity could render the Quick Creation form and submit new records when that entity had a Quick Creation handler configured. Fixed in `code16/sharp` **9.22.3** (June 10, 2026). The earlier 9.22.0 patch for CVE-2026-44692 did NOT cover this — projects on 9.22.0/9.22.1/9.22.2 must upgrade again to 9.22.3+.
+- **CVE-2026-48505 / 48500 / 48067 / 48167 / 48166 / 54517 — Filament 3.0–3.3.51 / 4.0–4.11.4 / 5.0–5.6.4 cluster (June 22–23, 2026)** — single coordinated patch in **3.3.52 / 4.11.5 / 5.6.5**. Includes MFA recovery-code reuse (CVSS 7.4 HIGH), missing-authorization on temp file uploads (6.5 MED), AttachAction/AssociateAction scope bypass IDOR (6.5 MED), ImageColumn/ImageEntry stored XSS (6.4 MED), login-timing user enumeration (5.3 MED), and OAuth2 AsyncClient use-after-free (5.3 MED). All six are fixed by the same version-line bump — there is no partial patch. Run `composer require filament/filament:"^3.3.52 || ^4.11.5 || ^5.6.5"` and rotate MFA recovery codes post-upgrade. Full details in the cycle-11/12 sections below.
 
 ### Top-priority actions for 2026-06-24 (cycle 4)
 
@@ -1168,7 +1169,7 @@ Plus a `RejectSlowBodies` middleware (see section above) as application-level de
 ### New CVEs added (cycle 6, 2026-06-28)
 
 - **CVE-2026-33080** — Filament v4/v5 Table Summarizer Stored XSS (CVSS 7.3 HIGH, disclosed March 20, 2026). Filament Table summarizers render database values directly without HTML escaping, so a user with write access to any column rendered by a summarizer (e.g., `Sum`, `Average`, `Count`) can inject `<script>` that fires in the admin panel context. Affects `filament/filament` 4.0.0–4.8.4 and 5.0.0–5.3.4. **Fixed in 4.8.5 and 5.3.5** — upgrade `composer require filament/filament:^4.8.5` (or `^5.3.5`) and audit any custom `Summarizer` subclass that returns user-controlled HTML. [SentinelOne](https://www.sentinelone.com/vulnerability-database/cve-2026-33080) | [Filament v4.8.5 release](https://github.com/filamentphp/filament/releases/tag/v4.8.5) | [Filament v5.3.5 release](https://github.com/filamentphp/filament/releases/tag/v5.3.5)
-- **CVE-2026-48500** — Filament v3 Stored XSS (related family, fixed in **3.3.52**). If you are still on Filament 3.x (LTS track), this is the parallel patch — `composer require filament/filament:^3.3.52`. [NVD record](https://nvd.nist.gov/vuln/detail/CVE-2026-48500)
+- **CVE-2026-48500** — Filament v3.x missing-authorization on temporary file uploads (CVSS 6.5 MED, fixed in **3.3.52**, part of the same SB26-180 cluster as the 4.11.5/5.6.5 release). If you are still on Filament 3.x (LTS track), this is the parallel patch — `composer require filament/filament:^3.3.52`. [NVD record](https://nvd.nist.gov/vuln/detail/CVE-2026-48500) · [GHSA-44wp-g8f4-f4v5](https://github.com/filamentphp/filament/security/advisories/GHSA-44wp-g8f4-f4v5). Full details in the cycle-12 section below.
 
 **Why this matters for Laravel apps:** Filament is the most-installed admin panel package in the Laravel ecosystem. The summarizer XSS is exploitable by any authenticated user with write access to a summarized column, which is almost always broader than the developer assumes ("admins only" is often just "any logged-in back-office user"). A single low-privileged staff account can pivot to admin-context script execution and steal other users' session cookies.
 
@@ -1287,3 +1288,136 @@ Source: [GitLab advisory — CVE-2026-54244](https://advisories.gitlab.com/compo
 
 - **Composer CVEs** documented in `security.md` (this section) — new "Composer self-update" workflow added to `deployment.md`
 - **Statamic CVE-2026-54244** added alongside the existing Statamic CVE-2026-49287/49288 cycle-6 entries in `security.md`
+
+## Updated from Research (2026-06-30, cycle 11)
+
+### Filament CVE cluster — June 22, 2026 (CISA KEV weekly bulletin)
+
+Filament shipped a coordinated patch release on **June 22, 2026** that fixes **six independent CVEs** at once. All six are fixed in **`filament/filament` 3.3.52** (v3 LTS), **4.11.5** (v4), and **`5.6.5`** (v5). If you run Filament, this is your upgrade target. Upgrade with:
+
+```bash
+composer require filament/filament:"^3.3.52 || ^4.11.5 || ^5.6.5"
+```
+
+> ⚠️ The same coordinated version line bump is what fixed the **entire cluster**: CVE-2026-48505 (HIGH 7.4, MFA recovery-code race), CVE-2026-48500 (MED 6.5, missing auth on temp file uploads), CVE-2026-48067 (MED 6.5, AttachAction IDOR), CVE-2026-48167 (MED 6.4, ImageColumn/ImageEntry XSS), CVE-2026-48166 (MED 5.3, login-timing enumeration), and CVE-2026-54517 (MED 5.3, OAuth2 UAF). They were disclosed as a bundle — there is no partial patch. Do not pin a minor release below 3.3.52 / 4.11.5 / 5.6.5 and assume you are safe; only the latest patch in the minor covers the whole cluster.
+
+### CVE-2026-48505 — MFA recovery code reuse via concurrent submission (CVSS 7.4 HIGH)
+
+**Disclosed:** June 22, 2026 (NVD published June 23, 2026).
+**Severity:** **CVSS v3 base 7.4 — HIGH.**
+**Affected:** `filament/filament` **4.0.0–4.11.4** and **5.0.0–5.6.4**.
+**Fixed in:** **4.11.5 / 5.6.5** (single coordinated patch).
+**CWE:** CWE-294 (Authentication Bypass by Capture-Replay) / CWE-308 (Use of Single-Factor Auth).
+
+**What it is:** Filament's app-based MFA recovery code flow did not atomically mark a recovery code as consumed before issuing the session cookie. An attacker who has the user's password **and** a copy of their recovery codes can fire N concurrent submissions of the same recovery code and receive **N authenticated sessions**, instead of the single session that the recovery code's "single-use" guarantee implies.
+
+**Important scope notes (from the NVD description):**
+- Only affects **app-based (TOTP) MFA** — email-based MFA is **not** affected.
+- Only exploitable when the user has **recovery codes enabled** (Filament's profile panel toggle).
+- The "extra sessions per code" multiplier scales with the attacker's parallelism — 5 parallel POSTs of the same code can produce 5 sessions if the underlying race window is wide enough.
+
+**Why this matters for Laravel apps:** This breaks the mental model that an MFA recovery code is a one-shot token. Recovery codes are typically distributed to users once and stored in password managers or printed and stashed in a desk drawer — exactly the threat model where an attacker who exfiltrates the user's password vault will also grab the recovery codes. The MFA control then degrades to "as many sessions as the attacker can parallelize."
+
+**Mitigations:**
+1. **Upgrade immediately** — `composer require filament/filament:^4.11.5` (v4) or `^5.6.5` (v5). There is no acceptable workaround; the race is in the framework's recovery-code consumption logic.
+2. **Audit session count vs. recovery-code consumption logs** — if you have admin-session auditing, look for users with more active sessions than recovery codes they should have burned. Filament doesn't ship that audit out of the box, but a quick DB query on your session store (`SELECT user_id, COUNT(*) FROM sessions GROUP BY user_id HAVING COUNT(*) > 5`) can surface anomalies.
+3. **Rotate recovery codes after upgrade** — once the patch is in, force users to regenerate their recovery codes so any leaked ones are invalidated. The `HasMultiFactorAuthentication` trait exposes `regenerateRecoveryCodes()`.
+
+**Sources:** [NVD CVE-2026-48505](https://nvd.nist.gov/vuln/detail/CVE-2026-48505) · [Miggo Security CVE-2026-48505 writeup](https://www.miggo.io/vulnerability-database/cve/CVE-2026-48505) · [GitHub Security Advisory GHSA (filamentphp/filament)](https://github.com/filamentphp/filament/security/advisories) · [CISA Vulnerability Summary SB26-180](https://www.cisa.gov/news-events/bulletins/sb26-180)
+
+### CVE-2026-48067 — AttachAction / AssociateAction Select scope bypass (CVSS 6.5 MEDIUM)
+
+**Disclosed:** June 22, 2026 (Miggo first publication June 12, 2026).
+**Severity:** CVSS v3 base 6.5 — MEDIUM.
+**Affected:** `filament/filament` 4.0.0–4.11.4 and 5.0.0–5.6.4. **Fixed in 4.11.5 / 5.6.5.**
+**CWE:** CWE-285 (Improper Authorization) / CWE-639 (IDOR).
+
+**What it is:** Filament's `AttachAction` and `AssociateAction` (used in `BelongsToMany` and `MorphToMany` relation managers) accept a `recordSelectOptionsQuery()` modifier for filtering which records appear in the Select dropdown. **The modifier is applied for the dropdown population, but the actual attach/associate submission does not re-validate against that scope.** An authenticated user can pick a record outside the allowed scope by intercepting the request payload — they get to attach a relation they shouldn't be able to see in the UI.
+
+**Why this matters:** Most teams configure `recordSelectOptionsQuery()` to scope attachable records by tenant, organization, or role. They believe the UI is the only path. It isn't. The bypass is one step past the UI: replace the Select's `value` payload in the POST body.
+
+**Mitigation:** Upgrade to 4.11.5 / 5.6.5. If you must stay on the old version, add an explicit `Rule::exists()` check in a custom `Action::using()` closure that re-applies the scope query server-side — never trust the UI to be the only gate.
+
+**Sources:** [Miggo Security CVE-2026-48067 writeup](https://www.miggo.io/vulnerability-database/cve/CVE-2026-48067) · [CISA SB26-180](https://www.cisa.gov/news-events/bulletins/sb26-180)
+
+### CVE-2026-48166 — Login-page user enumeration via observable timing (CVSS MEDIUM)
+
+**Disclosed:** June 22, 2026.
+**Severity:** MEDIUM (CWE-208 Observable Timing Discrepancy).
+**Affected:** `filament/filament` 4.0.0–4.11.4 and 5.0.0–5.6.4. **Fixed in 4.11.5 / 5.6.5.**
+
+**What it is:** Filament's login flow takes a measurably different code path (and therefore time) when the supplied email exists vs. when it does not. An unauthenticated attacker can submit a known-good email and a guessed email, measure the response time delta, and enumerate which addresses are registered — fueling targeted phishing and credential-stuffing.
+
+**Mitigation:** Upgrade to 4.11.5 / 5.6.5. If you must defer, register a global rate limiter on `POST /admin/login` (Filament v5) or `POST /livewire/update` for the login component (Filament v4) at a level that defeats statistical timing analysis — but the framework fix is the right answer.
+
+**Sources:** [NVD CVE-2026-48166](https://nvd.nist.gov/vuln/detail/cve-2026-48166) · [GHSA-5w46-g9pq-wh6f](https://github.com/filamentphp/filament/security/advisories/GHSA-5w46-g9pq-wh6f) · [CISA SB26-180](https://www.cisa.gov/news-events/bulletins/sb26-180)
+
+### CVE-2026-54517 — OAuth2 Filter use-after-free in AsyncClient completion (CVSS 5.3 MEDIUM)
+
+**Disclosed:** June 23, 2026 (CISA SB26-180).
+**Severity:** CVSS v3 base 5.3 — MEDIUM.
+**Affected:** Filament deployments that integrate with OAuth2 providers via the underlying AsyncClient library (not all Filament apps — only those that wire Filament auth into an OAuth2 backend). **Fixed in 4.11.5 / 5.6.5** for the affected code path.
+
+**What it is:** A late `AsyncClient` completion invokes `OAuth2Filter` methods that use `StreamDecoderFilterCallbacks` after that object's lifetime has ended — undefined behavior, worker crashes (availability loss), and use-after-free / invalid-vptr failures under AddressSanitizer.
+
+**Why this matters:** A successful exploit **doesn't** leak data directly — it's a **denial-of-service / worker-crash** vector. For multi-tenant Filament panels, a single malicious OAuth2 callback can take down a worker process, dropping all in-flight admin requests until PHP-FPM respawns.
+
+**Mitigation:** Upgrade to 4.11.5 / 5.6.5. If you can't upgrade immediately, add `pm.max_requests = 500` to your PHP-FPM pool (keeps worker lifetimes bounded — see cycle 5 nginx + PHP-FPM hardening in this file) and configure `opcache.enable_cli=0` + ASAN in staging to surface latent UAFs before they hit production.
+
+**Sources:** [CISA SB26-180](https://www.cisa.gov/news-events/bulletins/sb26-180)
+
+### CVE-2026-48167 — ImageColumn / ImageEntry unvalidated values → XSS (CVSS 6.4 MEDIUM)
+
+**Disclosed:** June 23, 2026 (NVD publication date; coordinated with the SB26-180 weekly bulletin).
+**Severity:** CVSS v3 base **6.4 — MEDIUM** (per CISA SB26-180; NVD-published CVSS pending).
+**Affected:** `filament/filament` 4.0.0–4.11.4 and 5.0.0–5.6.4. **Fixed in 4.11.5 / 5.6.5.**
+**CWE:** CWE-79 (Cross-Site Scripting).
+
+**What it is:** Filament's `ImageColumn` (used in tables) and `ImageEntry` (used in infolists / schema views) render image markup from database values **without HTML-validating the value before composing the tag**. If a record's stored image path / URL contains attacker-controlled markup that is rendered unsafely (e.g., a stored `src` value containing `" onerror="alert(1)`), the admin browser executes it in the panel context. The component is reachable anywhere you list models — admin list pages, relation manager tables, infolists, dashboard widgets.
+
+**Why this matters:** This is the **fifth** Filament CVE in the SB26-180 cluster — easy to miss because it's listed as its own CISA line item, but the patch is the same `4.11.5 / 5.6.5` bump. If you scan only the headline CVE (48505 MFA) and pin to a release that includes that one but missed 48167, you'd still ship a stored XSS sink into every table page of your admin panel.
+
+**Mitigation:** Upgrade to `filament/filament` **4.11.5** (v4) or **5.6.5** (v5) — same upgrade line as the rest of the cluster. There is no separate patch; if you're on 4.11.5 / 5.6.5 you already have the fix. If you must defer, audit every custom `ImageColumn` / `ImageEntry` that reads from user-writable columns (`extraAttributes`, `defaultImageUrl`, custom `state()` closures) and ensure the value passes through `e()` or `Str::of(...)->stripTags()` before reaching the component.
+
+**Sources:** [NVD CVE-2026-48167](https://nvd.nist.gov/vuln/detail/CVE-2026-48167) · [GitLab advisory CVE-2026-48167](https://advisories.gitlab.com/composer/filament/tables/CVE-2026-48167/) · [CISA SB26-180](https://www.cisa.gov/news-events/bulletins/sb26-180)
+
+### CVE-2026-48500 — Missing authorization on temporary file uploads (CVSS 6.5 MEDIUM)
+
+**Disclosed:** June 22, 2026 (CISA SB26-180, NVD published June 23, 2026).
+**Severity:** CVSS v3 base **6.5 — MEDIUM**.
+**Affected:** `filament/filament` **3.0.0–3.3.51**, **4.0.0–4.11.4**, and **5.0.0–5.6.4**.
+**Fixed in:** **3.3.52 / 4.11.5 / 5.6.5** (same coordinated patch as the rest of the cluster).
+**CWE:** CWE-862 (Missing Authorization).
+**GHSA:** [GHSA-44wp-g8f4-f4v5](https://github.com/filamentphp/filament/security/advisories/GHSA-44wp-g8f4-f4v5).
+
+**What it is:** Filament's schema system can contain a file upload form field, so Filament auto-applies Livewire's `WithFileUploads` trait to the Livewire component the schema is embedded in. **The bug:** schemas that don't *need* file uploads — most notably the **panel login form** — still get the trait, which means unauthenticated visitors can call the temp-upload endpoint and write arbitrary files to the application's temporary storage.
+
+**Why this matters:** This is the **6th CVE in the SB26-180 Filament cluster**, easy to miss because it's a denial-of-service / cost-exhaustion vector, not a data-exfil or auth-bypass. Attackers can:
+- Fill the `storage/app/livewire-tmp/` directory until the disk is full — every other temp upload on the app starts failing, including legitimate file uploads and Excel/CSV imports.
+- Inflate cloud-storage costs (S3/R2 buckets charged per GB-month + per-request) by spamming the temp-upload endpoint from anonymous IPs.
+- Combine with the 48166 login-timing enumeration: enumerate which email addresses have admin panels (a `livewire-tmp` write succeeds), then target the MFA recovery-code reuse (48505) once they've phished a password.
+
+**Mitigations:**
+1. **Upgrade immediately** — `composer require filament/filament:"^3.3.52 || ^4.11.5 || ^5.6.5"`. The same coordinated patch line covers all six SB26-180 CVEs.
+2. **If you can't upgrade right now**, disable unauthenticated temp uploads at the nginx layer — `limit_req_zone $binary_remote_addr zone=filament_tmp:10m rate=5r/m;` and apply it to the `POST /livewire/upload-file` and `POST /livewire/update` endpoints (Filament v4) or `POST /admin/livewire/*` (Filament v5). 5 requests/minute per IP defeats the spam but doesn't break legit users uploading profile photos / CSV imports during login flows.
+3. **Add a disk-usage alert** on the temp directory — `du -sh storage/app/livewire-tmp/` polled every 5 min, alert at >1 GB or >70% of the volume. Livewire's temp files are supposed to be GC'd by `livewire:configure-s3-upload-cleanup` or the filesystem cleanup trait, but a flood of anonymous uploads can still pile up faster than GC runs.
+4. **Post-incident audit** — if you were running a vulnerable Filament version publicly, check the temp directory for orphan files and your web-server access log for `/livewire/upload-file` requests from anonymous IPs (no auth cookie / no session). Suspicious patterns: thousands of requests from one ASN within minutes, file extensions outside the Filament allowlist (anything other than images / PDFs / CSVs).
+
+**Sources:** [NVD CVE-2026-48500](https://nvd.nist.gov/vuln/detail/CVE-2026-48500) · [GitHub Security Advisory GHSA-44wp-g8f4-f4v5](https://github.com/filamentphp/filament/security/advisories/GHSA-44wp-g8f4-f4v5) · [CISA SB26-180](https://www.cisa.gov/news-events/bulletins/sb26-180) · [Kodem CVE-2026-48500 archive](https://www.kodemsecurity.com/cve-archive/cve-2026-48500)
+
+### Top-priority actions for 2026-06-30 (cycle 11)
+
+1. **Filament upgrade to 3.3.52 / 4.11.5 / 5.6.5** — single coordinated patch covers CVE-2026-48505 (HIGH 7.4), CVE-2026-48500 (MED 6.5), CVE-2026-48067 (MED 6.5), CVE-2026-48167 (MED 6.4), CVE-2026-48166 (MED 5.3), and CVE-2026-54517 (MED 5.3). `composer require filament/filament:"^3.3.52 || ^4.11.5 || ^5.6.5"`. Rotate MFA recovery codes after upgrade; audit ImageColumn/ImageEntry sources for stored XSS pre-patch payloads; monitor temp-storage disk usage if you were hit by the 48500 temp-upload DoS pre-patch.
+2. **Slow JSON Stream hardening (cycle 5)** — still the #1 active finding; verify `client_body_timeout` + `client_min_rate` are in every JSON API nginx block.
+3. **Composer self-update to ≥ 2.9.8 / 2.2.28** — still widely unpatched; verify every host.
+4. **Livewire 3.6.4** — still actively exploited. Verify every project.
+5. **Laravel 13.17.0** if on 13.x; **Laravel 12.62.x** if on 12.x; **Laravel 11 = EOL** (security ended March 12, 2026).
+6. **Statamic upgrade** — 5.73.23 / 6.20.0+; watch the upcoming Live Preview patch for CVE-2026-54244 (cycle 7).
+
+### Cross-references added in cycle 11/12
+
+- **Filament CVE cluster (CVE-2026-48505 / 48500 / 48067 / 48167 / 48166 / 54517)** documented in `security.md` (this section) — Filament is the most-installed Laravel admin panel; any project pinning `filament/filament` < 3.3.52 / < 4.11.5 / < 5.6.5 is exposed to one or more of these. CVE-2026-48500 (cycle 12) is the DoS / storage-cost vector via anonymous temp uploads on schemas that shouldn't accept them (notably the panel login form) — easy to overlook because it doesn't leak data, but trivial to weaponize and patch-fix is the same coordinated release.
+- **MFA recovery code reuse** reinforces the **`Password::defaults()` + recovery-code rotation** notes in `auth.md` — see also `auth.md`'s MFA section.
+- **User enumeration via timing** reinforces the **login throttling** rules in `auth.md` (cycle 1 `RateLimiter::for('login', …)` patterns).
+- **AttachAction scope bypass** reinforces the **`attach`/`associate` policy enforcement** pattern in `eloquent.md` and `auth.md` — server-side re-validation is non-negotiable.
+- **ImageColumn/ImageEntry XSS** reinforces the **`{!! !!}` vs `{{ }}`** raw-output rule from `blade.md` and the `e()` / `Str::of()` sanitization patterns already documented for table cells and infolists — admin-side sinks deserve the same paranoia as public-facing templates.

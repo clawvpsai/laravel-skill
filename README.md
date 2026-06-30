@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-29 12:00 UTC (cycle 10) — Laravel 13.17.0 still latest, no new framework release, no new framework CVEs. Five 13.x bug fixes merged into `13.x` since cycle 9 (all expected in v13.17.1+): `schedule:work` graceful signal handling on SIGINT/SIGTERM/SIGQUIT (PR #60616), `WorkerStopping` event gains `jobsProcessed` + `lastJobProcessedAt` (PR #60592), soft-delete `restore()` only fires `restored` on actual save success (PR #60605), `SetCacheHeaders` middleware now applies to `HEAD` requests (PR #60589), conditional return types on `Paginator::fragment()` / `Route::domain()` / `Password::defaults()` and friends for PHPStan (PR #60586). Refreshed the four oldest topic files: `controllers.md` (3d stale, May 2026 stamp) gained Single Action Controllers / `__invoke`, `Route::pattern()` global constraints, API versioning conventions, HEAD request cache-headers gotcha; `queues.md` (3d stale) gained `WorkerStopping` payload documentation; `artisan.md` (3d stale) gained `schedule:work` graceful-shutdown section; `observers.md` (3d stamp) gained soft-delete `restored`-event gating note. `versions.md` got a new "Late-June 2026 Bug Fixes Merged Into 13.x" table pointing at each PR. SKILL.md bumped v1.20.0 → v1.21.0.
+**Last research cycle:** 2026-06-30 01:18 UTC (cycle 12) — Laravel 13.17.0 still latest, no new framework release, no new framework CVEs. Filled the gap in the SB26-180 Filament CVE cluster: **CVE-2026-48500** (CVSS 6.5 MED, missing-authorization on temporary file uploads via `WithFileUploads` on schemas that don't need it — the panel login form is the headline target) was missing from cycle 11. Fixed lines in `security.md`: the wrong description on line ~1172 that mislabeled 48500 as "v3 Stored XSS" (it's a DoS / storage-cost vector); the cluster summary that listed only 5 CVEs; the upgrade command (now `^3.3.52 || ^4.11.5 || ^5.6.5` — v3 LTS is part of the coordinated patch). Added a full CVE-2026-48500 writeup (what it is, why it matters, four-mitigation playbook, attack-chain combos with 48166 enumeration + 48505 MFA reuse, sources). SKILL.md bumped v1.21.0 → v1.22.0.
 
 ---
 
@@ -110,8 +110,8 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~9,500 lines** of production-ready content
-- **Update cadence:** Every 6 hours via OpenClaw cron — 8 cycles in last 2 days (each targeting the oldest untouched files or new CVEs)
+- **~9,600 lines** of production-ready content
+- **Update cadence:** Every 6 hours via OpenClaw cron — 10 cycles in last 2 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 
