@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.1
+version: 1.22.2
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -52,6 +52,8 @@ metadata:
 | `php artisan i18n:check` (missing translation detector) | `localization.md` (Detecting Missing Translations section) | CI integration to fail builds on incomplete translations |
 | Lazy translation loading (JSON-only, lazy namespaces, DB+cache) | `localization.md` (Lazy Translation Loading section) | Avoid loading thousands of keys on every request for large apps |
 | `Model::preventLazyLoading()` / `preventSilentlyDiscardingAttributes()` / `preventAccessingMissingAttributes()` / `prohibitDestructiveCommands()` | `eloquent.md` (Eloquent Strictness Hardening section) | Turn silent Eloquent bugs into loud exceptions in dev — N+1, missing `$fillable`, typos, accidental mass-delete |
+| `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` INF/NaN guard (PR #60617 + #60625) | `performance.md` (Number OOM section) + `api.md` (Number DoS section) | 13.17.1+ stops these from recursing on `INF`/`NaN` and OOM-crashing the worker — treat as a remote-DoS vector on API responses that render user input |
+| `Request::json()` top-level zero body fix (PR #60614) | `api.md` (Error Responses section) | 13.17.1+ preserves a literal `0` request body (was coerced to `[]`); `PUT /counters/abc/reset` endpoints with body `0` now work without a `?? 0` workaround |
 
 
 ## Critical Rules (Never Forget)

@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-30 06:20 UTC (cycle 13) — Laravel 13.17.0 still latest, no new framework release, no new framework CVEs (CVE-2026-39976 Passport auth bypass, CVE-2026-48019 CRLF email injection, CVE-2026-48555/48557 Spatie SSRF, CVE-2026-49287 Statamic, and the Laravel-Lang supply chain compromise from May 22 are all already covered). Filled the **Eloquent Strictness Hardening** gap in `eloquent.md`: previously only `Model::preventLazyLoading()` was mentioned (line 26) — added `preventSilentlyDiscardingAttributes()` (9.28+), `preventAccessingMissingAttributes()` (9.32+), and `prohibitDestructiveCommands()` (11+) as a consolidated section, all four promoted heavily at Laravel Live UK 2026 on June 29. These convert silent Eloquent bugs (typo'd attribute, missing `$fillable`, accidental mass-delete) into loud exceptions in dev. Recommended `AppServiceProvider::boot()` block + production-mode tuning (lazy-load log-to-Sentry, but throw on silent-discard/missing-attribute) included. SKILL.md bumped v1.22.0 → v1.22.1 (minor doc-add).
+**Last research cycle:** 2026-06-30 12:00 UTC (cycle 14) — Laravel 13.17.0 still latest, no new tagged release, no new framework CVEs. Three post-13.17.0 fixes now documented in `versions.md`'s 13.17.1-imminent list and cross-linked: (1) **PR #60617 + #60625 — `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` OOM on `INF`/`NaN`**, which silently exhausted PHP memory in the worker on non-finite input (treated as a remote-DoS vector on API resources — full audit checklist + safe-call wrapper added to `performance.md` and `api.md`); (2) **PR #60614 — `Request::json()` now preserves top-level zero request bodies** (PUT/PATCH counter-reset endpoints with body `0` no longer need a `?? 0` workaround; note added to `api.md` Error Responses); (3) **PR #60580 — `php artisan dev` priority-based registration** for vendor package dev commands. All three ship in v13.17.1 (or v13.18.0 if enough features accumulate). `api.md` (oldest untouched file, 4 days stale) and `performance.md` (second-oldest, also 4 days) are now refreshed; SKILL.md bumped v1.22.1 → v1.22.2 (cross-link add). 14 cycles in last 2.5 days.
 
 ---
 
@@ -110,8 +110,8 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~9,600 lines** of production-ready content
-- **Update cadence:** Every 6 hours via OpenClaw cron — 10 cycles in last 2 days (each targeting the oldest untouched files or new CVEs)
+- **~9,770 lines** of production-ready content
+- **Update cadence:** Every 6 hours via OpenClaw cron — 14 cycles in last 2.5 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 

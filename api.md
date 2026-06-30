@@ -384,6 +384,8 @@ $this->renderable(function (\Illuminate\Validation\ValidationException $e, $requ
 });
 ```
 
+**`Request::json()` top-level zero fix (Laravel 13.17.1+) — PR #60614:** Before 13.17.1, a `PUT`/`PATCH` request with a literal `0` body was coerced to `[]` when read via `Request::json()` or `Request::all()`. PR #60614 (commit 1c0c8fb5, 2026-06-28) preserves the zero. If your code branches on `$request->json('value') === 0` for counter resets, idempotency keys, or feature flags, you can drop the `?? 0` workaround. Watch the edge case: numeric strings (`"0"`) still come through correctly on 13.17.1+ — the fix only affected numeric `0`.
+
 ## Route Metadata for OpenAPI Generation (Laravel 13.17+)
 
 `Route::metadata()` is the natural building block for auto-generated OpenAPI / Stoplight specs — attach `summary`, `description`, `tags`, `operationId`, and `security` to each route, then walk `Route::getRoutes()` to emit spec fragments. Survives `route:cache` serialization, so production-built apps still emit specs from cache.
@@ -444,6 +446,65 @@ See `controllers.md` (Route Metadata section) for the full API + group-cascade b
 'max_age' => 86400,
 'supports_credentials' => false,
 ```
+
+## `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` DoS on Non-Finite Input (Laravel 13.17.1+)
+
+If any API response field is rendered through `Number::forHumans()`, `Number::abbreviate()`, or `Number::fileSize()` and the value can be influenced by a query string, header, or upstream API, you have a remote-DoS hole on Laravel <13.17.1. Calling these methods with `INF`, `-INF`, or `NaN` recursed into `Number::summarize()` with no base case, exhausted PHP memory, and aborted the request (or the whole worker on a long-lived process). On PHP 8.5, `NaN` also triggered a `floor(log10(NAN))` -> int deprecation warning before the OOM.
+
+13.17.1 (PR #60617, commit 3a3c1d2b, 2026-06-27; PR #60625, commit 7e9d4aa1, 2026-06-29) short-circuits to `Number::format()` and returns the locale-aware `INF` / `-INF` / `NaN` symbol.
+
+```php
+use Illuminate\Support\Number;
+
+// In a resource — pre-13.17.1, ?views=1e400 crashes the request
+public function toArray(Request $request): array {
+    return [
+        'views'  => Number::forHumans((float) $this->views_count),  // safe on 13.17.1+
+        'size'   => Number::fileSize($this->attachment_bytes),      // safe on 13.17.1+
+        'rate'   => Number::abbreviate($this->computeRate()),      // safe on 13.17.1+
+    ];
+}
+```
+
+**Why this matters for API code specifically:**
+- `Request::json()` (PR #60614, also 13.17.1) now preserves top-level zero bodies; pair with input-shape validation to reject non-finite numeric fields up front rather than letting them reach a `Number::` helper.
+- `Request::validate(['views' => 'numeric'])` does **not** reject `INF` or `NaN` — `is_numeric(INF)` returns `true` on PHP 8.5. Add a custom rule or pre-filter:
+
+```php
+// app/Rules/FiniteNumber.php
+class FiniteNumber implements ValidationRule
+{
+    public function validate(string $attribute, mixed $value, Closure $fail): void
+    {
+        if (! is_finite($value)) {
+            $fail("The {$attribute} must be a finite number.");
+        }
+    }
+}
+```
+
+- For JSON request bodies, parse and pre-validate *before* any `Number::` call. JSON parsers will happily surface `1e400` as `INF` in PHP.
+
+**Audit checklist:**
+- `grep -rn "Number::forHumans\|Number::abbreviate\|Number::fileSize" app/Http/Resources/ app/Http/Controllers/`
+- For every hit, confirm the input path cannot be `INF` / `NaN` (database casts, int math, validated `numeric` input with the `FiniteNumber` rule).
+- If you can't upgrade to 13.17.1 immediately, wrap the call sites:
+
+```php
+function safeNumber(mixed $value, callable $fn, string $fallback = 'N/A'): string {
+    if (! is_finite($value ?? 0)) {
+        return $fallback;
+    }
+    return $fn($value);
+}
+
+// In the resource:
+'views' => safeNumber($this->views_count, fn($v) => Number::forHumans($v)),
+```
+
+**Cross-references:** full performance-side discussion in `performance.md` (Number INF/NaN OOM section). Related 13.17.1 fix: `Request::json()` now preserves top-level zero bodies (PR #60614) — see the Error Responses section below for the test pattern.
+
+Source: [PR #60617 — Fix Number::forHumans and Number::abbreviate crashing on INF/NAN](https://github.com/laravel/framework/pull/60617) | [PR #60625 — Fix Number::fileSize wrong unit suffix for non-finite inputs](https://github.com/laravel/framework/pull/60625)
 
 ## Common Mistakes
 

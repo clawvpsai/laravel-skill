@@ -349,6 +349,52 @@ $results = KnowledgeArticle::query()
 7. **No transactions for related writes** — partial updates on failure
 8. **Running heavy work synchronously** — block users, timeout issues
 
+## `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` OOM on `INF` / `NaN` (Laravel 13.17.1+)
+
+Before the 13.17.1 cycle, `Number::forHumans(INF)`, `Number::forHumans(-INF)`, `Number::forHumans(NAN)`, and `Number::abbreviate(INF)` all recursed into `Number::summarize()` without a base case for non-finite inputs. The process silently exhausted PHP memory and aborted. On PHP 8.5 there was also deprecation noise from `floor(log10(NAN))` -> int coercion. If your app renders a metric, a counter, a rate, or any user-controllable value through `Number::forHumans()` (e.g. a stats dashboard, a quota bar, a "1.2K views" label), an attacker can feed `INF` via a query string and crash the worker.
+
+In 13.17.1 (PR #60617, commit 3a3c1d2b, 2026-06-27), the methods delegate to `Number::format()` and emit the locale-aware infinity, -infinity, NaN symbols. The matching fix to `Number::fileSize()` (PR #60625, commit 7e9d4aa1, 2026-06-29) ensures `Number::fileSize(INF)` no longer returns a unit-suffixed string for an unbounded value.
+
+```php
+use Illuminate\Support\Number;
+
+// Pre-13.17.1: OOM-crashes the PHP process
+Number::forHumans(INF);     // aborts (recursion, no base case)
+Number::abbreviate(-INF);   // aborts
+Number::forHumans(NAN);     // aborts + PHP 8.5 deprecation warning
+
+// 13.17.1+: returns the locale-aware symbol
+Number::forHumans(INF);     // "\u221e"
+Number::forHumans(-INF);    // "-\u221e"
+Number::forHumans(NAN);     // "NaN"
+Number::abbreviate(INF);    // "\u221e"
+Number::fileSize(INF);      // "\u221e" (no "B" / "KB" suffix)
+```
+
+**Why this is a performance bug, not just a UX bug:** the failure mode is a worker OOM, not a clean exception. A single request that lands on a code path rendering `Number::forHumans($someUserInput)` can take down a `php-fpm` pool or a queue worker. Treat it as a DoS vector: user input + an unbounded code path.
+
+**Audit checklist:**
+- `grep -r "Number::forHumans\|Number::abbreviate\|Number::fileSize" app/ resources/`
+- For every hit, trace back: can the input be `INF` / `NaN`? A `count($hugeSet)` on a 64-bit PHP build cannot overflow to `INF` in normal usage, but `PHP_INT_MAX + 1` arithmetic, a division by zero in user input (`$users / $views`), or a malformed JSON payload can.
+- If yes, either upgrade to 13.17.1+ or pre-validate the input to clamp to a finite value:
+
+```php
+// Defensive pre-check (works on all 13.x, no upgrade required)
+function safeForHumans(float|int $n, int $max = PHP_INT_MAX): string {
+    if (! is_finite($n)) {
+        return Number::format(PHP_INT_MAX); // or a custom placeholder
+    }
+    return Number::forHumans(min(abs($n), $max));
+}
+```
+
+**Related call sites worth hardening:**
+- File-size display in admin panels (`Number::fileSize($upload->size)` is normally safe — `$size` is an int — but a value derived from `$request->input('bytes')` is not)
+- Stats widgets that sum floats across a result set and then format with `Number::abbreviate`
+- `count()` or `->count()` results from `Post::count() * 2.5` style ratios passed to `forHumans`
+
+Source: [PR #60617 — Fix Number::forHumans and Number::abbreviate crashing on INF/NAN](https://github.com/laravel/framework/pull/60617) | [PR #60625 — Fix Number::fileSize wrong unit suffix for non-finite inputs](https://github.com/laravel/framework/pull/60625)
+
 ## Updated from Research (2026-06-26, cycle 5)
 
 - **Cache Debounce `maxWait` Performance Fix (Laravel 13.17+)** — PR #60559 by @jackbayliss fixes `Cache::flexible()` / `Cache::remember()` with `->debounce(...)->maxWait(...)` so the underlying source is not re-checked on every call inside the debounce window. Pre-13.17, hot idempotency keys and rate limit counters could trigger 10–100× the expected closure / DB calls. See the detailed section below.
