@@ -98,6 +98,7 @@ $table->string('slug')->collation('utf8mb4_unicode_ci');
 $table->text('bio')->useCurrent();            // DEFAULT CURRENT_TIMESTAMP (on insert)
 $table->timestamp('updated_at')->useCurrentOnUpdate(); // auto-update on update
 $table->json('meta')->default([]);            // default value as expression
+$table->string('notes')->comment('audit log');  // COMMENT ON COLUMN (MySQL/MariaDB/PostgreSQL)
 ```
 
 ## Timestamps & Auto-Update
@@ -149,10 +150,37 @@ grep -rE 'timestamp\([a-z_]+\)' database/migrations/ | grep -v 'created_at\|upda
 Note: on PostgreSQL `TIMESTAMP` is already 64-bit and unaffected by the 2038 boundary — the
 problem is MySQL/MariaDB specific. SQLite uses strings and is also unaffected.
 
+## Generated Columns & Identity Columns
+
+**MySQL/MariaDB — `storedAs()` / `virtualAs()`:**
+```php
+// STORED generated column — physically persisted, can be indexed
+$table->string('full_name')->storedAs("CONCAT(first_name, ' ', last_name)");
+
+// VIRTUAL generated column — computed on the fly, not persisted (saves space)
+$table->decimal('discounted_price')->virtualAs('price * 0.9');
+```
+
+**PostgreSQL — `storedAs()` only** (PostgreSQL has no virtual columns; use views or generated columns for computed values). PostgreSQL also has `generatedAs()` for **identity columns** (SQL-standard auto-increment, preferred over the legacy `SERIAL`):
+
+```php
+// BIGINT GENERATED ALWAYS AS IDENTITY — SQL standard
+$table->bigIncrements('id');          // Laravel 13.13+ defaults to this on PostgreSQL
+$table->bigInteger('seq')->generatedAs();                          // always
+$table->bigInteger('seq')->generatedAs('ALWAYS AS IDENTITY');      // explicit
+$table->bigInteger('seq')->generatedAs('BY DEFAULT', 'START WITH 1000 INCREMENT BY 5');
+// Chain ->always() to enforce sequence over input, ->primary() etc.
+$table->bigInteger('seq')->generatedAs()->always()->primary();
+```
+
+**SQLite — `storedAs()` only.** No `virtualAs()` support, no `generatedAs()` for identity.
+
+**Common gotcha — `generatedAs` is for *identity* columns only** (PostgreSQL `smallint`/`integer`/`bigint` sequences). It will fail with "syntax error" if you try to use it for a string concatenation. Use `storedAs()` for derived string/numeric values.
+
 ## Indexes
 
 ```php
-$table->index(['user_id', 'created_at']);      // composite index
+$table->index(['user_id', 'created_at']);      // composite B-tree index
 $table->unique(['email']);                     // unique constraint
 $table->primary('id');                         // explicit PK
 $table->foreignId('user_id')->constrained();   // FK with index
@@ -162,6 +190,36 @@ $table->dropUnique(['email']);                 // remove unique constraint
 // Naming convention — keep under 64 chars for MySQL
 $table->index(['user_id', 'created_at'], 'ix_posts_user_created');
 ```
+
+### Available Index Types (Laravel 13.x)
+
+| Type | Method | Supported on |
+|---|---|---|
+| Primary key | `$table->primary('id')` | All |
+| Unique | `$table->unique('email')` | All |
+| Plain (B-tree) | `$table->index('col')` | All |
+| Fulltext | `$table->fullText('body')` | MariaDB / MySQL / PostgreSQL |
+| Fulltext (named language) | `$table->fullText('body')->language('english')` | PostgreSQL only |
+| Spatial | `$table->spatialIndex('location')` | MariaDB / MySQL (PostGIS uses GIST, not Blueprint) |
+| Composite | `$table->index(['a', 'b'])` | All |
+
+```php
+// Fulltext search (e.g., blog posts)
+$table->fullText(['title', 'body']);  // MySQL/MariaDB need InnoDB 5.6+; PG needs tsvector column
+
+// Spatial index (MySQL — requires NOT NULL geometry column with SRID restriction in 8.0+)
+$table->geometry('location', subtype: 'point', srid: 4326);
+$table->spatialIndex('location');
+
+// Drop fulltext
+$table->dropFullText(['title', 'body']);
+```
+
+**Practical rules:**
+- Fulltext is useless for short strings (emails, slugs, tags) — use B-tree `unique` instead
+- Don't fulltext-index columns you'll only filter on with `=` (use plain index)
+- PostgreSQL fulltext needs `tsvector` column or `to_tsvector()` expression index; Laravel's `fullText()` works on the table column but for weighted search use `whereRaw("to_tsvector('english', body) @@ plainto_tsquery('english', ?)", [$q])`
+- Spatial indexes require SRID-aware columns on MySQL 8.0+; older MySQL 5.7 syntax silently differs
 
 ## Renaming & Changing Columns
 
@@ -384,3 +442,28 @@ php artisan migrate:fresh --seed       # reset + seed
 - Laravel 13 drop column requires no FK dependencies on the target column
 
 Source: [Laravel Migrations](https://laravel.com/docs/13.x/migrations) | [Laravel 13 Release Notes](https://laravel.com/docs/13.x/releases)
+
+---
+
+## Updated from Research (2026-06-30, cycle 15)
+
+**migrations.md** (3.5 days stale — oldest file) — refreshed to cover the documented-but-skipped
+Laravel 13 schema primitives that AI models keep asking about wrong:
+
+- **`storedAs()` / `virtualAs()` generated columns** — MySQL/MariaDB support both `STORED` (persisted,
+  indexable) and `VIRTUAL` (computed on read, no storage overhead). PostgreSQL/SQLite support
+  `storedAs()` only. Critical for computed columns that should be queryable (`full_name`,
+  `discounted_price`, denormalized rollups).
+- **`generatedAs()` identity columns** (PostgreSQL) — SQL-standard `BIGINT GENERATED ALWAYS AS
+  IDENTITY` syntax. Laravel 13.13+ defaults `bigIncrements()` to this on PostgreSQL (no more
+  `SERIAL`). Common AI hallucination: trying to use `generatedAs()` for string concatenation —
+  it only works for `smallint`/`integer`/`bigint` sequences. Use `storedAs()` for derived strings.
+- **`->comment('text')` modifier** — adds `COMMENT ON COLUMN` (MySQL/MariaDB/PostgreSQL). Useful
+  for documenting column purpose, units, or audit source in the schema itself.
+- **Full index type matrix** — `fullText()` (MariaDB/MySQL/PostgreSQL with optional `->language()` on
+  PG), `spatialIndex()` (MySQL/MariaDB), and the gotchas (fulltext on short strings is a waste;
+  PG fulltext needs `tsvector` for weighted search).
+
+**No new Laravel 13.x release** as of 2026-06-30 18:00 UTC. v13.17.0 (June 23, 2026) remains the
+latest tagged release. v13.17.1 / v13.18.0 still pending — track
+[github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).

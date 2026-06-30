@@ -81,13 +81,13 @@ php artisan --version
 The skill is **auto-updated every 6 hours** via a cron job. The agent decides whether to update based on whether it finds meaningful gaps — no forced updates.
 
 **How it works:**
-1. Checks current state of all 18 topic files
+1. Checks current state of all 19 topic files
 2. Identifies weak or outdated areas via web research
 3. Checks for new Laravel/dependency releases
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-30 12:00 UTC (cycle 14) — Laravel 13.17.0 still latest, no new tagged release, no new framework CVEs. Three post-13.17.0 fixes now documented in `versions.md`'s 13.17.1-imminent list and cross-linked: (1) **PR #60617 + #60625 — `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` OOM on `INF`/`NaN`**, which silently exhausted PHP memory in the worker on non-finite input (treated as a remote-DoS vector on API resources — full audit checklist + safe-call wrapper added to `performance.md` and `api.md`); (2) **PR #60614 — `Request::json()` now preserves top-level zero request bodies** (PUT/PATCH counter-reset endpoints with body `0` no longer need a `?? 0` workaround; note added to `api.md` Error Responses); (3) **PR #60580 — `php artisan dev` priority-based registration** for vendor package dev commands. All three ship in v13.17.1 (or v13.18.0 if enough features accumulate). `api.md` (oldest untouched file, 4 days stale) and `performance.md` (second-oldest, also 4 days) are now refreshed; SKILL.md bumped v1.22.1 → v1.22.2 (cross-link add). 14 cycles in last 2.5 days.
+**Last research cycle:** 2026-06-30 18:00 UTC (cycle 15) — Laravel 13.17.0 still latest, no new tagged release, no new framework CVEs. Targeted the two oldest untouched files (both 3+ days stale) with feature gaps that AI models keep getting wrong: `migrations.md` got a full **Generated Columns & Identity Columns** section (`storedAs()` / `virtualAs()` for MySQL/MariaDB, `storedAs()` only for PostgreSQL/SQLite, `generatedAs()` SQL-standard identity columns with `->always()` precedence — clarifies the gotcha that `generatedAs()` only works on `smallint`/`integer`/`bigint` sequences and fails for string concatenation), `->comment('text')` modifier, and the complete **Available Index Types matrix** (fullText with optional `->language('english')` on PostgreSQL, spatialIndex on MySQL/MariaDB, plus gotchas around short strings and PG `tsvector`); `file-uploads.md` got the **File Visibility** section covering `public`/`private` model and the `setVisibility()` metadata-vs-re-upload gotcha, fixed the `Storage::temporaryUploadUrl()` worked example to use the Laravel 13.x array-destructure return (`['url' => $url, 'headers' => $headers]` — older docs show the legacy string return), and a new **Anti-Extension-Spoofing** section covering the `evil.php.jpg` attack plus the layered defense (never trust original filename → `hashName()`, validate with `finfo` on actual file bytes, pair Laravel's `mimes:` with `file|image` to force the symfony MIME guesser, disable PHP execution in upload dirs in nginx/Apache, sanitize SVGs, strip EXIF). All details cross-linked from `versions.md` cycle-15 ecosystem stamp. SKILL.md bumped v1.22.2 → v1.22.3. 15 cycles in last 3 days.
 
 ---
 
@@ -110,7 +110,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~9,770 lines** of production-ready content
+- **~9,980 lines** of production-ready content
 - **Update cadence:** Every 6 hours via OpenClaw cron — 14 cycles in last 2.5 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone

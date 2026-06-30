@@ -450,3 +450,21 @@ No new CVEs found this cycle (the four cycle-7 CVEs — Composer 45793/40261/401
 
 SKILL.md bumped to **v1.19.1** (cycle-8 maintenance, no new framework version).
 
+### Ecosystem Update (2026-06-30, cycle 15)
+
+#### No new Laravel framework version
+
+Laravel framework **v13.17.0** (June 23, 2026) remains the latest stable as of 2026-06-30 18:00 UTC. v13.18.0 has not been tagged yet. Three post-v13.17.0 fixes are still pending (PR #60617 / #60625 Number::forHumans OOM, PR #60614 Request::json() preserves `0` body, PR #60580 artisan dev priority) — they will ship in v13.17.1 or v13.18.0 when enough features accumulate. Track [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
+
+#### No new framework CVEs
+
+CISA SB26-180 (week of June 22, 2026) and the Laravel-specific OpenCVE feed were both rechecked at 18:00 UTC. No new framework-level CVEs in the last 6 hours. The Filament MFA recovery-code reuse (SB26-180) and CVE-2026-39976 Laravel Passport (already documented in `security.md`) remain the highest-priority Laravel-ecosystem items.
+
+#### Skill maintenance pass — oldest untouched files refreshed
+
+No new framework version, no new CVEs. Targeted the two oldest topic files (both 3+ days stale) with feature gaps that AI models keep getting wrong:
+
+- **`migrations.md`** (cycle 5 → cycle 15) — added `storedAs()` / `virtualAs()` generated columns (MySQL/MariaDB support both STORED and VIRTUAL; PostgreSQL/SQLite STORED only), PostgreSQL `generatedAs()` identity columns (SQL-standard `BIGINT GENERATED ALWAYS AS IDENTITY`, the modern replacement for `SERIAL`), `->comment('text')` column modifier, and the full index type matrix (`fullText()` with optional `->language('english')` on PG, `spatialIndex()` on MySQL/MariaDB). Critical because AI models frequently misuse `generatedAs()` for string concatenation (it only works on `smallint`/`integer`/`bigint` sequences) — clarified the gotcha.
+- **`file-uploads.md`** (cycle 5 → cycle 15) — fixed the `Storage::temporaryUploadUrl()` example to use the Laravel 13.x array-destructure return (`['url' => $url, 'headers' => $headers]`) and document the mandatory header-forwarding; added a File Visibility section covering the `public` / `private` model, the `setVisibility()` metadata-vs-re-upload gotcha, and R2 specifics; added an anti-extension-spoofing section covering the `evil.php.jpg` attack and the layered defense (never trust original filename, validate with `finfo` on actual file bytes, pair Laravel's `mimes:` with `file|image`, disable PHP execution in upload dirs, sanitize SVGs, strip EXIF).
+
+SKILL.md bumped to **v1.22.3** (cycle-15 maintenance, no new framework version). 15 cycles in last 3 days.

@@ -74,14 +74,20 @@ public function uploadUrl(Request $request): JsonResponse
     $request->validate(['filename' => 'required|string', 'content_type' => 'required|string']);
 
     $key = 'uploads/' . Str::uuid() . '/' . $request->filename;
-    $url = Storage::disk('s3')->temporaryUploadUrl($key, now()->addMinutes(15), [
-        'Content-Type' => $request->content_type,
-    ]);
+
+    // Laravel 13.x: temporaryUploadUrl() returns ['url' => $url, 'headers' => $headers]
+    // Older Laravel returned just the URL string — destructure the array for both pieces.
+    ['url' => $url, 'headers' => $headers] = Storage::disk('s3')->temporaryUploadUrl(
+        $key,
+        now()->addMinutes(15),
+        ['Content-Type' => $request->content_type]  // forward any signed headers you need
+    );
 
     return response()->json([
         'upload_url' => $url,
-        'public_url' => Storage::disk('s3')->url($key),
-        'key' => $key,
+        'upload_headers' => $headers,   // MUST be sent with the PUT — server validates them
+        'public_url'  => Storage::disk('s3')->url($key),
+        'key'         => $key,
     ]);
 }
 
@@ -158,6 +164,83 @@ $url = Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(60), [
     'ResponseContentDisposition' => 'attachment; filename="document.pdf"',
 ]);
 ```
+
+## File Visibility
+
+Visibility is a per-file attribute that controls whether the file can be served publicly. On
+cloud disks (S3/R2) it maps to the object's ACL/permission; on the `public` local disk it maps
+to a `chmod 0644` vs `chmod 0600` on the stored file.
+
+```php
+// Set visibility when writing
+Storage::disk('s3')->put('docs/report.pdf', $contents, 'public');   // bucket-public
+Storage::disk('s3')->put('docs/report.pdf', $contents, 'private');  // bucket-private (default)
+
+// Read visibility
+$vis = Storage::disk('s3')->getVisibility('docs/report.pdf');  // 'public' | 'private'
+
+// Flip existing object's visibility
+Storage::disk('s3')->setVisibility('docs/report.pdf', 'public');
+
+// Visibility-aware URLs:
+//   public  → Storage::url() returns a permanent URL
+//   private → Storage::url() returns a public CDN URL only if the disk is configured for it
+//             otherwise use temporaryUrl() with an expiration
+```
+
+**Disk default visibility** — set in `config/filesystems.php` per disk with the `visibility` key
+(overrides per-file visibility only if you don't pass one in `put()`).
+
+**Common gotcha:** `setVisibility()` is a metadata-only operation on S3 (HEAD + COPY), so it does
+**not** trigger a re-upload — but the file must already exist. If you store with `public` and later
+flip to `private`, the **existing CDN/cached URL is still served** until you invalidate it (CloudFront
+invalidation, Cloudflare purge). Plan the rotation, don't rely on the call being instant.
+
+**Cloudflare R2** — visibility works the same way as S3 (it's the same API driver), but R2 is
+private-by-default at the bucket level. You must enable public development URL or use a custom
+domain. `Storage::disk('r2')->url()` only works if the bucket allows public access.
+
+## Anti-Extension-Spoofing & Content Validation
+
+**The classic attack:** `evil.php.jpg` is uploaded. Server checks `getClientOriginalExtension()`
+and sees `jpg`, but the actual file is `evil.php` renamed. When served from a path Apache/Nginx
+double-interprets (e.g., misconfigured `AddHandler`), it executes as PHP.
+
+Laravel's defenses:
+
+```php
+// 1. NEVER trust getClientOriginalName() / getClientOriginalExtension() for security decisions
+//    Use them only for display. For storage naming, use hashName() or Str::uuid().
+
+// 2. Validate MIME by inspecting the actual file content, not the request header
+$finfo = finfo_open(FILEINFO_MIME_TYPE);
+$actualMime = finfo_file($finfo, $file->getRealPath());
+finfo_close($finfo);
+
+$allowed = ['image/jpeg', 'image/png', 'image/webp'];
+abort_unless(in_array($actualMime, $allowed, true), 422, 'Invalid file content');
+
+// 3. Laravel's 'mimes:jpg,png' rule checks the extension *and* the mime type via finfo
+//    (since 9.x) — but only if 'image' or 'mimetypes' rule is also present, so the symfony
+//    MIME guesser runs. Always pair: 'file|image|mimes:jpeg,png|max:2048'.
+
+// 4. Disable PHP execution in your upload directory (belt + suspenders)
+//    nginx:  location ~ ^/storage/uploads/.*\.php$ { deny all; return 403; }
+//    Apache: <FilesMatch "\.php$"> Require all denied </FilesMatch> in storage dir .htaccess
+//    (Also set open_basedir / disable exec() per security.md)
+
+// 5. Strip EXIF metadata from user-uploaded images (privacy + orientation attacks)
+//    composer require spatie/pdf-to-image  (or use intervention/image ^3.5)
+//    $image = Image::read($file)->orientate()->save($path);   // orientate() fixes rotation; strip EXIF separately
+
+// 6. For SVGs, sanitize with a strict allowlist (SVGs can contain inline JS)
+//    composer require enshrined/svg-sanitize
+//    $sanitized = (new Sanitizer())->sanitize($file->get());
+//    Storage::put($path, $sanitized);
+```
+
+**Rule of thumb:** if user-uploaded files are ever served from a path your web server can
+interpret as executable code, you have a config bug — fix that, don't rely on filename checks.
 
 ## File Deletion
 
@@ -255,3 +338,28 @@ $request->validate([
 - Cloudflare R2 works with S3-compatible API (same driver, different endpoint)
 
 Sources: [Laravel Filesystem](https://laravel.com/docs/13.x/filesystem) | [Laravel Storage Presigned URLs](https://laravel.com/docs/13.x/filesystem#temporary-urls)
+
+---
+
+## Updated from Research (2026-06-30, cycle 15)
+
+**file-uploads.md** (3.25 days stale — second-oldest file) — three gaps that AI models keep getting
+wrong, now documented:
+
+- **`Storage::temporaryUploadUrl()` returns `['url' => $url, 'headers' => $headers]`** (Laravel 13.x).
+  Older docs and StackOverflow answers show it returning a plain string URL — that's the legacy
+  signature. Modern usage must destructure the array and **forward the headers** with the PUT,
+  or S3 will reject the upload with a `SignatureDoesNotMatch` error. Updated the worked example.
+- **File Visibility section** — the `public` / `private` visibility model and how to flip it.
+  AI models frequently suggest `Storage::url()` for sensitive files without understanding that
+  visibility on S3 is per-object ACL and not auto-updated when you rotate buckets. New section
+  covers the gotcha: `setVisibility()` is a metadata operation, not a re-upload, so CDN-cached
+  URLs remain served until you purge them.
+- **Anti-extension-spoofing section** — the `evil.php.jpg` attack and the layered defense
+  (never trust original filename → `hashName()`; validate with `finfo` on the actual file
+  bytes; pair Laravel's `mimes:` with `file|image` to force symfony MIME guesser; disable PHP
+  execution in upload dirs in nginx/Apache; sanitize SVGs; strip EXIF). This is the most
+  common blind spot in code-review checklists.
+
+**No new Laravel 13.x release** as of 2026-06-30 18:00 UTC. v13.17.0 (June 23, 2026) remains the
+latest. v13.17.1 / v13.18.0 still pending.
