@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.0
+version: 1.22.1
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -51,12 +51,14 @@ metadata:
 | Prompt caching (`providerOptions(['cache_control' => [...]])`) | `ai.md` (Prompt Caching section) | Anthropic / OpenAI 90% discount on cached input tokens for agents with fixed system prompts |
 | `php artisan i18n:check` (missing translation detector) | `localization.md` (Detecting Missing Translations section) | CI integration to fail builds on incomplete translations |
 | Lazy translation loading (JSON-only, lazy namespaces, DB+cache) | `localization.md` (Lazy Translation Loading section) | Avoid loading thousands of keys on every request for large apps |
+| `Model::preventLazyLoading()` / `preventSilentlyDiscardingAttributes()` / `preventAccessingMissingAttributes()` / `prohibitDestructiveCommands()` | `eloquent.md` (Eloquent Strictness Hardening section) | Turn silent Eloquent bugs into loud exceptions in dev — N+1, missing `$fillable`, typos, accidental mass-delete |
 
 
 ## Critical Rules (Never Forget)
 
 - **`env()` only in config files** — returns null after `config:cache`
 - **Eager load relationships** — `with('posts')` or N+1 queries hit on every loop
+- **`Model::preventX()` strictness hooks** — every Laravel project should turn on `preventSilentlyDiscardingAttributes()`, `preventAccessingMissingAttributes()`, and `preventLazyLoading()` in `AppServiceProvider::boot()`. Default Laravel skeleton ships with none.
 - **`$fillable` or `$guarded`** — unprotected mass assignment = security hole
 - **`findOrFail()` over `find()`** — null returns silently, crashes are better than silent bugs
 - **Queue jobs serialize models as IDs** — re-fetch on process, model may be stale/deleted

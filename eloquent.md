@@ -285,7 +285,117 @@ Post::factory()->unpublished()->make();
 6. **Not handling unique constraint violations** — wrap in try/catch or use `firstOrCreate`
 7. **`nestedWhere` with complex AND/OR without parentheses** — always wrap OR groups in `where()` callback to ensure correct precedence
 
-## Postgres Transaction Pooler Support (Laravel 13.17+)
+## Eloquent Strictness Hardening (`Model::preventX()`)
+
+Laravel ships four global switches on `Illuminate\Database\Eloquent\Model` that turn silent, easy-to-miss bugs into loud failures. Every Laravel app should turn these on in **non-production** at minimum, and most should keep them on in production too. Highlighted at Laravel Live UK 2026 (June 29, 2026) as the single highest-leverage improvement teams can make to their Eloquent layer.
+
+Recommended `AppServiceProvider::boot()` block:
+```php
+use Illuminate\Database\Eloquent\Model;
+
+public function boot(): void
+{
+    Model::preventLazyLoading(! app()->isProduction());
+    Model::preventSilentlyDiscardingAttributes(! app()->isProduction());
+    Model::preventAccessingMissingAttributes(! app()->isProduction());
+    Model::prohibitDestructiveCommands(
+        ! app()->isProduction() && ! app()->runningInConsole()
+    );
+}
+```
+
+### 1. `Model::preventLazyLoading()` (Laravel 6+)
+
+Throws `LazyLoadingViolationException` whenever you access a relation that wasn't eager-loaded.
+
+```php
+// Throws in non-prod: "Attempted to lazy load [author] on model [Post] but lazy loading is disabled."
+foreach (Post::all() as $post) {
+    echo $post->author->name;
+}
+
+// ✅ No exception
+foreach (Post::with('author')->get() as $post) {
+    echo $post->author->name;
+}
+```
+
+**Use `Model::handleLazyLoadingViolationUsing()`** to override behavior — for example, log to Sentry in production instead of crashing:
+```php
+Model::handleLazyLoadingViolationUsing(function ($model, $key) {
+    \Log::warning('lazy-load', ['model' => $model::class, 'key' => $key]);
+});
+```
+
+### 2. `Model::preventSilentlyDiscardingAttributes()` (Laravel 9.28+)
+
+Throws `MassAssignmentException` when `fill()` / `update()` is given a key that is **not** in `$fillable`. Catches the "I added a column to the DB but forgot to add it to `$fillable`" bug in dev — without this, the field is just silently dropped in production.
+
+```php
+class Post extends Model {
+    protected $fillable = ['title', 'body']; // forgot 'slug'
+}
+
+// Throws in non-prod: "Add fillable property [slug] to allow mass assignment on [App\Models\Post]."
+Post::create($request->all()); // request contains 'slug'
+```
+
+**This is the missing safety net between `$fillable` and runtime failures.** If `$fillable` was set correctly, this never fires. If it wasn't, you find out in dev instead of in production when the column mysteriously stays NULL.
+
+### 3. `Model::preventAccessingMissingAttributes()` (Laravel 9.32+)
+
+Throws `MissingAttributeException` when you access an attribute that was **never set on the instance** — either because it wasn't selected from the DB, isn't a column, or hasn't been `fill()`-ed.
+
+```php
+$user = User::select(['id', 'name'])->first(); // didn't select 'email'
+
+// Throws in non-prod: "The attribute [email] either does not exist or was not retrieved for model [App\Models\User]."
+echo $user->email;
+```
+
+**Catches two real bug classes:**
+- **Typos in attribute access** — `$user->emial` instead of `$user->email` returns null normally; with this on, it throws.
+- **Misconfigured `select()`** — you forgot to include a column the view template uses; the view shows empty strings instead of a clear error in dev.
+
+### 4. `Model::prohibitDestructiveCommands()` (Laravel 11+)
+
+Blocks `Model::delete()`, `Model::truncate()`, and any `forceDelete()` chain from running **outside of an `artisan` command**. Designed to prevent the classic "a web request or queue job accidentally wiped the table" disaster.
+
+```php
+// In a controller — BLOCKED in non-prod, throws MassAssignmentException-style error:
+User::where('is_test', true)->delete();
+
+// In php artisan tinker / migrate:fresh / db:seed — ALWAYS ALLOWED:
+User::where('is_test', true)->delete(); // ✅ fine, artisan context
+```
+
+**Why this matters:** A bug like `$query->delete()` accidentally piped into a request handler can wipe the table in milliseconds. `prohibitDestructiveCommands` is the last-line-of-defense that turns that into a thrown exception instead of a production incident.
+
+**Combine with `SoftDeletes`** — destructive ops should always be on `forceDelete()` paths, never on the default `delete()` path, so this catches the case where someone bypasses soft delete.
+
+### Production-mode tuning
+
+For production, you typically want **lazy loading to log but not crash** (so a missed `with()` doesn't 500 the user) but **silent discard and missing attribute to throw** (because those are bug-shaped, not performance-shaped):
+
+```php
+Model::preventLazyLoading(! app()->isProduction()); // throw in dev, allow in prod
+Model::handleLazyLoadingViolationUsing(function ($model, $key) {
+    // In prod, just log — don't crash a user-facing request for a perf issue
+    \Sentry::captureMessage("lazy-load: {$model::class}->{$key}");
+});
+
+Model::preventSilentlyDiscardingAttributes(true); // ALWAYS on — this is a bug
+Model::preventAccessingMissingAttributes(true);   // ALWAYS on — this is a typo
+```
+
+### Cross-cutting rule
+
+Every Laravel project should have **all four** in `AppServiceProvider::boot()` in dev. The default Laravel skeleton ships with none — meaning every new app starts with the strictest defaults off. Add them on day one.
+
+See [Laravel 13 Docs — Configuring Eloquent Strictness](https://laravel.com/docs/13.x/eloquent#configuring-eloquent-strictness).
+
+</content>
+</invoke>## Postgres Transaction Pooler Support (Laravel 13.17+)
 
 When you run Laravel behind a Postgres connection pooler in **transaction mode** (PgBouncer, Neon, Supabase pooler, AWS RDS Proxy in transaction mode), persistent connections are forbidden — every transaction must run on a freshly checked-out connection. Laravel 13.17 (PR #60425) added first-class support for this in `Illuminate\Database\PostgresConnection`:
 
@@ -326,6 +436,12 @@ PR #60574 fixes this by resetting the transaction manager when a connection is l
 - Retry helpers (e.g. `DB::transaction($cb, $attempts)`) recover cleanly on transient disconnects
 
 If you see that error in logs after a Postgres failover or pooler rotation, upgrade to 13.17+.
+
+## Updated from Research (2026-06-30, cycle 13)
+
+- **Eloquent Strictness Hardening (`Model::preventX()`)** — added a new "Eloquent Strictness Hardening" section consolidating all four `Model::preventX()` switches (`preventLazyLoading`, `preventSilentlyDiscardingAttributes`, `preventAccessingMissingAttributes`, `prohibitDestructiveCommands`). Previously only `preventLazyLoading` was mentioned (line 26). The other three — promoted heavily at Laravel Live UK 2026 on June 29, 2026 — were the highest-leverage gap: they convert silent Eloquent bugs (typo'd attribute, missing `$fillable`, accidental mass-delete) into loud exceptions in dev. Recommended `AppServiceProvider::boot()` block + production-mode tuning (lazy-load log-to-Sentry, but throw on silent-discard/missing-attribute) included.
+
+---
 
 ## Updated from Research (2026-06-26, cycle 5)
 
