@@ -519,3 +519,19 @@ When cycle-15 ran (18:00 UTC 2026-06-30), those fixes were tracked as "post-v13.
 CISA KEV catalog and the Laravel OpenCVE feed rechecked at 00:03 UTC 2026-07-01. No new framework-level CVEs in the last 6 hours. The Filament MFA recovery-code reuse (SB26-180) and CVE-2026-39976 Laravel Passport (already in `security.md`) remain the highest-priority Laravel-ecosystem items.
 
 SKILL.md bumped to **v1.22.4** (cycle-16 release-notes incorporation for Laravel 13.18.0). 16 cycles in last 3 days.
+
+### Ecosystem Update (2026-07-01, cycle 17)
+
+#### No new framework version, no new CVEs at cycle time
+
+Latest Laravel framework release remains **v13.18.0** (June 30, 2026). GitHub `releases/latest` endpoint + Releasebot.io + Laravel News all confirm 13.18.0 is still the head of the 13.x line — no 13.18.1, 13.19.0, or 13.17.x patch has been tagged in the ~18 hours since the previous cycle. `laravel/laravel` skeleton at v13.8.0 (May 27), `laravel/passport` at v13.7.5 (Apr 21), `laravel/reverb` at v1.10.2 (May 13) — all unchanged.
+
+GitHub Security Advisories API for `laravel/framework` rechecked at 18:17 UTC 2026-07-01 — no new advisories since the previous one (`GHSA-crmm-hgp2-wgrp` / CVE-2026-48041, June 8, 2026), which is already documented in `security.md`. CVE-2026-39976 (Passport, fixed 13.7.1), CVE-2026-23524 (Reverb RCE, fixed 1.7.0), CVE-2026-48019 (CRLF email injection, fixed 13.10.0/12.60.0), and CVE-2025-54068 (Livewire RCE, KEV-listed) — all already in `security.md`.
+
+#### Targeted feature-gap fix: `observers.md` + `ShouldBeDiscovered` opt-out
+
+Targeted the oldest untouched file from the previous batch (`observers.md`, last touched 2026-06-29). The Laravel 13.12 release added an opt-out mechanism for **automatic event discovery** — when `Event::shouldDiscoverEvents()` is on in `bootstrap/app.php`, every `ShouldQueue` listener gets auto-registered. AI models keep writing listeners that get unintended side effects from discovery (e.g., a `ShouldQueue` "send alert" listener gets queued on every `OrderShipped` event in the app, not just the one specific dispatch site the author intended). The opt-out contract (static `$shouldDiscover = false` property OR marker interface under `Illuminate\Contracts\Events\`) was previously missing from the skill.
+
+- **`observers.md`** — added new `## ShouldBeDiscovered Opt-Out (Laravel 13.12+)` section between the `#[Boot]`/`#[Initialize]` block and the existing "Updated from Research" entry. Includes the `public static bool $shouldDiscover = false` opt-out pattern, the contract-name caveat (the exact marker-interface name varies between 13.12 patch levels — verify against `vendor/laravel/framework/src/Illuminate/Contracts/Events/` before relying on it), and explicit when-to-use / when-NOT-to-use guidance. Added a corresponding bullet to the `#[Boot]` / `#[Initialize]` summary section.
+
+SKILL.md bumped to **v1.22.5** (cycle-17 gap-fill for `ShouldBeDiscovered` opt-out in `observers.md`). 17 cycles in last 3 days.

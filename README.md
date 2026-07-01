@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-07-01 00:03 UTC (cycle 16) — **Laravel v13.18.0 released 2026-06-30 12:55 UTC** (16 PRs, all bug fixes — no breaking changes; missed by cycle 15 which ran 5 hours before the tag). `versions.md` got a full **"New in Laravel 13.18"** section covering every fix in the release: `schedule:work` graceful signal handling (PR #60616), `WorkerStopping` `jobsProcessed` + `lastJobProcessedAt` payload (PR #60592 + #60608), soft-delete `restore()`/`restoring` event gating (PR #60605), `HEAD` cache-header fix (PR #60589 — 13.16 regression), `RateLimited` middleware `__sleep()` fix (PR #60609), `Request::json()` top-level zero body fix (PR #60614), `Number::forHumans`/`abbreviate`/`fileSize` INF/NaN guard (PR #60617 + #60625 — treated as remote-DoS on API responses rendering user input), `php artisan dev` priority registration + `--kill-others-on-fail` (PR #60580 + #60606), TaggedCache `flexible()` lock/defer namespace fix (PR #60626), debounced-jobs cache-hit reduction (PR #60575), conditional return types (PR #60586 + #60591). All cross-referenced into `api.md`, `controllers.md`, `observers.md`, `performance.md`, `queues.md`, `artisan.md`. The pre-existing "Late-June 2026 Bug Fixes" section was reframed from "pending fixes" → "shipped-in-13.18 history trail". Corrected all `13.17.1+` → `13.18.0+` references in `api.md`, `controllers.md`, `performance.md`, `SKILL.md` (the fixes were predicted to ship in v13.17.1 but actually shipped in v13.18.0 — no v13.17.1 was tagged). SKILL.md bumped v1.22.3 → v1.22.4. 16 cycles in last 3 days.
+**Last research cycle:** 2026-07-01 18:17 UTC (cycle 17) — No new framework release (v13.18.0 still head of 13.x, ~18 hours since previous cycle). No new framework CVEs (GitHub Security Advisories API rechecked; CVE-2026-48041 / GHSA-crmm-hgp2-wgrp from June 8 is still the most recent and already in `security.md`). Targeted gap-fill on `observers.md` (last touched 2026-06-29): added **`ShouldBeDiscovered` opt-out (Laravel 13.12+)** — when `Event::shouldDiscoverEvents()` is on in `bootstrap/app.php`, every `ShouldQueue` listener gets auto-registered; the opt-out contract (`public static bool $shouldDiscover = false` or a marker interface under `Illuminate\Contracts\Events\`) was missing from the skill. AI models keep writing listeners that get unintended side effects from discovery (e.g., a "send alert" listener fires on every `OrderShipped` event in the app, not just the one specific dispatch site). New section includes the opt-out pattern, the contract-name caveat (verify against `vendor/laravel/framework/src/Illuminate/Contracts/Events/` for your installed patch level), and explicit when-to-use / when-NOT-to-use guidance. SKILL.md bumped v1.22.4 → v1.22.5. 17 cycles in last 3 days.
 
 ---
 
@@ -110,7 +110,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~9,980 lines** of production-ready content
+- **~10,330 lines** of production-ready content
 - **Update cadence:** Every 6 hours via OpenClaw cron — 16 cycles in last 3 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone

@@ -290,6 +290,44 @@ class Post extends Model
 
 **Pair with `#[ObservedBy]`** — `#[Boot]` handles in-model event listeners; `#[ObservedBy]` attaches a full observer class. They compose cleanly on the same model.
 
+## `ShouldBeDiscovered` Opt-Out (Laravel 13.12+)
+
+When you use Laravel's **automatic event discovery** (`Event::shouldDiscoverEvents()` in `bootstrap/app.php`), every listener that implements `ShouldQueue` is auto-registered as a queued job — and any matching event dispatch will queue it. The 13.12 release adds an opt-out for listeners you don't want discovered at all, even when discovery is on:
+
+```php
+use Illuminate\Contracts\Queue\ShouldQueue;
+
+// This listener is registered via Event::listen() in bootstrap/app.php ONLY.
+// It will NOT be picked up by Event::shouldDiscoverEvents() discovery.
+class SendUrgentAdminAlert implements ShouldQueue
+{
+    public static bool $shouldDiscover = false; // ← opt-out flag
+
+    public function handle(InvoicePaid $event): void
+    {
+        // ...
+    }
+}
+```
+
+The exact opt-out contract name varies between 13.12 patch levels; the canonical mechanism is a static `$shouldDiscover = false` property OR a marker interface under `Illuminate\Contracts\Events\` (verify the contract name against your installed version's `vendor/laravel/framework/src/Illuminate/Contracts/Events/` directory before relying on it). Either way, the semantic is the same: **this listener is never auto-registered, you must register it manually** with `Event::listen()` in `bootstrap/app.php`.
+
+**Why this matters:**
+- **Performance** — if a queued listener should only run on a specific event class that's hard-coded in your app (e.g., a webhook for one Stripe product), you don't want discovery to register it for *every* `OrderShipped` event.
+- **Correctness** — listeners that have side effects you want to control (audit logs, billing side-effects) shouldn't fire via discovery; they should fire via your explicit `Event::listen()` call only.
+- **Dead-job prevention** — without the opt-out, a `ShouldQueue` listener sits in the discovered-listener registry even if the event never fires in your app, inflating queue worker boot time and confusing `queue:monitor`.
+
+**When to use:**
+- Discovery is enabled globally (`Event::shouldDiscoverEvents()`) but you have a few listeners you want to keep explicit.
+- A `ShouldQueue` listener is only meaningful for one specific dispatch site (e.g., `event(new InvoicePaid($invoice))` from a billing webhook) and you don't want it firing on every other event it might match.
+- A listener has destructive side effects (database writes, third-party API calls) and you want a code review to gate its registration.
+
+**When NOT to use:**
+- You want the listener to be auto-discovered (default behavior).
+- The listener is sync (`handle()` without `ShouldQueue`) — discovery of sync listeners doesn't queue anything, so there's nothing to opt out of.
+
+Source: [Laravel News — Scheduler Attributes & Listener Discovery Control in 13.12.0](https://laravel-news.com/laravel-13-12-0) | [Laravel 13.12 Release Notes](https://github.com/laravel/framework/releases/tag/v13.12.0)
+
 ## Updated from Research (2026-06-29)
 
 - **Soft-delete `restore()` event gating (PR #60605, 13.17+)** — the `restored` model event now only fires when the underlying `save()` actually returned true. Before 13.17 it fired unconditionally, which made `static::restored(fn() => $x = true)`-based tests report success even when a `saving` listener had cancelled the restore. Always check the return value of `$model->restore()` (boolean) instead of relying on the event firing.
@@ -321,3 +359,4 @@ Sources: [Laravel 13 Docs - Eloquent Observers](https://laravel.com/docs/13.x/el
 - **`#[Initialize]`** — PHP attribute on an instance method, runs every time a new instance is hydrated (after `__construct()` and DB hydration). Use for randomized UUIDs, computed defaults, anything `$attributes` defaults can't cover.
 - **`#[Scope]`** — attribute on a query-scope method, lets you write `#[Scope] public function published(Builder $query): void` without the `scope` prefix.
 - All three shipped pre-Laravel 13 but were missing from this skill.
+- **`ShouldBeDiscovered` opt-out (Laravel 13.12+)** — opt-out mechanism for automatic event discovery. Use for `ShouldQueue` listeners with narrow dispatch sites or destructive side effects that you want registered explicitly via `Event::listen()`, never via `Event::shouldDiscoverEvents()`.
