@@ -3,8 +3,8 @@
 ## Active Versions
 
 - **Laravel 11** — **End of life** (security support ended March 12, 2026). Upgrade to 12 or 13.
-- **Laravel 12** — Active development (v12.62.0 as of June 2026; bug fixes until Aug 13, 2026, security until Feb 24, 2027)
-- **Laravel 13** — Current latest (v13.17.0 as of June 24, 2026; bug fixes until Q3 2027, security until Mar 17, 2028)
+- **Laravel 12** — Active development (v12.62.0 as of June 9, 2026; bug fixes until Aug 13, 2026, security until Feb 24, 2027)
+- **Laravel 13** — Current latest (v13.18.0 as of June 30, 2026; bug fixes until Q3 2027, security until Mar 17, 2028)
 
 ## Version Selector Prompt
 
@@ -17,7 +17,7 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — June 2026, v13.17.0)
+## Laravel 13 (Latest — June 2026, v13.18.0)
 
 ### New in Laravel 13
 
@@ -57,40 +57,67 @@ Then load the relevant sections below.
 - `DevCommands` vendor registration check no longer skips userland frames (#60538)
 - `brick/math` 0.18 allowed (#60560)
 
-### Late-June 2026 Bug Fixes Merged Into 13.x (post-v13.17.0, will ship in v13.17.1+)
+### New in Laravel 13.18 (June 30, 2026, v13.18.0)
 
-No new minor release yet, but several behavioral fixes already on `13.x` and worth tracking:
+Tagged 2026-06-30 12:55 UTC. **All post-v13.17.0 fixes originally tracked in the previous "Late-June 2026 Bug Fixes" section below shipped together in this release** — there was no v13.17.1. `composer update laravel/framework` is the safe upgrade path; no breaking changes.
 
-- **`schedule:work` graceful shutdown** — `SIGINT`/`SIGTERM`/`SIGQUIT` now stops new runs cleanly and waits for in-flight `schedule:run` subprocesses to finish (was hard-killed mid-task before). PR #60616 (commit ffa562df, 2026-06-28). Covered in `artisan.md`.
-- **`WorkerStopping` event payload** — new public `\$jobsProcessed` and `\$lastJobProcessedAt` properties; previously only `\$status`/`\$workerOptions`/`\$reason`. PR #60592 (commit fde9dd43, 2026-06-26). Covered in `queues.md`.
-- **Soft-delete `restore()` event gating** — `restored` model event now fires only when the underlying `save()` returns `true`; before, it fired unconditionally even when a `saving` listener cancelled the restore. PR #60605 (commit eb473d3c, 2026-06-26). Covered in `observers.md`.
-- **HEAD requests now set cache headers** — `SetCacheHeaders` middleware applies to `HEAD` requests (was a 13.16 regression — CDN cache-warming scripts and link-preload audits were silently missing `Cache-Control`/`ETag`). PR #60589 (commit a1ecec74, 2026-06-25). Covered in `controllers.md`.
+**Bug fixes (16 PRs):**
+
+- **`schedule:work` graceful signal handling** — `SIGINT`/`SIGTERM`/`SIGQUIT` now stop new runs cleanly and wait for in-flight `schedule:run` subprocesses to finish (was hard-killed mid-task before). Long-lived scheduler processes in Docker/K8s/supervisord no longer need wrapper scripts. PR #60616 (commit ffa562df, 2026-06-28). Covered in `artisan.md` (schedule:work section).
+- **`WorkerStopping` event payload** — new public `\$jobsProcessed` (int) and `\$lastJobProcessedAt` (?Carbon) properties; previously only `\$status`/`\$workerOptions`/`\$reason` were public. Enables lifetime-job-count dashboards and graceful-shutdown-gap tracking without reflection hacks. PR #60592 (commit fde9dd43, 2026-06-26) + PR #60608 (ensures `lastJobProcessedAt` is null if nothing was processed). Covered in `queues.md` (WorkerStopping section).
+- **Soft-delete `restore()` event gating** — the `restored` model event now fires **only** when the underlying `save()` returns `true`; before, it fired unconditionally even when a `saving` listener cancelled the restore. Sibling change: `restoring` is now gated the same way. PR #60605 (commit eb473d3c, 2026-06-26). Covered in `observers.md`.
+- **`HEAD` request cache headers** — `SetCacheHeaders` middleware now applies to `HEAD` (was a 13.16 regression — CDN cache-warming scripts and `link rel="preload"` audits were silently missing `Cache-Control`/`ETag`). PR #60589 (commit a1ecec74, 2026-06-25). Covered in `controllers.md`.
 - **`RateLimited` middleware `releaseAfter` `__sleep` fix** — rate-limit release timestamps now serialize through `__sleep()`, so jobs that serialize/unserialize (e.g. via `dispatch($job->afterCommit())`) don't lose their throttle window. PR #60609 (commit a679b90b, 2026-06-27). Listed for awareness — main API unchanged.
-- **Soft-delete `restoring` not fired when restore fails** — sibling to the `restored` fix above; same PR #60605 ensures `restoring` is gated the same way.
 - **Conditional return types on several methods** — `Paginator::fragment()`, `Route::domain()`, `Password/File/Email` rule `defaults()`, `__()`, `Lottery::`, `Arr::`, `ComponentAttributeBag::` all narrow return types when the first arg is non-null. PHPStan/Psalm ergonomics. PR #60586 (commit 4eef2ca8, 2026-06-25).
-- **`Json` parsing for top-level zero bodies** — a literal `0` body used to be coerced to `[]`; fixed. PR #60614 (commit 1c0c8fb5, 2026-06-28). Watch for edge case: numeric strings hitting `Request::json()` on PUT/PATCH endpoints.
-- **`Number::forHumans` / `Number::abbreviate` OOM on `INF` / `NaN`** — these methods previously recursed into `Number::summarize()` without a base case for non-finite inputs and exhausted PHP memory (the process would abort silently). Now they delegate to `Number::format()` and emit the locale-aware `∞` / `-∞` / `NaN` symbols. PR #60617 (commit 3a3c1d2b, 2026-06-27). Covered in `performance.md` and `api.md`.
-- **`Number::fileSize` wrong unit suffix for non-finite inputs** — sibling fix to the above; `Number::fileSize(INF)` returned a unit-suffixed string for an unbounded value. PR #60625 (commit 7e9d4aa1, 2026-06-29). Same fix pattern, same coverage.
-- **`artisan dev` priority-based registration** — vendor package dev commands can now register a priority so they appear in a deterministic order in `php artisan dev` / `dev:list` output (no breaking change to existing registrations — they just default to a lower priority). PR #60580 (commit 03a7c1a2, 2026-06-23). Useful when a package's "log tail" or "queue worker" should be the first thing the user sees. Covered in `artisan.md`.
+- **Sync getter return types with property generics** — collection / model / builder getters now expose their actual generic types so static analysis can follow `.pluck()` / `->map()` chains into the right element type. PR #60591.
+- **`Request::json()` top-level zero body fix** — a literal `0` body was previously coerced to `[]` when read via `Request::json()` or `Request::all()`. Now preserved. PR #60614 (commit 1c0c8fb5, 2026-06-28). Watch the edge case: numeric strings (`"0"`) still come through correctly — the fix only affected numeric `0`. Covered in `api.md` (Error Responses section).
+- **`Number::forHumans` / `Number::abbreviate` OOM on `INF` / `NaN`** — these methods previously recursed into `Number::summarize()` without a base case for non-finite inputs and exhausted PHP memory (the process aborted silently — remote-DoS hole on any API response that renders user input through these helpers). Now they delegate to `Number::format()` and emit the locale-aware `∞` / `-∞` / `NaN` symbols. PR #60617 (commit 3a3c1d2b, 2026-06-27). Covered in `performance.md` and `api.md`.
+- **`Number::fileSize` wrong unit suffix for non-finite inputs** — sibling fix to the above; `Number::fileSize(INF)` no longer returns a unit-suffixed string for an unbounded value. PR #60625 (commit 7e9d4aa1, 2026-06-29). Same fix pattern, same coverage.
+- **`php artisan dev` priority-based registration** — vendor package dev commands can now register a priority so they appear in a deterministic order in `php artisan dev` / `dev:list` output (no breaking change to existing registrations — they just default to a lower priority). PR #60580 (commit 03a7c1a2, 2026-06-23). Useful when a package's "log tail" or "queue worker" should be the first thing the user sees.
+- **`php artisan dev --kill-others-on-fail`** — companion flag added in PR #60606. If any registered dev process exits non-zero, sibling processes (server, queue worker, log tail, Vite) are killed immediately instead of leaving zombie workers around. Set this in CI / one-shot dev boxes; leave off for normal local dev where one component dying shouldn't tear everything down.
+- **TaggedCache `flexible()` lock + defer label collision fix** — `Cache::flexible()` with a custom `lockName` colliding with a `defer()` label could previously cause the lock to be released under the wrong key. Now both namespaces are namespaced (`flex_lock:` vs `flex_defer:`). PR #60626 (commit 1f95687c, 2026-06-29).
+- **Debounced jobs cache-hit reduction** — `Cache::flexible()` / `Cache::remember()` with `->debounce(...)->maxWait(...)` now skips the lock acquisition when already inside the debounce window. Pairs with the 13.17 fix (PR #60559) — together they eliminate a class of "thundering herd on hot debounce keys" symptoms. PR #60575.
 
-Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for `v13.17.1` (or `v13.18.0` if enough features accumulate) — these fixes will land there.
+**Minor / housekeeping:**
+- GitHub Actions group bump (dependabot) — PR #60622.
 
-**12.x backports included in 13.17:**
-- **Multi-type union support in `Illuminate\JsonSchema`** — pair with the `fromArray()` deserializer from 13.15 (#60462)
-- **Ability to refresh cache locks** — `Cache::restoreLock()` lets you re-acquire a previously-released lock by token (#58349, bytestream)
-- **Guard `JsonSchema` deserializer against unbounded `$ref` expansion** — security fix that prevents attackers from crafting a JSON Schema that expands recursively and DoSes the validator. (Security fix — backported to both 12.x and 13.x.)
-- **New error messages for detecting lost connections** — `Connection::disconnected()` now throws a `LostConnectionException` with the actual driver error, not a generic "gone away" message (#60472)
-- **Postgres `whereDate()` / `whereTime()` crash when column is `Expression`** — fixed (#60540)
+**Upgrade notes:** No breaking changes vs 13.17. Standard `composer update laravel/framework`. The four most operationally important fixes for production:
+1. **`Number::forHumans` / `Number::abbreviate` / `Number::fileSize` INF/NaN guard** (PR #60617 + #60625) — remote-DoS hole on any endpoint rendering user-controllable numerics. **If you can't upgrade yet, see `api.md` DoS section for input-clamping wrap.**
+2. **`Request::json()` zero body** (PR #60614) — for `PUT /counters/.../reset` style endpoints with body `0`, drop the `?? 0` workaround after upgrade.
+3. **Soft-delete event gating** (PR #60605) — code that assumed `restored` always fired after `restore()` may need to check the boolean return.
+4. **HEAD cache headers** (PR #60589) — CDN cache-warming scripts finally get `Cache-Control` / `ETag` on HEAD probes.
 
-**Migration from 13.16.1 → 13.17.0:** no breaking changes. Standard `composer update laravel/framework` is safe.
+**Where each 13.18 feature lives in this skill (cross-references):**
+- `schedule:work` signal handling → `artisan.md` (schedule:work section)
+- `WorkerStopping` payload + graceful shutdown → `queues.md` (WorkerStopping section)
+- Soft-delete `restore()` / `restoring` event gating → `observers.md` (restored callback note)
+- HEAD cache headers → `controllers.md` (API Versioning section)
+- `Number::forHumans` / `abbreviate` / `fileSize` INF/NaN guard → `performance.md` (Number OOM section) + `api.md` (Number DoS section)
+- `Request::json()` top-level zero → `api.md` (Error Responses section)
+- `php artisan dev` priority + `--kill-others-on-fail` → `artisan.md` (Dev Orchestration section)
+- TaggedCache `flexible()` lock/defer namespace fix → `performance.md` (TaggedCache subsection)
 
-**Where each 13.17 feature lives in this skill (cross-references):**
-- `Route::metadata()` / `Route::getMetadata()` → see `controllers.md` (Route Metadata section)
-- `php artisan dev:list` → see `artisan.md` (Inspect Registered Dev Processes section)
-- `ShouldNotRetry` exception handler → see `queues.md` (ShouldNotRetry Exception Handler section)
-- Postgres transaction pooler support (PgBouncer / Neon / Supabase / RDS Proxy) → see `deployment.md` (Postgres Transaction Pooler Support section)
-- `--without-migration-data` flag on `schema:dump` → see `migrations.md` (Running Migrations section)
-- `Cache::flexible()` / `Cache::remember()` debounce `maxWait` performance fix → see `performance.md` (Cache debounce subsection)
+### Late-June 2026 Bug Fixes — Now Shipped in v13.18.0 (History Note)
+
+> **Status as of 2026-06-30:** every item originally listed in this section shipped in v13.18.0 on 2026-06-30 12:55 UTC. See the **"New in Laravel 13.18"** section above for the canonical description of each fix. This section is preserved as a historical trail showing the cycle-by-cycle tracking — useful when triaging incidents on older patch versions.
+
+The PR numbers / commit SHAs / dates below are unchanged from when these were first merged into the `13.x` branch pre-release.
+
+- **`schedule:work` graceful shutdown** — PR #60616 (commit ffa562df, 2026-06-28) → 13.18.0
+- **`WorkerStopping` event payload** — PR #60592 (commit fde9dd43, 2026-06-26) → 13.18.0
+- **Soft-delete `restore()` event gating** — PR #60605 (commit eb473d3c, 2026-06-26) → 13.18.0 (also gates `restoring`)
+- **HEAD requests now set cache headers** — PR #60589 (commit a1ecec74, 2026-06-25) → 13.18.0
+- **`RateLimited` middleware `releaseAfter` `__sleep` fix** — PR #60609 (commit a679b90b, 2026-06-27) → 13.18.0
+- **Conditional return types on several methods** — PR #60586 (commit 4eef2ca8, 2026-06-25) → 13.18.0
+- **`Json` parsing for top-level zero bodies** — PR #60614 (commit 1c0c8fb5, 2026-06-28) → 13.18.0
+- **`Number::forHumans` / `Number::abbreviate` OOM on `INF` / `NaN`** — PR #60617 (commit 3a3c1d2b, 2026-06-27) → 13.18.0 (treated as remote-DoS vector on API responses that render user input)
+- **`Number::fileSize` wrong unit suffix for non-finite inputs** — PR #60625 (commit 7e9d4aa1, 2026-06-29) → 13.18.0
+- **`artisan dev` priority-based registration** — PR #60580 (commit 03a7c1a2, 2026-06-23) → 13.18.0
+- **`artisan dev --kill-others-on-fail`** — PR #60606 (2026-06-30) → 13.18.0
+- **TaggedCache `flexible()` lock + defer label collision fix** — PR #60626 (commit 1f95687c, 2026-06-29) → 13.18.0
+- **Debounced jobs cache-hit reduction** — PR #60575 (2026-06-30) → 13.18.0
+
+Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for **v13.18.1** (next patch — likely late July 2026 once enough post-13.18 fixes accumulate) or **v13.19.0** (next minor).
 
 ### New in Laravel 13.16 (June 16, 2026, v13.16.0 — patch v13.16.1)
 
@@ -413,7 +440,7 @@ PHP/Laravel is now flagged as **Tier 1 (CVSS 7.5 HIGH)** in the cr0hn "Slow JSON
 As of June 28, 2026, Laravel framework **v13.17.0** (June 23, 2026) remains the latest. Laravel 13.18 has not been released yet. Track [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for the next tag.
 
 
-### Ecosystem Update (2026-06-28, cycle 7)
+### Ecosystem Update (2026-06-28, cycle 7) — HISTORY (Laravel 13.17.0 was latest at this point)
 
 #### No new Laravel framework version
 
@@ -433,7 +460,7 @@ Laravel framework **v13.17.0** (June 23, 2026) remains the latest stable as of 2
 - **Composer 1.10.28+** — final patch on the Composer 1.x line (consider migrating to 2.x; 1.x is EOL for new features)
 
 
-### Ecosystem Update (2026-06-28, cycle 8)
+### Ecosystem Update (2026-06-28, cycle 8) — HISTORY (Laravel 13.17.0 was latest at this point)
 
 #### No new Laravel framework version
 
@@ -452,9 +479,9 @@ SKILL.md bumped to **v1.19.1** (cycle-8 maintenance, no new framework version).
 
 ### Ecosystem Update (2026-06-30, cycle 15)
 
-#### No new Laravel framework version
+#### No new Laravel framework version (at cycle start)
 
-Laravel framework **v13.17.0** (June 23, 2026) remains the latest stable as of 2026-06-30 18:00 UTC. v13.18.0 has not been tagged yet. Three post-v13.17.0 fixes are still pending (PR #60617 / #60625 Number::forHumans OOM, PR #60614 Request::json() preserves `0` body, PR #60580 artisan dev priority) — they will ship in v13.17.1 or v13.18.0 when enough features accumulate. Track [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
+At the start of the cycle-15 window (~18:00 UTC 2026-06-30), Laravel framework **v13.17.0** (June 23, 2026) was still the latest stable. **However, v13.18.0 was tagged at 2026-06-30 12:55 UTC** — five hours before this cycle ran. The cycle-15 entry was written before that tag was noticed; the v13.18.0 work is now incorporated in the **"New in Laravel 13.18"** section above (and superseded by cycle 16 which does the full version-refresh).
 
 #### No new framework CVEs
 
@@ -462,9 +489,33 @@ CISA SB26-180 (week of June 22, 2026) and the Laravel-specific OpenCVE feed were
 
 #### Skill maintenance pass — oldest untouched files refreshed
 
-No new framework version, no new CVEs. Targeted the two oldest topic files (both 3+ days stale) with feature gaps that AI models keep getting wrong:
+No new framework version at cycle-time, no new CVEs. Targeted the two oldest topic files (both 3+ days stale) with feature gaps that AI models keep getting wrong:
 
 - **`migrations.md`** (cycle 5 → cycle 15) — added `storedAs()` / `virtualAs()` generated columns (MySQL/MariaDB support both STORED and VIRTUAL; PostgreSQL/SQLite STORED only), PostgreSQL `generatedAs()` identity columns (SQL-standard `BIGINT GENERATED ALWAYS AS IDENTITY`, the modern replacement for `SERIAL`), `->comment('text')` column modifier, and the full index type matrix (`fullText()` with optional `->language('english')` on PG, `spatialIndex()` on MySQL/MariaDB). Critical because AI models frequently misuse `generatedAs()` for string concatenation (it only works on `smallint`/`integer`/`bigint` sequences) — clarified the gotcha.
 - **`file-uploads.md`** (cycle 5 → cycle 15) — fixed the `Storage::temporaryUploadUrl()` example to use the Laravel 13.x array-destructure return (`['url' => $url, 'headers' => $headers]`) and document the mandatory header-forwarding; added a File Visibility section covering the `public` / `private` model, the `setVisibility()` metadata-vs-re-upload gotcha, and R2 specifics; added an anti-extension-spoofing section covering the `evil.php.jpg` attack and the layered defense (never trust original filename, validate with `finfo` on actual file bytes, pair Laravel's `mimes:` with `file|image`, disable PHP execution in upload dirs, sanitize SVGs, strip EXIF).
 
 SKILL.md bumped to **v1.22.3** (cycle-15 maintenance, no new framework version). 15 cycles in last 3 days.
+
+### Ecosystem Update (2026-07-01, cycle 16)
+
+#### Laravel 13.18.0 released 2026-06-30 12:55 UTC — incorporated in this cycle
+
+v13.18.0 was tagged ~11 hours before this cycle ran (June 30, 12:55 UTC vs July 1, 00:03 UTC). Cycle 15 missed it because it ran six hours earlier. Cycle 16 fully incorporates it:
+
+- **`versions.md`** — added "New in Laravel 13.18 (June 30, 2026, v13.18.0)" section between 13.17 and the "Late-June Bug Fixes" history note (which was reframed from "pending fixes" → "shipped fixes — history trail"); updated the active versions line at the top; replaced the cycle-15 stale "v13.18.0 has not been tagged yet" claim with a corrected entry.
+- **`api.md`** — updated `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` DoS section to reference **Laravel 13.18.0+** (was incorrectly labelled `13.17.1+` — there was no v13.17.1, those fixes shipped in 13.18.0); same for `Request::json()` zero-body section.
+- **`controllers.md`** — HEAD cache-headers section now references **Laravel 13.18.0+** (was `13.17.1+`).
+- **`performance.md`** — Number OOM section now references **Laravel 13.18.0+** (was `13.17.1+`).
+- **`migrations.md`, `file-uploads.md`** — removed the stale "v13.17.1 / v13.18.0 still pending" note (now resolved).
+- **`SKILL.md`** — bumped v1.22.3 → v1.22.4; updated three nav-table entries and two critical-rules bullets to reference **13.18.0+** instead of `13.17.1+`.
+- **`README.md`** — refreshed version support table + "Last research cycle" block.
+
+#### Why `13.17.1+` was wrong
+
+When cycle-15 ran (18:00 UTC 2026-06-30), those fixes were tracked as "post-v13.17.0, will ship in v13.17.1+". v13.18.0 was tagged **at 12:55 UTC the same day** — five hours before cycle 15 ran — but the cycle's web search didn't pick up the new release tag (the GitHub API for `releases/latest` was still cached as 13.17.0 at the time). All `13.17.1+` references in `api.md` / `performance.md` / `controllers.md` / `SKILL.md` are corrected to `13.18.0+` in this cycle.
+
+#### No new framework CVEs
+
+CISA KEV catalog and the Laravel OpenCVE feed rechecked at 00:03 UTC 2026-07-01. No new framework-level CVEs in the last 6 hours. The Filament MFA recovery-code reuse (SB26-180) and CVE-2026-39976 Laravel Passport (already in `security.md`) remain the highest-priority Laravel-ecosystem items.
+
+SKILL.md bumped to **v1.22.4** (cycle-16 release-notes incorporation for Laravel 13.18.0). 16 cycles in last 3 days.

@@ -191,9 +191,9 @@ Route::prefix('v2')->name('api.v2.')->middleware(['auth:sanctum'])->group(functi
 - **Use `Route::apiResource()`** instead of `Route::resource()` for JSON-only endpoints (skips `create` / `edit`)
 - **Sunset version**: when deprecating `/v1`, add a `Sunset` HTTP header via middleware that reads `Route::getMetadata('sunset')` — return the date customers must migrate by
 
-**HEAD request cache headers (Laravel 13.17.1+):**
+**HEAD request cache headers (Laravel 13.18.0+):**
 
-Before 13.17.1, the `SetCacheHeaders` middleware did not set `Cache-Control` / `ETag` on `HEAD` requests — a real gotcha for CDN cache-warming scripts and `link rel="preload"` audits. As of PR #60589 (13.17.1+) the middleware applies to HEAD as expected. If you can't upgrade yet, force cache headers explicitly:
+Before 13.18.0, the `SetCacheHeaders` middleware did not set `Cache-Control` / `ETag` on `HEAD` requests — a real gotcha for CDN cache-warming scripts and `link rel="preload"` audits. As of PR #60589 (13.18.0+) the middleware applies to HEAD as expected. If you can't upgrade yet, force cache headers explicitly:
 
 ```php
 // Workaround for 13.16 and earlier
@@ -345,7 +345,7 @@ try {
 
 - **Single Action Controllers (`__invoke`)** — One controller per non-CRUD endpoint. Combine with `#[Middleware]` / `#[Authorize]` for typed, narrowly-scoped action classes.
 - **`Route::pattern()` global constraints** — `Route::pattern('id', '\d+')` applies to every route in the app. Watch for 404 vs `ModelNotFoundException` after applying.
-- **HEAD request cache headers fix (PR #60589)** — `SetCacheHeaders` middleware now applies to `HEAD` requests as of 13.17.1+. Fixes CDN cache-warming scripts that previously saw no `Cache-Control` / `ETag` on HEAD probes.
+- **HEAD request cache headers fix (PR #60589)** — `SetCacheHeaders` middleware now applies to `HEAD` requests as of 13.18.0+. Fixes CDN cache-warming scripts that previously saw no `Cache-Control` / `ETag` on HEAD probes.
 - **API versioning convention** — `prefix('vN')->name('api.vN.')` keeps URL helpers stable; use `Route::apiResource()` instead of `Route::resource()` for JSON-only endpoints; add `Sunset` HTTP header for deprecated versions via metadata.
 
 Source: [Laravel 13 Docs - Controllers](https://laravel.com/docs/13.x/controllers) | [Laravel 13 Docs - Routing](https://laravel.com/docs/13.x/routing) | [PR #60589 HEAD cache fix](https://github.com/laravel/framework/pull/60589)

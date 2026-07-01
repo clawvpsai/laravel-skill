@@ -384,7 +384,7 @@ $this->renderable(function (\Illuminate\Validation\ValidationException $e, $requ
 });
 ```
 
-**`Request::json()` top-level zero fix (Laravel 13.17.1+) — PR #60614:** Before 13.17.1, a `PUT`/`PATCH` request with a literal `0` body was coerced to `[]` when read via `Request::json()` or `Request::all()`. PR #60614 (commit 1c0c8fb5, 2026-06-28) preserves the zero. If your code branches on `$request->json('value') === 0` for counter resets, idempotency keys, or feature flags, you can drop the `?? 0` workaround. Watch the edge case: numeric strings (`"0"`) still come through correctly on 13.17.1+ — the fix only affected numeric `0`.
+**`Request::json()` top-level zero fix (Laravel 13.18.0+) — PR #60614:** Before 13.18.0, a `PUT`/`PATCH` request with a literal `0` body was coerced to `[]` when read via `Request::json()` or `Request::all()`. PR #60614 (commit 1c0c8fb5, 2026-06-28) preserves the zero. If your code branches on `$request->json('value') === 0` for counter resets, idempotency keys, or feature flags, you can drop the `?? 0` workaround. Watch the edge case: numeric strings (`"0"`) still come through correctly on 13.18.0+ — the fix only affected numeric `0`.
 
 ## Route Metadata for OpenAPI Generation (Laravel 13.17+)
 
@@ -447,21 +447,21 @@ See `controllers.md` (Route Metadata section) for the full API + group-cascade b
 'supports_credentials' => false,
 ```
 
-## `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` DoS on Non-Finite Input (Laravel 13.17.1+)
+## `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` DoS on Non-Finite Input (Laravel 13.18.0+)
 
-If any API response field is rendered through `Number::forHumans()`, `Number::abbreviate()`, or `Number::fileSize()` and the value can be influenced by a query string, header, or upstream API, you have a remote-DoS hole on Laravel <13.17.1. Calling these methods with `INF`, `-INF`, or `NaN` recursed into `Number::summarize()` with no base case, exhausted PHP memory, and aborted the request (or the whole worker on a long-lived process). On PHP 8.5, `NaN` also triggered a `floor(log10(NAN))` -> int deprecation warning before the OOM.
+If any API response field is rendered through `Number::forHumans()`, `Number::abbreviate()`, or `Number::fileSize()` and the value can be influenced by a query string, header, or upstream API, you have a remote-DoS hole on Laravel <13.18.0. Calling these methods with `INF`, `-INF`, or `NaN` recursed into `Number::summarize()` with no base case, exhausted PHP memory, and aborted the request (or the whole worker on a long-lived process). On PHP 8.5, `NaN` also triggered a `floor(log10(NAN))` -> int deprecation warning before the OOM.
 
-13.17.1 (PR #60617, commit 3a3c1d2b, 2026-06-27; PR #60625, commit 7e9d4aa1, 2026-06-29) short-circuits to `Number::format()` and returns the locale-aware `INF` / `-INF` / `NaN` symbol.
+13.18.0 (PR #60617, commit 3a3c1d2b, 2026-06-27; PR #60625, commit 7e9d4aa1, 2026-06-29) short-circuits to `Number::format()` and returns the locale-aware `INF` / `-INF` / `NaN` symbol.
 
 ```php
 use Illuminate\Support\Number;
 
-// In a resource — pre-13.17.1, ?views=1e400 crashes the request
+// In a resource — pre-13.18.0, ?views=1e400 crashes the request
 public function toArray(Request $request): array {
     return [
-        'views'  => Number::forHumans((float) $this->views_count),  // safe on 13.17.1+
-        'size'   => Number::fileSize($this->attachment_bytes),      // safe on 13.17.1+
-        'rate'   => Number::abbreviate($this->computeRate()),      // safe on 13.17.1+
+        'views'  => Number::forHumans((float) $this->views_count),  // safe on 13.18.0+
+        'size'   => Number::fileSize($this->attachment_bytes),      // safe on 13.18.0+
+        'rate'   => Number::abbreviate($this->computeRate()),      // safe on 13.18.0+
     ];
 }
 ```
@@ -488,7 +488,7 @@ class FiniteNumber implements ValidationRule
 **Audit checklist:**
 - `grep -rn "Number::forHumans\|Number::abbreviate\|Number::fileSize" app/Http/Resources/ app/Http/Controllers/`
 - For every hit, confirm the input path cannot be `INF` / `NaN` (database casts, int math, validated `numeric` input with the `FiniteNumber` rule).
-- If you can't upgrade to 13.17.1 immediately, wrap the call sites:
+- If you can't upgrade to 13.18.0 immediately, wrap the call sites:
 
 ```php
 function safeNumber(mixed $value, callable $fn, string $fallback = 'N/A'): string {
@@ -502,7 +502,7 @@ function safeNumber(mixed $value, callable $fn, string $fallback = 'N/A'): strin
 'views' => safeNumber($this->views_count, fn($v) => Number::forHumans($v)),
 ```
 
-**Cross-references:** full performance-side discussion in `performance.md` (Number INF/NaN OOM section). Related 13.17.1 fix: `Request::json()` now preserves top-level zero bodies (PR #60614) — see the Error Responses section below for the test pattern.
+**Cross-references:** full performance-side discussion in `performance.md` (Number INF/NaN OOM section). Related 13.18.0 fix: `Request::json()` now preserves top-level zero bodies (PR #60614) — see the Error Responses section below for the test pattern.
 
 Source: [PR #60617 — Fix Number::forHumans and Number::abbreviate crashing on INF/NAN](https://github.com/laravel/framework/pull/60617) | [PR #60625 — Fix Number::fileSize wrong unit suffix for non-finite inputs](https://github.com/laravel/framework/pull/60625)
 

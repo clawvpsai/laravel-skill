@@ -362,4 +362,4 @@ wrong, now documented:
   common blind spot in code-review checklists.
 
 **No new Laravel 13.x release** as of 2026-06-30 18:00 UTC. v13.17.0 (June 23, 2026) remains the
-latest. v13.17.1 / v13.18.0 still pending.
+latest. v13.18.0 shipped 2026-06-30; relevant fixes are in it.

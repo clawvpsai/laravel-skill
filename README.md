@@ -70,7 +70,7 @@ php artisan --version
 
 | Version | Status | PHP | Key Features |
 |---|---|---|---|
-| **Laravel 13** | ✅ Latest (v13.17.0, June 23 2026 — still current) | 8.3+ | AI/Boost MCP, Reverb, new attributes, PHP 8.4/8.5 |
+| **Laravel 13** | ✅ Latest (v13.18.0, June 30 2026) | 8.3+ | AI/Boost MCP, Reverb, new attributes, PHP 8.4/8.5; 13.18.0 ships the Number INF/NaN DoS guard (PR #60617 + #60625), HEAD cache-header fix (PR #60589), schedule:work signal handling (PR #60616), and soft-delete event gating (PR #60605) |
 | Laravel 12 | Stable | 8.2+ | Bootstrap 5, Vite, per-second rate limiting |
 | Laravel 11 | Security fixes | 8.1+ | Cleaner bootstrap, health endpoint |
 
@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-06-30 18:00 UTC (cycle 15) — Laravel 13.17.0 still latest, no new tagged release, no new framework CVEs. Targeted the two oldest untouched files (both 3+ days stale) with feature gaps that AI models keep getting wrong: `migrations.md` got a full **Generated Columns & Identity Columns** section (`storedAs()` / `virtualAs()` for MySQL/MariaDB, `storedAs()` only for PostgreSQL/SQLite, `generatedAs()` SQL-standard identity columns with `->always()` precedence — clarifies the gotcha that `generatedAs()` only works on `smallint`/`integer`/`bigint` sequences and fails for string concatenation), `->comment('text')` modifier, and the complete **Available Index Types matrix** (fullText with optional `->language('english')` on PostgreSQL, spatialIndex on MySQL/MariaDB, plus gotchas around short strings and PG `tsvector`); `file-uploads.md` got the **File Visibility** section covering `public`/`private` model and the `setVisibility()` metadata-vs-re-upload gotcha, fixed the `Storage::temporaryUploadUrl()` worked example to use the Laravel 13.x array-destructure return (`['url' => $url, 'headers' => $headers]` — older docs show the legacy string return), and a new **Anti-Extension-Spoofing** section covering the `evil.php.jpg` attack plus the layered defense (never trust original filename → `hashName()`, validate with `finfo` on actual file bytes, pair Laravel's `mimes:` with `file|image` to force the symfony MIME guesser, disable PHP execution in upload dirs in nginx/Apache, sanitize SVGs, strip EXIF). All details cross-linked from `versions.md` cycle-15 ecosystem stamp. SKILL.md bumped v1.22.2 → v1.22.3. 15 cycles in last 3 days.
+**Last research cycle:** 2026-07-01 00:03 UTC (cycle 16) — **Laravel v13.18.0 released 2026-06-30 12:55 UTC** (16 PRs, all bug fixes — no breaking changes; missed by cycle 15 which ran 5 hours before the tag). `versions.md` got a full **"New in Laravel 13.18"** section covering every fix in the release: `schedule:work` graceful signal handling (PR #60616), `WorkerStopping` `jobsProcessed` + `lastJobProcessedAt` payload (PR #60592 + #60608), soft-delete `restore()`/`restoring` event gating (PR #60605), `HEAD` cache-header fix (PR #60589 — 13.16 regression), `RateLimited` middleware `__sleep()` fix (PR #60609), `Request::json()` top-level zero body fix (PR #60614), `Number::forHumans`/`abbreviate`/`fileSize` INF/NaN guard (PR #60617 + #60625 — treated as remote-DoS on API responses rendering user input), `php artisan dev` priority registration + `--kill-others-on-fail` (PR #60580 + #60606), TaggedCache `flexible()` lock/defer namespace fix (PR #60626), debounced-jobs cache-hit reduction (PR #60575), conditional return types (PR #60586 + #60591). All cross-referenced into `api.md`, `controllers.md`, `observers.md`, `performance.md`, `queues.md`, `artisan.md`. The pre-existing "Late-June 2026 Bug Fixes" section was reframed from "pending fixes" → "shipped-in-13.18 history trail". Corrected all `13.17.1+` → `13.18.0+` references in `api.md`, `controllers.md`, `performance.md`, `SKILL.md` (the fixes were predicted to ship in v13.17.1 but actually shipped in v13.18.0 — no v13.17.1 was tagged). SKILL.md bumped v1.22.3 → v1.22.4. 16 cycles in last 3 days.
 
 ---
 
@@ -111,7 +111,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
 - **~9,980 lines** of production-ready content
-- **Update cadence:** Every 6 hours via OpenClaw cron — 14 cycles in last 2.5 days (each targeting the oldest untouched files or new CVEs)
+- **Update cadence:** Every 6 hours via OpenClaw cron — 16 cycles in last 3 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 

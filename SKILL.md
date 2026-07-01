@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.3
+version: 1.22.4
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -42,8 +42,13 @@ metadata:
 | Laravel AI SDK vs Laravel MCP vs Laravel Boost | `ai.md` (matrix section) | Pick the right product: AI SDK = app calls AI; MCP = expose app as MCP server; Boost = dev-time AI assistant context |
 | Single action controllers (`__invoke`) | `controllers.md` (Single Action Controllers section) | Webhook handlers, OIDC callbacks, billing redirects — actions that don't fit the 7-method resource model |
 | `Route::pattern()` global constraints | `controllers.md` (Route Patterns section) | Force `{id}` to match `\d+` (or any regex) app-wide; watch 404 vs `ModelNotFoundException` in tests |
-| HEAD request cache headers (PR #60589) | `controllers.md` (API Versioning section) | 13.17.1+ finally sets `Cache-Control` / `ETag` on HEAD; CDN cache-warming scripts broke before |
+| HEAD request cache headers (PR #60589) | `controllers.md` (API Versioning section) | 13.18.0+ finally sets `Cache-Control` / `ETag` on HEAD; CDN cache-warming scripts broke before |
 | `WorkerStopping` `jobsProcessed` + `lastJobProcessedAt` (PR #60592) | `queues.md` (WorkerStopping section) | Lifetime-job-count and graceful-shutdown-gap dashboards without dirty reflection hacks |
+| `php artisan dev` priority-based registration (PR #60580) | `artisan.md` (Dev Orchestration section) | 13.18.0+ lets vendor packages register a deterministic order so critical dev processes (log tail, queue worker) come first |
+| `php artisan dev --kill-others-on-fail` (PR #60606) | `artisan.md` (Dev Orchestration section) | 13.18.0+ tears down sibling dev processes on non-zero exit; use in CI / one-shot dev, leave off for normal local dev |
+| TaggedCache `flexible()` lock/defer namespace fix (PR #60626) | `performance.md` (TaggedCache section) | 13.18.0+ namespaces `flex_lock:` and `flex_defer:` keys separately so a custom lockName can't collide with a defer label |
+| Debounced-jobs cache-hit reduction (PR #60575) | `performance.md` (Cache debounce subsection) | 13.18.0+ skips lock acquisition when already inside the debounce window — pairs with the 13.17.0 `maxWait` fix |
+| `RateLimited` middleware `releaseAfter` `__sleep()` fix (PR #60609) | `queues.md` (RateLimited middleware section) | 13.18.0+ serializes throttle timestamps so `dispatch($job->afterCommit())` doesn't lose the throttle window |
 | `schedule:work` graceful signal handling (PR #60616) | `artisan.md` (schedule:work section) | Long-lived scheduler in Docker/K8s/supervisord exits cleanly on SIGTERM, lets in-flight runs finish |
 | Soft-delete `restore()` event gating (PR #60605) | `observers.md` (restored callback note) | Laravel 13.17+ only fires `restored` when the underlying save() actually succeeded — check the boolean return |
 | Embedding caching (`Embeddings::for(...)->cache(seconds: ...)`) | `ai.md` (Embedding Caching section) | Skip duplicate API calls for repeated inputs (knowledge base, FAQs) |
@@ -52,8 +57,8 @@ metadata:
 | `php artisan i18n:check` (missing translation detector) | `localization.md` (Detecting Missing Translations section) | CI integration to fail builds on incomplete translations |
 | Lazy translation loading (JSON-only, lazy namespaces, DB+cache) | `localization.md` (Lazy Translation Loading section) | Avoid loading thousands of keys on every request for large apps |
 | `Model::preventLazyLoading()` / `preventSilentlyDiscardingAttributes()` / `preventAccessingMissingAttributes()` / `prohibitDestructiveCommands()` | `eloquent.md` (Eloquent Strictness Hardening section) | Turn silent Eloquent bugs into loud exceptions in dev — N+1, missing `$fillable`, typos, accidental mass-delete |
-| `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` INF/NaN guard (PR #60617 + #60625) | `performance.md` (Number OOM section) + `api.md` (Number DoS section) | 13.17.1+ stops these from recursing on `INF`/`NaN` and OOM-crashing the worker — treat as a remote-DoS vector on API responses that render user input |
-| `Request::json()` top-level zero body fix (PR #60614) | `api.md` (Error Responses section) | 13.17.1+ preserves a literal `0` request body (was coerced to `[]`); `PUT /counters/abc/reset` endpoints with body `0` now work without a `?? 0` workaround |
+| `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` INF/NaN guard (PR #60617 + #60625) | `performance.md` (Number OOM section) + `api.md` (Number DoS section) | 13.18.0+ stops these from recursing on `INF`/`NaN` and OOM-crashing the worker — treat as a remote-DoS vector on API responses that render user input |
+| `Request::json()` top-level zero body fix (PR #60614) | `api.md` (Error Responses section) | 13.18.0+ preserves a literal `0` request body (was coerced to `[]`); `PUT /counters/abc/reset` endpoints with body `0` now work without a `?? 0` workaround |
 
 
 ## Critical Rules (Never Forget)
@@ -73,7 +78,7 @@ metadata:
 - **Route model binding defaults to `id`** — override `getRouteKeyName()` for slugs
 - **`Route::metadata()` survives `route:cache`** (Laravel 13.17+) — first-class route metadata via dot notation; use for audit, feature flags, OpenAPI emitters
 - **`schedule:work` now catches signals** (Laravel 13.17+, PR #60616) — `SIGINT`/`SIGTERM`/`SIGQUIT` stop new runs cleanly and let in-flight `schedule:run` finish; long-lived scheduler processes no longer need wrapper scripts
-- **HEAD request cache headers** (Laravel 13.17.1+, PR #60589) — `SetCacheHeaders` middleware now applies to `HEAD`. Before: CDN cache-warm scripts got no `Cache-Control`/`ETag`. Force cache headers explicitly if stuck on 13.16
+- **HEAD request cache headers** (Laravel 13.18.0+, PR #60589) — `SetCacheHeaders` middleware now applies to `HEAD`. Before: CDN cache-warm scripts got no `Cache-Control`/`ETag`. Force cache headers explicitly if stuck on 13.16
 
 ## Version Defaults
 

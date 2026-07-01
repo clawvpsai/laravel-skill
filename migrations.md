@@ -465,5 +465,5 @@ Laravel 13 schema primitives that AI models keep asking about wrong:
   PG fulltext needs `tsvector` for weighted search).
 
 **No new Laravel 13.x release** as of 2026-06-30 18:00 UTC. v13.17.0 (June 23, 2026) remains the
-latest tagged release. v13.17.1 / v13.18.0 still pending — track
+latest tagged release. v13.18.0 shipped 2026-06-30; fixes #60589/#60614/#60617/#60625 are in it — track
 [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).

@@ -349,21 +349,21 @@ $results = KnowledgeArticle::query()
 7. **No transactions for related writes** — partial updates on failure
 8. **Running heavy work synchronously** — block users, timeout issues
 
-## `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` OOM on `INF` / `NaN` (Laravel 13.17.1+)
+## `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` OOM on `INF` / `NaN` (Laravel 13.18.0+)
 
-Before the 13.17.1 cycle, `Number::forHumans(INF)`, `Number::forHumans(-INF)`, `Number::forHumans(NAN)`, and `Number::abbreviate(INF)` all recursed into `Number::summarize()` without a base case for non-finite inputs. The process silently exhausted PHP memory and aborted. On PHP 8.5 there was also deprecation noise from `floor(log10(NAN))` -> int coercion. If your app renders a metric, a counter, a rate, or any user-controllable value through `Number::forHumans()` (e.g. a stats dashboard, a quota bar, a "1.2K views" label), an attacker can feed `INF` via a query string and crash the worker.
+Before 13.18.0, `Number::forHumans(INF)`, `Number::forHumans(-INF)`, `Number::forHumans(NAN)`, and `Number::abbreviate(INF)` all recursed into `Number::summarize()` without a base case for non-finite inputs. The process silently exhausted PHP memory and aborted. On PHP 8.5 there was also deprecation noise from `floor(log10(NAN))` -> int coercion. If your app renders a metric, a counter, a rate, or any user-controllable value through `Number::forHumans()` (e.g. a stats dashboard, a quota bar, a "1.2K views" label), an attacker can feed `INF` via a query string and crash the worker.
 
-In 13.17.1 (PR #60617, commit 3a3c1d2b, 2026-06-27), the methods delegate to `Number::format()` and emit the locale-aware infinity, -infinity, NaN symbols. The matching fix to `Number::fileSize()` (PR #60625, commit 7e9d4aa1, 2026-06-29) ensures `Number::fileSize(INF)` no longer returns a unit-suffixed string for an unbounded value.
+In 13.18.0 (PR #60617, commit 3a3c1d2b, 2026-06-27), the methods delegate to `Number::format()` and emit the locale-aware infinity, -infinity, NaN symbols. The matching fix to `Number::fileSize()` (PR #60625, commit 7e9d4aa1, 2026-06-29) ensures `Number::fileSize(INF)` no longer returns a unit-suffixed string for an unbounded value.
 
 ```php
 use Illuminate\Support\Number;
 
-// Pre-13.17.1: OOM-crashes the PHP process
+// Pre-13.18.0: OOM-crashes the PHP process
 Number::forHumans(INF);     // aborts (recursion, no base case)
 Number::abbreviate(-INF);   // aborts
 Number::forHumans(NAN);     // aborts + PHP 8.5 deprecation warning
 
-// 13.17.1+: returns the locale-aware symbol
+// 13.18.0+: returns the locale-aware symbol
 Number::forHumans(INF);     // "\u221e"
 Number::forHumans(-INF);    // "-\u221e"
 Number::forHumans(NAN);     // "NaN"
@@ -376,7 +376,7 @@ Number::fileSize(INF);      // "\u221e" (no "B" / "KB" suffix)
 **Audit checklist:**
 - `grep -r "Number::forHumans\|Number::abbreviate\|Number::fileSize" app/ resources/`
 - For every hit, trace back: can the input be `INF` / `NaN`? A `count($hugeSet)` on a 64-bit PHP build cannot overflow to `INF` in normal usage, but `PHP_INT_MAX + 1` arithmetic, a division by zero in user input (`$users / $views`), or a malformed JSON payload can.
-- If yes, either upgrade to 13.17.1+ or pre-validate the input to clamp to a finite value:
+- If yes, either upgrade to 13.18.0+ or pre-validate the input to clamp to a finite value:
 
 ```php
 // Defensive pre-check (works on all 13.x, no upgrade required)
