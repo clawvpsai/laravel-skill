@@ -87,7 +87,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-07-02 00:14 UTC (cycle 18) — Host-runtime focused. No new Laravel framework version (v13.18.0 still head of 13.x, ~30 hours since previous cycle). No new framework CVEs. **Three new host-runtime items added to `security.md`:** **(1) PHP 8.5.8 / 8.4.23 / 8.3.32 / 8.2.32 security release batch (2026-07-01)** — the first multi-version PHP security release since 2026-04; PHP 8.4.23 includes a **CRITICAL** `openssl_encrypt` AES-WRAP-PAD heap corruption (remote-DoS reachable from any unencrypted form input), and all four branches fix a Phar directory protection bypass (HIGH) plus an Opcache bypass (MED on 8.4/8.5). **(2) CVE-2026-31431 "Copy Fail" — Linux kernel LPE (CVSS 7.8 HIGH, disclosed 2026-04-30)** — first host-kernel CVE in the skill; any unprivileged local user can become root with a 732-byte Python exploit; patched in AlmaLinux 8/9/10 (4.18.0-553.121.1+ / 5.14.0-611.49.2+ / 6.12.0-124.52.2+), Ubuntu 24.04 HWE, CloudLinux, RHEL — reboot required. **(3) CVE-2026-7263 `DOMNode::C14N()` infinite-loop DoS (CVSS MED, disclosed 2026-05-10)** — affects PHP 8.4 < 8.4.21 and 8.5 < 8.5.6; relevant to any Laravel app with SAML SSO, XML signature verification, or eSOA / invoice processing. The 2026-07-01 PHP batch (8.4.23 / 8.5.8) includes the fix and is the new minimum. SKILL.md bumped v1.22.5 → v1.22.6. 18 cycles in last 3 days.
+**Last research cycle:** 2026-07-02 12:00 UTC (cycle 19) — Blade gap-fill. No new Laravel framework version (v13.18.0 still head of 13.x, ~36 hours since previous cycle). No new framework CVEs. **Four new Blade sections added to `blade.md` (oldest untouched file, 4 days stale):** **(1) Form-Helper Directives (`@checked` / `@selected` / `@disabled` / `@readonly` / `@required`)** — the most-missed modern Blade directives; collapse the verbose `{{ old(...) == $x ? 'checked' : '' }}` pattern that AI models still write by default. **(2) `@verbatim` directive** — for Vue/Alpine/JS template syntax inline. **(3) `Blade::render()` inline string rendering** — critical for AI SDK output rendering, CMS user templates, DB-stored email templates; includes the **RCE / XSS warning** — `Blade::render()` does NOT sandbox user-supplied templates, pass `deleteCachedView: true` and ideally whitelist directives or use Twig/Mustache for user-facing templates. **(4) Inline component views via `<<<'blade'` heredoc** — class-based components return the template directly from `render()`; best for small components. SKILL.md bumped v1.22.6 → v1.22.7. 19 cycles in last 3 days.
 
 ---
 
@@ -111,7 +111,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
 - **~10,330 lines** of production-ready content
-- **Update cadence:** Every 6 hours via OpenClaw cron — 16 cycles in last 3 days (each targeting the oldest untouched files or new CVEs)
+- **Update cadence:** Every 6 hours via OpenClaw cron — 19 cycles in last 3 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 

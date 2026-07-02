@@ -577,3 +577,27 @@ Disclosed 2026-04-29 by Xint Code / Theori. CVSS **7.8 HIGH**. Local privilege e
 3. **CVE-2026-7263 `DOMNode::C14N()` infinite-loop DoS** (2026-05-10) — affects PHP 8.4 < 8.4.21 and 8.5 < 8.5.6. Patched in 8.4.21+ / 8.5.6+; **8.4.23 / 8.5.8 (2026-07-01) include the fix and are the new minimums**.
 
 SKILL.md bumped to **v1.22.6** (cycle-18 host-runtime security update — PHP 2026-07-01 batch + Copy Fail + DOMNode::C14N()). 18 cycles in last 3 days.
+
+### Ecosystem Update (2026-07-02, cycle 19)
+
+#### No new Laravel framework version
+
+Laravel framework **v13.18.0** (June 30, 2026) remains the latest stable as of 2026-07-02 12:00 UTC — ~36 hours since the previous cycle. GitHub `releases/latest` endpoint, Releasebot.io, and Laravel News all confirm 13.18.0 is still the head of the 13.x line. `laravel/laravel` skeleton at v13.8.0, `laravel/passport` at v13.7.5, `laravel/reverb` at v1.10.2 — all unchanged.
+
+GitHub Security Advisories API for `laravel/framework` rechecked at 12:00 UTC — no new framework-level advisories since `GHSA-crmm-hgp2-wgrp` (CVE-2026-48041, June 8, 2026), already documented in `security.md`.
+
+Filament CVE-2026-55409 ("Disabled RichEditor field state can be used for XSS", June 17, 2026) is **NOT yet in `security.md`** but is a Filament-specific issue, not a Laravel framework CVE. It only affects apps using the Filament RichEditor with disabled state — defer to a future Filament-cluster cycle unless we get reports of exploitation.
+
+#### Targeted feature-gap fix: `blade.md` (oldest untouched file at cycle start)
+
+At cycle start, `blade.md` had not been touched since 2026-06-28 (cycle 6) — **4 days stale**, the oldest untouched file in the skill. The most-common AI-model miss in Blade work is the **form-helper directives** (`@checked` / `@selected` / `@disabled` / `@readonly` / `@required`) — added in Laravel 9.0 and stable for 4 years, but AI models still write the verbose `{{ old(...) == $x ? 'checked' : '' }}` pattern by default. Also missing: `@verbatim` (for Vue/Alpine templates inline) and `Blade::render()` for AI-generated / CMS-user templates — both critical for Laravel 13's AI SDK output rendering and modern landing-page builders.
+
+- **`blade.md`** — added four new sections:
+  1. **Form-Helper Directives (`@checked` / `@selected` / `@disabled` / `@readonly` / `@required`)** — full examples for each directive, plus the XSS-safety angle (the directives emit a static attribute when truthy and nothing when falsy, so they're safer than hand-rolled concatenations that some authors mistakenly pass `$userInput` into). Includes the accessibility note (`@required` only adds the HTML5 attribute; pair with `required` in `validate()`).
+  2. **`@verbatim` Directive** — for Vue / Alpine / vanilla JS templates where `{{ }}` and `@click` would otherwise be parsed by Blade. Documented the non-nestable gotcha.
+  3. **`Blade::render()` — Inline String Rendering** — critical for AI-generated templates, CMS user templates, DB-stored email templates. Documented the `deleteCachedView: true` cache-pollution guard AND the **RCE / XSS warning** — `Blade::render()` does NOT sandbox user-supplied templates; a malicious template can execute arbitrary PHP via `@php` directives, call arbitrary static methods via `{{ \\App\\Services\\X::dangerous() }}`, or include arbitrary components via `<x-*>`. The Laravel AI SDK deliberately does NOT use `Blade::render()` for untrusted output for exactly this reason. Recommendation: whitelist allowed directives or use a separate templating engine (Twig / Handlebars / Mustache) for user-facing templates.
+  4. **Inline Component Views via `<<<'blade'` Heredoc** — class-based components can return the Blade template directly from `render()` instead of pointing at a separate `.blade.php` file. Best for small components; >20 lines should still use external view files for cache + IDE-highlight reasons. Documented the nowdoc (single-quote identifier) syntax.
+
+- **`SKILL.md`** — bumped v1.22.6 → v1.22.7; added four new nav-table entries for the new Blade sections.
+
+SKILL.md bumped to **v1.22.7** (cycle-19 Blade gap-fill — form-helper directives + `@verbatim` + `Blade::render()` + inline component views). 19 cycles in last 3 days.

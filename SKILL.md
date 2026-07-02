@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.6
+version: 1.22.7
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -59,6 +59,10 @@ metadata:
 | `Model::preventLazyLoading()` / `preventSilentlyDiscardingAttributes()` / `preventAccessingMissingAttributes()` / `prohibitDestructiveCommands()` | `eloquent.md` (Eloquent Strictness Hardening section) | Turn silent Eloquent bugs into loud exceptions in dev — N+1, missing `$fillable`, typos, accidental mass-delete |
 | `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` INF/NaN guard (PR #60617 + #60625) | `performance.md` (Number OOM section) + `api.md` (Number DoS section) | 13.18.0+ stops these from recursing on `INF`/`NaN` and OOM-crashing the worker — treat as a remote-DoS vector on API responses that render user input |
 | `Request::json()` top-level zero body fix (PR #60614) | `api.md` (Error Responses section) | 13.18.0+ preserves a literal `0` request body (was coerced to `[]`); `PUT /counters/abc/reset` endpoints with body `0` now work without a `?? 0` workaround |
+| `@checked` / `@selected` / `@disabled` / `@readonly` / `@required` form-helper directives | `blade.md` (Form-Helper Directives section) | Collapse the verbose `{{ old(...) == $x ? 'checked' : '' }}` pattern into single conditional attributes; emits static attribute when truthy, nothing when falsy (also XSS-safer than hand-rolled concatenations) |
+| `@verbatim` directive (Vue/Alpine/JS) | `blade.md` (`@verbatim` section) | Wrap a chunk of frontend-framework template syntax so Blade doesn't try to parse `{{ }}` and `@click`; can't be nested |
+| `Blade::render()` inline string rendering | `blade.md` (Rendering Inline Blade Strings section) | AI-generated output, CMS user templates, DB-stored email templates; **NOT sandboxed** — user-supplied templates can RCE via `@php` or arbitrary method calls; pass `deleteCachedView: true` and ideally whitelist directives or use Twig/Mustache for user-facing templates |
+| Inline component views via `<<<'blade'` heredoc | `blade.md` (Inline Component Views section) | Class-based components return the Blade template directly from `render()`; best for small components, >20 lines still want external view files for cache + IDE highlighting |
 
 
 ## Critical Rules (Never Forget)
