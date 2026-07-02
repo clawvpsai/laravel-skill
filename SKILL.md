@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.7
+version: 1.22.8
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -63,6 +63,10 @@ metadata:
 | `@verbatim` directive (Vue/Alpine/JS) | `blade.md` (`@verbatim` section) | Wrap a chunk of frontend-framework template syntax so Blade doesn't try to parse `{{ }}` and `@click`; can't be nested |
 | `Blade::render()` inline string rendering | `blade.md` (Rendering Inline Blade Strings section) | AI-generated output, CMS user templates, DB-stored email templates; **NOT sandboxed** — user-supplied templates can RCE via `@php` or arbitrary method calls; pass `deleteCachedView: true` and ideally whitelist directives or use Twig/Mustache for user-facing templates |
 | Inline component views via `<<<'blade'` heredoc | `blade.md` (Inline Component Views section) | Class-based components return the Blade template directly from `render()`; best for small components, >20 lines still want external view files for cache + IDE highlighting |
+| FrankenPHP + Octane (Caddy single-binary runtime) | `deployment.md` (FrankenPHP section) | Laravel Cloud's underlying runtime; HTTP/3 + auto HTTPS + Mercure + Brotli out of the box; preferred over Swoole/RoadRunner for new Octane deploys on PHP 8.3+ |
+| OPcache preload + tracing JIT (PHP 8.3+) | `deployment.md` (OPcache + JIT section) | Single biggest free performance win — preload the framework autoloader into shared memory at worker boot; pair with `validate_timestamps=0` + SAPI reload on deploy |
+| FrankenPHP thread-pool split (slow-endpoint isolation) | `deployment.md` (FrankenPHP section) | Mirror of FPM `pm` pool split — keep `/api/reports/*` and `/api/exports/*` on a dedicated thread pool so they can't starve the main request pool |
+| `LARAVEL_STORAGE_PATH` for embedded FrankenPHP binaries | `deployment.md` (FrankenPHP section) | Each new binary extraction lives in a different temp dir — set `LARAVEL_STORAGE_PATH=/var/lib/yourapp/storage` or call `Application::useStoragePath()` so uploads/logs/caches survive upgrades |
 
 
 ## Critical Rules (Never Forget)

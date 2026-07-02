@@ -537,6 +537,168 @@ curl -X POST -H "Transfer-Encoding: chunked" -H "Content-Type: application/json"
 
 **Why `request_terminate_timeout` is the critical setting:** when nginx is bypassed (Laravel Octane/RoadRunner exposed directly, or internal services), there is no upstream body timeout — `request_terminate_timeout` is what closes the FPM worker so it can serve the next request. Without it, a single blocked request ties up a worker until OOM.
 
+
+## OPcache + JIT Production Tuning (PHP 8.3+)
+
+OPcache is the single biggest free performance win for Laravel. With `validate_timestamps=0` and a preload script, the framework autoloader, service container, and compiled config are loaded into shared memory once at worker startup — eliminating the per-request disk + parse cost on the bootstrap hot path.
+
+```ini
+; /etc/php/8.4/fpm/conf.d/10-opcache.ini
+[opcache]
+opcache.enable=1
+opcache.enable_cli=0                   ; CLI workers can re-validate
+opcache.memory_consumption=256         ; MB — bump if you see "interned string buffer full"
+opcache.interned_strings_buffer=64
+opcache.max_accelerated_files=20000    ; MUST exceed your project's PHP file count
+opcache.max_wasted_percentage=10
+opcache.validate_timestamps=0          ; PRODUCTION ONLY — clear opcache during deploys
+opcache.revalidate_freq=0              ; unused when validate_timestamps=0
+opcache.fast_shutdown=1
+opcache.save_comments=1
+opcache.preload=/var/www/html/preload.php
+opcache.preload_user=www-data
+
+; PHP 8.3+ JIT — only meaningful for CPU-bound code (image processing, math, JSON-heavy APIs)
+; tracing JIT is generally the best starting point for Laravel apps
+opcache.jit=tracing
+opcache.jit_buffer_size=64M
+```
+
+**`preload.php` (place at project root, commit it):**
+```php
+<?php
+// Preload the framework + compiled config so the autoloader is bypassed on every request.
+// Run `php artisan config:cache route:cache event:cache view:cache` before generating this.
+$app = require_once __DIR__.'/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+$preload = function (string $path) use (&$preload): void {
+    if (is_file($path)) {
+        opcache_compile_file($path);
+        return;
+    }
+    if (is_dir($path)) {
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path)) as $file) {
+            if ($file->isFile() && str_ends_with($file->getFilename(), '.php')) {
+                opcache_compile_file($file->getPathname());
+            }
+        }
+    }
+};
+
+// Preload the framework and your compiled config files
+$preload(__DIR__.'/vendor/laravel/framework/src/Illuminate');
+$preload(__DIR__.'/bootstrap/cache');
+// Optionally preload your app code (larger preload = more shared memory, slower worker boot)
+$preload(__DIR__.'/app');
+```
+
+**Critical deploy rule:** when `validate_timestamps=0`, you MUST invalidate OPcache on every deploy or stale code keeps running. Pick ONE:
+
+```bash
+# Option A — restart the SAPI (simplest, brief downtime)
+sudo systemctl reload php8.4-fpm
+
+# Option B — surgical cache flush (no downtime, less thorough)
+php -r 'opcache_reset(); echo "opcache reset\n";'
+# Then call it from a privileged script in your deploy pipeline.
+
+# Option C — opcache.file_cache_fallback (PHP 7.4+) lets you ship a precompiled
+# file cache to each host; opcache picks it up on the next request without restart.
+```
+
+**Monitoring (add to observability dashboard):**
+```php
+// Hit this endpoint from a Prometheus blackbox exporter
+Route::get('/metrics/opcache', function () {
+    $status = opcache_get_status(false);
+    return response()->json([
+        'memory_used_pct' => $status['memory_usage']['used_memory'] / $status['memory_usage']['free_memory'] * 100,
+        'hit_rate' => $status['opcache_statistics']['opcache_hit_rate'] ?? 0,
+        'cached_scripts' => $status['opcache_statistics']['num_cached_scripts'] ?? 0,
+        'jit_buffer_used' => $status['jit']['buffer_size'] ?? 0,
+    ]);
+})->middleware('auth.basic');  // gate it — opcache stats can leak app surface
+```
+
+**When JIT helps vs. hurts:** tracing JIT shines on CPU-bound code (image processing, math, Eloquent's `whereIn(array_fill(0, 10000, 1))` style queries, JSON encode/decode loops). For typical CRUD Laravel apps the JIT gain is usually 2-5% — not worth the 64MB RAM cost on small hosts. Start with `tracing` + 64M on hosts with >1GB RAM per worker; back off to `function` mode or 32M if you don't see meaningful improvement in your blackbox p95.
+
+**When NOT to preload the entire framework:** if you run hundreds of micro-services, each hosting a small Laravel app, the shared memory cost of preloading the full framework per worker is wasteful — switch to `opcache.preload` only on the heavy services (monolith, big API) and let the smaller services rely on plain `opcache.enable=1` + the autoloader.
+
+## FrankenPHP (Laravel Cloud's Underlying Runtime)
+
+FrankenPHP is the modern, single-binary PHP app server built on Caddy — used by [Laravel Cloud](https://cloud.laravel.com) as its primary runtime, and a first-class Laravel Octane driver. It runs PHP as a long-lived worker (no per-request boot), supports HTTP/1.1, HTTP/2, HTTP/3, automatic HTTPS (Let's Encrypt + zero-config), Mercure hub, and Brotli/Zstd compression out of the box.
+
+```bash
+# Install (Linux glibc build — avoid Alpine/musl in production per FrankenPHP docs)
+curl -fsSL https://github.com/dunglas/frankenphp/releases/latest/download/frankenphp-linux-x86_64 -o /usr/local/bin/frankenphp
+chmod +x /usr/local/bin/frankenphp
+
+# Standalone Laravel with built-in Octane driver
+composer require laravel/octane
+php artisan octane:install --server=frankenphp
+
+# Run via Octane (worker mode, auto-recycles every 500 requests)
+php artisan octane:frankenphp --workers=4 --max-requests=500
+```
+
+**Caddyfile for a production deploy (zero-config TLS, HTTP/3, Brotli):**
+```caddyfile
+{
+    frankenphp {
+        num 4
+    }
+    order php_server before file_server
+}
+
+yourapp.com {
+    root * /var/www/html/public
+    encode zstd br gzip
+    php_server {
+        try_files {path} {path}/ /index.php?{query}
+    }
+
+    # Split the thread pool for slow endpoints (uploads, reports) so they
+    # can't starve the main pool — exactly like an FPM "pm" pool split
+    @slow path /api/reports/* /api/exports/*
+    route @slow {
+        php_server {
+            worker /var/www/html/public/index.php 1 {
+                num 1
+                max_threads 4
+            }
+        }
+    }
+
+    log {
+        output file /var/log/caddy/yourapp.log
+    }
+}
+```
+
+**Sizing formula:** `num_threads × memory_limit < available_memory`. With a 256M `memory_limit` and a 4 GB box, that's ~14 max threads. Start with `num = CPU cores` and tune up under load tests (k6, Gatling).
+
+**Why `frankenphp` instead of Swoole or RoadRunner:**
+
+| Aspect | Swoole | RoadRunner | FrankenPHP |
+|---|---|---|---|
+| TLS / HTTP/3 | manual | manual | built-in (Caddy) |
+| Auto HTTPS | ❌ | ❌ | ✅ Let's Encrypt |
+| Workers reload on file change | ❌ manual | ⚠️ config-based | ✅ `max-requests` flag |
+| Mercure hub | ❌ | ❌ | ✅ built-in |
+| Production readiness | high (PHP-China heavy) | high | high (Laravel Cloud bet) |
+| Dockerfile base | custom build | custom build | official `dunglas/frankenphp` |
+| PHP version | 8.0+ | 8.0+ | 8.3+ |
+| Static binary | ❌ | ❌ | ✅ single binary deploy |
+
+**Critical caveat — `LARAVEL_STORAGE_PATH` for embedded binaries:** if you ship a Laravel app as a standalone FrankenPHP binary (the `frankenphp build` / `frankenphp php-cli` flow), each new version is extracted into a different temp dir. Set `LARAVEL_STORAGE_PATH=/var/lib/yourapp/storage` in your environment, or call `Application::useStoragePath()` in `bootstrap/app.php`, so uploaded files, logs, and caches survive upgrades.
+
+**FrankenPHP + Octane gotchas:**
+- Static properties and class-level caches leak between requests just like Swoole/RoadRunner — same `Octane::tick()` and `DB::purge()` patterns apply.
+- Caddy's automatic HTTPS requires the box to have public DNS + port 80/443 open. If you're behind a load balancer or in a private VPC, set `auto_https off` in the global options and terminate TLS at the LB.
+- The official Docker image (`dunglas/frankenphp`) is Debian-based; use it directly for production rather than rolling your own multi-stage build.
+- For the `artisan octane:frankenphp` command to work via a standalone binary, the binary MUST be named `frankenphp` and on `$PATH` — Octane shells out to it directly.
+
 ## Common Mistakes
 
 1. **`APP_DEBUG=true` in production** — exposes stack traces, credentials
