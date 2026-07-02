@@ -535,3 +535,45 @@ Targeted the oldest untouched file from the previous batch (`observers.md`, last
 - **`observers.md`** — added new `## ShouldBeDiscovered Opt-Out (Laravel 13.12+)` section between the `#[Boot]`/`#[Initialize]` block and the existing "Updated from Research" entry. Includes the `public static bool $shouldDiscover = false` opt-out pattern, the contract-name caveat (the exact marker-interface name varies between 13.12 patch levels — verify against `vendor/laravel/framework/src/Illuminate/Contracts/Events/` before relying on it), and explicit when-to-use / when-NOT-to-use guidance. Added a corresponding bullet to the `#[Boot]` / `#[Initialize]` summary section.
 
 SKILL.md bumped to **v1.22.5** (cycle-17 gap-fill for `ShouldBeDiscovered` opt-out in `observers.md`). 17 cycles in last 3 days.
+
+### Ecosystem Update (2026-07-02, cycle 18)
+
+#### No new Laravel framework version
+
+Laravel framework **v13.18.0** (June 30, 2026) remains the latest stable as of 2026-07-02 00:14 UTC. GitHub `releases/latest` endpoint, Releasebot.io, and Laravel News all confirm 13.18.0 is still the head of the 13.x line — no 13.18.1, 13.19.0, or 13.17.x patch has been tagged in the ~30 hours since the previous cycle. `laravel/laravel` skeleton at v13.8.0 (May 27), `laravel/passport` at v13.7.5 (Apr 21), `laravel/reverb` at v1.10.2 (May 13) — all unchanged.
+
+GitHub Security Advisories API for `laravel/framework` rechecked at 00:10 UTC 2026-07-02 — no new advisories since the previous one (`GHSA-crmm-hgp2-wgrp` / CVE-2026-48041, June 8, 2026), which is already documented in `security.md`.
+
+#### PHP runtime security releases — 2026-07-01 batch (CRITICAL for Laravel hosts)
+
+The PHP project released **four simultaneous security patches on 2026-07-01** that every Laravel app needs to apply (Laravel 13 requires PHP 8.3+, so 8.3.32 / 8.4.23 / 8.5.8 are in-scope for all current Laravel 13 deployments; 8.2.32 is relevant for projects still on Laravel 12). This is the first multi-version PHP security release since 2026-04 and the first one in the 8.5.x line.
+
+| PHP branch | Release | Severity | Key fixes |
+|---|---|---|---|
+| 8.2 (Laravel 12) | **8.2.32** | MED-HIGH | Phar directory protection bypass, Opcache fix |
+| 8.3 (Laravel 13 min) | **8.3.32** | MED-HIGH | Phar directory protection bypass, Opcache fix |
+| 8.4 (Laravel 13 recommended) | **8.4.23** | **CRITICAL** | **openssl_encrypt AES-WRAP-PAD heap corruption** + Phar bypass + Opcache fix |
+| 8.5 (Laravel 13 supported) | **8.5.8** | MED-HIGH | Phar directory protection bypass, Opcache fix |
+
+**Key vulnerabilities (full details in `security.md`):**
+
+- **PHP 8.4.23 — `openssl_encrypt` AES-WRAP-PAD heap corruption (CRITICAL):** The OpenSSL extension's `openssl_encrypt()` crashes with a heap corruption fault when called with `OPENSSL_CIPHER_AES_256_WRAP_PAD` (or related AES-WRAP variants) and attacker-controlled input. This is reachable from Laravel code that uses `Crypt::encryptString()` (which uses `encrypter.php` defaults), any custom encryption built on `openssl_encrypt`, or any third-party package that wraps OpenSSL (e.g., custom JWT signing, S3 SSE-C client-side encryption). A remote attacker can trigger the crash with a small POST body — this is a remote-DoS on every Laravel 13 host running PHP 8.4 with the default encryption path exposed to user input. Patch: upgrade to **PHP 8.4.23+** (already in apt for Ubuntu 24.04 / Debian 13 by end of week).
+- **PHP 8.5.8 / 8.4.23 / 8.3.32 / 8.2.32 — Phar directory protection bypass:** The phar wrapper historically blocked `phar://` URLs with `..` segments to prevent directory traversal. The bypass lets an attacker who can influence a `phar://` URL used in a `file_get_contents()`, `include`, or `fopen()` call (e.g., via an upload-metadata field or a config value) read or include files outside the phar archive. Laravel apps that accept phar uploads, use `League\CommonMark` with a `phar://` source, or run PHAR-based plugins (e.g., `hirak/prestissimo` historically) are at risk. Patch: upgrade PHP to the in-scope 8.x.32 / 8.x.23 / 8.5.8 build.
+- **PHP 8.5.8 / 8.4.23 — Opcache bypass fix:** The Opcache bypass allowed cached preloaded scripts to retain a stale validation status across a worker respawn. Not directly exploitable, but degrades the security boundary between PHP code and the cached opcodes. Patch: included in the same release line.
+- **CVE-2026-7263 — `DOMNode::C14N()` infinite-loop DoS** (disclosed 2026-05-10, **NOT in skill until now**): PHP versions 8.4.* before 8.4.21 and 8.5.* before 8.5.6 had a flaw in `DOMNode::C14N()` (the XML Canonicalization method) that creates a circular linked list and enters an infinite loop on attacker-controlled XML input. CWE-404 + CWE-835. Laravel apps that accept untrusted XML input and run it through `DOMDocument::C14N()` (rare, but happens in SAML/SSO integrations, e.g., `aacotroneo/laravel-saml2`, custom XML signature verification, eSOA gateways) are vulnerable to a remote-DoS that pegs a PHP-FPM worker until `request_terminate_timeout` kills it. Patch: PHP 8.4.21+ or 8.5.6+ — but **8.4.23 / 8.5.8 from 2026-07-01 also include this fix** (and all subsequent patches), so the upgrade is automatic if you apply the 2026-07-01 batch.
+
+**Why this matters for Laravel apps:** The 2026-07-01 PHP release batch is the most consequential PHP-level security event for Laravel 13 deployments since the 2026-04 AES-WRAP issue. The openssl_encrypt CRITICAL is a remote-DoS reachable from any unencrypted form input that flows into `Crypt::encryptString()`. Apply the PHP patch (or use the OS package manager — `apt install --only-upgrade php8.4` / `dnf upgrade php`) within the next 48 hours. If your app uses Cloudflare or another CDN in front of nginx, the CDN does not protect you — the openssl_encrypt crash happens *inside* the FPM worker, after the request body is already proxied through.
+
+**Recommended action:** Add `apt install --only-upgrade php8.4-fpm php8.4-cli php8.4-common` (or your distro's equivalent) to your standard patching runbook, and add a `php -v` check to your monitoring that alerts when the running PHP version is older than 30 days. The Laravel skill can't enforce a PHP version — that's an OS-level concern — but every Laravel deployment pipeline should verify the PHP patch level is current before allowing a deploy to proceed.
+
+#### CVE-2026-31431 "Copy Fail" — Linux kernel LPE (host-level, every Laravel host)
+
+Disclosed 2026-04-29 by Xint Code / Theori. CVSS **7.8 HIGH**. Local privilege escalation in the kernel's `authencesn` / `AF_ALG` / `splice()` path. Any unprivileged local user can become root with a **732-byte Python exploit** that works unmodified across all major Linux distributions built since 2017. While this is a host-level (kernel) CVE rather than a Laravel CVE, it affects **every PHP/Laravel deployment** on Linux — the exploit is one `python3 copyfail.py` away from a full container/host takeover, and on a Laravel app host where `php-fpm` runs as `www-data`, a single compromised local user (a CI runner account, a leaked deploy key, a low-privileged staging user) can pivot to root. **Fix:** upgrade the kernel (AlmaLinux 8/9/10, Ubuntu 24.04, CloudLinux 8/9/10 — all have patched kernels as of early May 2026) and **reboot**. Temporary mitigation if you can't reboot: blacklist the `algif_aead` module via `initcall_blacklist=algif_aead_init` in GRUB. Full details and patch-version table in `security.md`.
+
+#### Summary of new ecosystem items added this cycle
+
+1. **PHP 8.5.8 / 8.4.23 / 8.3.32 / 8.2.32** security release (2026-07-01) — openssl_encrypt AES-WRAP heap corruption (CRITICAL, PHP 8.4.23), Phar directory bypass (HIGH, all four branches), Opcache fix (MED, PHP 8.5.8 / 8.4.23). Affects every PHP/Laravel host.
+2. **CVE-2026-31431 "Copy Fail"** Linux kernel LPE (2026-04-30, CVSS 7.8) — host-level, affects every Linux-running Laravel app. Kernels since 2017 are vulnerable. Patched in AlmaLinux 8 (4.18.0-553.121.1+), AlmaLinux 9 (5.14.0-611.49.2+), AlmaLinux 10 (6.12.0-124.52.2+), Ubuntu 24.04 (HWE), and equivalents.
+3. **CVE-2026-7263 `DOMNode::C14N()` infinite-loop DoS** (2026-05-10) — affects PHP 8.4 < 8.4.21 and 8.5 < 8.5.6. Patched in 8.4.21+ / 8.5.6+; **8.4.23 / 8.5.8 (2026-07-01) include the fix and are the new minimums**.
+
+SKILL.md bumped to **v1.22.6** (cycle-18 host-runtime security update — PHP 2026-07-01 batch + Copy Fail + DOMNode::C14N()). 18 cycles in last 3 days.

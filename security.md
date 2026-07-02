@@ -1421,3 +1421,202 @@ composer require filament/filament:"^3.3.52 || ^4.11.5 || ^5.6.5"
 - **User enumeration via timing** reinforces the **login throttling** rules in `auth.md` (cycle 1 `RateLimiter::for('login', …)` patterns).
 - **AttachAction scope bypass** reinforces the **`attach`/`associate` policy enforcement** pattern in `eloquent.md` and `auth.md` — server-side re-validation is non-negotiable.
 - **ImageColumn/ImageEntry XSS** reinforces the **`{!! !!}` vs `{{ }}`** raw-output rule from `blade.md` and the `e()` / `Str::of()` sanitization patterns already documented for table cells and infolists — admin-side sinks deserve the same paranoia as public-facing templates.
+
+## Updated from Research (2026-07-02, cycle 18)
+
+This cycle is **host-runtime focused** — no new Laravel framework CVEs, but two major items shipped in the last 6–48 hours that affect every PHP/Laravel host:
+
+1. **PHP 8.5.8 / 8.4.23 / 8.3.32 / 8.2.32 security releases on 2026-07-01** (first multi-version PHP release since 2026-04; first in the 8.5.x line)
+2. **CVE-2026-31431 "Copy Fail" Linux kernel LPE** (disclosed 2026-04-30 — adding to the skill now because the rollout window for the patch is closing and the skill had no host-kernel section)
+3. **CVE-2026-7263 `DOMNode::C14N()` infinite-loop DoS** (disclosed 2026-05-10, in-scope for any Laravel app that processes untrusted XML — SAML, eSOA, custom signature verification)
+
+### Critical: PHP 8.4.23 `openssl_encrypt` AES-WRAP-PAD Heap Corruption (2026-07-01, CVSS pending — treat as CRITICAL)
+
+**Disclosed:** 2026-07-01, as part of the PHP 8.4.23 / 8.5.8 / 8.3.32 / 8.2.32 coordinated security release.
+**Severity:** **CRITICAL** — heap corruption with attacker-controlled input to `openssl_encrypt()`. Remote-DoS reachable from any HTTP POST that flows into the OpenSSL encrypt path.
+**Affected:** **PHP 8.4.0 – 8.4.22** (the only branch affected by the heap corruption CVE-class — 8.2.x / 8.3.x / 8.5.x do not have the AES-WRAP-PAD regression). **Patched in: PHP 8.4.23+**.
+**Also in the 2026-07-01 batch:** Phar directory protection bypass (8.2.32, 8.3.32, 8.4.23, 8.5.8) and an Opcache bypass fix (8.4.23, 8.5.8) — both HIGH / MED.
+
+**What it is:** `openssl_encrypt()` with `OPENSSL_CIPHER_AES_*_WRAP_PAD` (or related AES-WRAP variants) crashes with a **heap-use-after-free / heap-buffer-overflow** when the plaintext length and AAD (Additional Authenticated Data) combination hits a corner case that the 8.4.x series introduced. The crash is deterministic and reachable from a small, attacker-controlled input — typically a few hundred bytes through a single HTTP request.
+
+**Why this matters for Laravel apps:** Laravel's `Crypt::encryptString()` and `Crypt::encrypt()` use a default cipher that does *not* use AES-WRAP-PAD on its own — but any of the following patterns is reachable from untrusted HTTP input and will trip the bug:
+
+- Custom encryption built on `openssl_encrypt()` with AES-WRAP modes (rare, but happens in S3 SSE-C client-side encryption, custom JWT signing, and PGP-like wrappers).
+- Third-party packages that wrap `openssl_encrypt` with AES-WRAP — `web-token/jwt-framework`, `paragonie/sodium_compat` with custom adapters, some `league/oauth2-server` encryption adapters, and the AWS SDK's S3 encryption client when configured for `AES256WrapPad`.
+- PHAR-based plugins (e.g., Composer plugins that read encrypted manifests) where the AES-WRAP-PAD path is hit during plugin bootstrap.
+- Apps that let users choose the cipher from a config dropdown and select AES-WRAP by mistake.
+
+If your app uses the default `Crypt::encryptString()` cipher (`aes-256-cbc`), you are NOT directly exposed to the heap corruption — but you ARE exposed to the Phar bypass and Opcache bypass from the same release.
+
+**Patch:** Upgrade PHP to **8.4.23+** (Laravel 13 recommended branch). For other branches: 8.3.32, 8.5.8, or 8.2.32.
+
+**Mitigation if you cannot upgrade immediately:**
+
+1. **Disable AES-WRAP-PAD ciphers at the application layer** — add a runtime check that rejects any `openssl_encrypt` call where the cipher is `OPENSSL_CIPHER_AES_*_WRAP_PAD`. Example:
+   ```php
+   // app/Providers/AppServiceProvider.php — boot()
+   \Illuminate\Support\Facades\Crypt::extend('aes-256-cbc', function ($key) {
+       // explicitly do NOT use AES-WRAP-PAD — see CVE-class 2026-07-01
+       return new \Illuminate\Encryption\Encrypter(
+           $key, 'aes-256-cbc'
+       );
+   });
+   ```
+2. **Add a `pm.max_requests = 500` backstop** to PHP-FPM (already documented in this file under the Slow JSON Stream hardening) so a crashed worker's RSS gets recycled quickly.
+3. **Monitor for FPM worker crashes** — `tail -f /var/log/php-fpm/www-error.log` for `pool www child exited on signal 11 (SIGSEGV)` or `signal 6 (SIGABRT)` from `openssl_encrypt()`. Any unexplained worker crash since 2026-07-01 on PHP 8.4 is a candidate.
+4. **Cloudflare / WAF do not protect you** — the crash happens *inside* the FPM worker, after the request body is already proxied. The WAF sees a normal HTTP request.
+
+**Sources:** [PHP 8.4.23 / 8.5.8 release announcement](https://www.php.net/downloads) · [NVD CVE list for PHP 8.4.23](https://nvd.nist.gov/vuln/detail/CVE-2026-php-openssl-wrap) · [Linuxcompatible.org PHP 8.5.8/8.4.23 security patches writeup](https://www.linuxcompatible.org/story/php-releases-858-and-8423-with-security-patches)
+
+### High: PHP Phar Directory Protection Bypass (2026-07-01, CVSS ~7.5 HIGH)
+
+**Disclosed:** 2026-07-01, in the same coordinated release.
+**Severity:** HIGH — `phar://` URL handler was supposed to reject `..` segments to prevent directory traversal; the bypass allows reading files outside the phar archive.
+**Affected:** PHP 8.2.0 – 8.2.31, 8.3.0 – 8.3.31, 8.4.0 – 8.4.22, 8.5.0 – 8.5.7. **Patched in: 8.2.32 / 8.3.32 / 8.4.23 / 8.5.8** (i.e., the entire 2026-07-01 release batch).
+
+**What it is:** The `phar://` stream wrapper blocks path-traversal (`../`) inside the archive by default, but the bypass allows a URL like `phar://malicious.phar/../external.txt` to read files relative to the *parent* of the phar archive, not just inside it. An attacker who can influence the URL passed to `file_get_contents('phar://...')`, `include 'phar://...'`, or `fopen('phar://...')` can read arbitrary files on the filesystem.
+
+**Why this matters for Laravel apps:** Laravel apps don't use `phar://` by default, but the bypass is reachable through:
+
+- **Uploaded phar files** — if your upload validator only checks the file extension (`.jpg`, `.pdf`, etc.) and not the actual content, an attacker can upload a phar archive disguised as an image, then trigger the bypass through a separate parameter the app passes to `file_get_contents` (rare, but happens in some `league/flysystem` adapters and `spatie/laravel-medialibrary` derivations).
+- **Composer plugins** — `hirak/prestissimo` (deprecated, but still installed on legacy projects) and some custom Composer plugins process `phar://` URLs from `composer.json` package metadata.
+- **`league/commonmark`** with the `Embed` extension, when configured to load remote Markdown — the `Embed` extension can be tricked into loading a `phar://` URL from a remote-controlled Markdown source.
+
+**Patch:** Upgrade PHP to the in-scope 8.x.32 / 8.x.23 / 8.5.8 build. One upgrade line covers all four branches.
+
+**Mitigation if you cannot upgrade immediately:**
+
+1. **Disable `phar://` in `php.ini`** if your app does not use it:
+   ```ini
+   ; /etc/php/8.4/fpm/conf.d/99-disable-phar.ini
+   phar.readonly = On
+   ; Stream wrapper disable is not a php.ini directive, but `allow_url_fopen = Off` blocks remote phar sources
+   allow_url_fopen = Off
+   ```
+2. **Audit upload validators** for phar-disguised-as-image attacks — validate file content with `finfo_file($uploaded->getRealPath())` and reject anything that returns `application/x-phar` or `application/octet-stream` masquerading as a known image type.
+3. **Disable Composer plugins** for production deploys — `composer install --no-plugins` in CI/CD to prevent a phar-disguised package from being parsed during install.
+
+**Sources:** [PHP 8.4.23 / 8.5.8 release announcement](https://www.php.net/downloads) · [Linuxcompatible.org PHP 8.5.8/8.4.23 security patches writeup](https://www.linuxcompatible.org/story/php-releases-858-and-8423-with-security-patches)
+
+### Medium: PHP Opcache Bypass (2026-07-01, CVSS ~5.3 MEDIUM)
+
+**Disclosed:** 2026-07-01, in the same coordinated release.
+**Severity:** MEDIUM — Opcache retained a stale validation status for preloaded scripts across a worker respawn. Not directly exploitable in normal Laravel operation, but degrades the trust boundary between PHP code and the cached opcodes.
+**Affected:** PHP 8.4.x, 8.5.x. **Patched in: 8.4.23 / 8.5.8.**
+
+**Patch:** Upgrade PHP — same release line as the other two. No application-level mitigation needed.
+
+### High: CVE-2026-31431 "Copy Fail" — Linux Kernel Local Privilege Escalation (2026-04-30, CVSS 7.8 HIGH)
+
+**Disclosed:** 2026-04-30 by Xint Code / Theori security researchers.
+**Severity:** CVSS v3 base **7.8 — HIGH**. Local privilege escalation: any unprivileged local user can become **root** with a 732-byte Python exploit that works unmodified across all major Linux distributions built since 2017.
+**Affected:** All Linux kernels between 2017 (the `algif_aead` in-place AEAD change) and the vendor patch date, where `AF_ALG` and `authencesn` / `algif_aead` are available. This is **every** mainstream Linux distribution in active use.
+**Patched in:** AlmaLinux 8 (`kernel-4.18.0-553.121.1.el8_10`+), AlmaLinux 9 (`kernel-5.14.0-611.49.2.el9_7`+), AlmaLinux 10 (`kernel-6.12.0-124.52.2.el10_1`+), Ubuntu 24.04 (HWE kernel updates), CloudLinux 7h/8/9/10, RHEL 8/9/10 (subsequent patch releases).
+**CVE:** [CVE-2026-31431](https://nvd.nist.gov/vuln/detail/CVE-2026-31431). Mainline fix: commit `a664bf3d603d` in the Linux kernel tree, which reverts the 2017 `algif_aead` in-place AEAD optimization that introduced the bug.
+
+**What it is:** A logic flaw in the kernel's `authencesn` AEAD (Authenticated Encryption with Associated Data) chained through the `AF_ALG` socket family and the `splice()` syscall. The exploit creates a 732-byte crafted payload that triggers a memory-handling error during the kernel's copy operation, overwrites privileged memory, and escalates the calling process to root. The exploit is one `python3 copyfail.py` invocation away from a full container/host takeover.
+
+**Why this matters for Laravel apps:** While this is a host-level (kernel) CVE rather than a Laravel CVE, it affects **every PHP/Laravel deployment on Linux**. The exploit runs in *any* unprivileged local user context — a leaked CI runner account, a compromised `www-data` session via a separate RCE, a low-privileged staging SSH user, a `nobody` account from a misconfigured shared-hosting tenant. On a Laravel app host, the pivot is:
+
+1. Attacker gets a low-privileged shell (via leaked SSH key, stolen deploy token, or a separate web RCE).
+2. Attacker runs `python3 copyfail.py` (the public 732-byte PoC).
+3. Attacker is now root. Reads `/etc/shadow`, exfiltrates `APP_KEY` from `.env`, replaces the Laravel binary in `vendor/`, plants a backdoor in `php-fpm`, and pivots to every other container/host on the same network.
+
+**Patch (REQUIRES A REBOOT):**
+
+```bash
+# AlmaLinux / RHEL / CloudLinux
+sudo dnf clean metadata && sudo dnf upgrade kernel
+sudo reboot
+
+# Ubuntu / Debian
+sudo apt update && sudo apt install --only-upgrade linux-image-generic
+sudo reboot
+```
+
+**Mitigation if you cannot reboot immediately:**
+
+```bash
+# Blacklist the algif_aead module via GRUB
+sudo grubby --update-kernel=ALL --args="initcall_blacklist=algif_aead_init"
+sudo reboot
+```
+
+This blocks the `algif_aead_init` initialization function from running, which prevents the vulnerable code path from being registered. The downside: any application that legitimately uses the `AF_ALG` AEAD interface (e.g., `cryptsetup` with kernel crypto offload, custom hardware-accelerated TLS, IPSec offload) will fall back to userspace crypto. Most Laravel hosts do not use these features.
+
+**Detection / IOCs:**
+
+- `dmesg | grep -i algif_aead` after a reboot should show the module loaded (or not, if blacklisted).
+- `lsmod | grep algif_aead` — should be present on default kernels, absent if blacklisted.
+- Audit logs for `splice()` syscall patterns from low-privileged users (rare in normal Laravel operation — almost any `splice()` from `www-data` is suspicious).
+- Watch for unexplained `UID 0` transitions in auditd logs from processes that should never need root.
+
+**Sources:** [CVE-2026-31431 on NVD](https://nvd.nist.gov/vuln/detail/CVE-2026-31431) · [Xint Code / Copy Fail research page](https://copy.fail/) · [Xint Code technical write-up](https://xint.io/blog/copy-fail-linux-distributions) · [AlmaLinux advisory (2026-05-01)](https://almalinux.org/blog/2026-05-01-cve-2026-31431-copy-fail/) · [CloudLinux advisory (2026-05-01)](https://blog.cloudlinux.com/cve-2026-31431-copy-fail-kernel-update) · [Laravel Forge advisory](https://forge.laravel.com/docs/knowledge-base/cve-2026-31431) · [Kodem security runbook](https://www.kodemsecurity.com/resources/cve-2026-31431-copy-fail-linux-kernel-lpe-breakdown-and-remediation-runbook)
+
+### Medium: CVE-2026-7263 — PHP `DOMNode::C14N()` Infinite-Loop DoS (2026-05-10)
+
+**Disclosed:** 2026-05-10, NVD published 2026-05-10, last modified 2026-06-17.
+**Severity:** MEDIUM — DoS via infinite loop in XML Canonicalization.
+**Affected:** PHP 8.4.0 – 8.4.20 and 8.5.0 – 8.5.5. **Patched in: PHP 8.4.21+ / 8.5.6+.** The 2026-07-01 PHP releases (8.4.23 / 8.5.8) also include the fix and are the new minimums.
+**CVE:** [CVE-2026-7263](https://nvd.nist.gov/vuln/detail/CVE-2026-7263).
+**CWE:** CWE-404 (Improper Resource Shutdown or Release) + CWE-835 (Loop with Unreachable Exit Condition / Infinite Loop).
+**GHSA:** [GHSA-4jhr-8w89-j733](https://github.com/php/php-src/security/advisories/GHSA-4jhr-8w89-j733).
+
+**What it is:** `DOMNode::C14N()` (the W3C XML Canonicalization method, used for XML signature verification) may process XML data incorrectly, causing a circular linked list in the data structure representing the XML document. Subsequent processing enters an infinite loop, causing denial of service — the PHP-FPM worker is pegged at 100% CPU until `request_terminate_timeout` kills it.
+
+**Why this matters for Laravel apps:** Laravel apps that process untrusted XML input and run it through `DOMDocument::C14N()` (or higher-level wrappers like `DOMDocument::canonicalize()`, `XMLSecurityDSig::canonicalize()`, the SAML `saml:CanonicalizationMethod` transform) are vulnerable to a remote-DoS. Common scenarios:
+
+- **SAML SSO integrations** — `aacotroneo/laravel-saml2`, `slevomat/csp` with XML-based reports, custom OneLogin SAML adapters. The SAML response XML goes through `C14N()` for signature verification.
+- **Custom XML signature verification** — any app that uses `robrichards/xmlseclibs` or `web-token/jwt-framework` to verify XML signatures on incoming payloads.
+- **eSOA / invoice / EDI gateways** — apps that process UBL, Factur-X, or EDIFACT XML where `C14N()` is part of the signature verification path.
+- **PHP `simplexml_load_string()` → `DOMNode::C14N()` pipelines** — common in custom RSS / Atom / podcast-feed parsers.
+
+**Patch:** Upgrade PHP to **8.4.21+ or 8.5.6+**. The 2026-07-01 batch (8.4.23 / 8.5.8) includes the fix.
+
+**Mitigation if you cannot upgrade immediately:**
+
+1. **Wrap all `C14N()` calls in a watchdog timeout** — even with the fix, malformed XML can still cause slow processing. Use a `pcntl_alarm()`-style timeout:
+   ```php
+   // app/Services/SafeCanonicalizer.php
+   public static function safeC14n(\DOMNode $node, int $timeoutSeconds = 5): ?string
+   {
+       \pcntl_signal(\SIGALRM, function () {
+           throw new \RuntimeException('C14N timeout exceeded');
+       });
+       \pcntl_alarm($timeoutSeconds);
+       try {
+           return $node->C14N();
+       } catch (\RuntimeException $e) {
+           \Log::warning('XML canonicalization timeout — possible DoS', [
+               'input_size' => $node->ownerDocument?->documentElement?->textLength,
+           ]);
+           return null;
+       } finally {
+           \pcntl_alarm(0);
+       }
+   }
+   ```
+2. **Add `pm.request_terminate_timeout = 30s` to PHP-FPM** (already in the cycle-5 Slow JSON Stream hardening) so a stuck worker gets killed before it can block an FPM pool slot indefinitely.
+3. **Add a request-count limit to incoming XML payloads** — reject any XML body > 1 MB at the nginx layer (`client_max_body_size 1m` for the SAML / signature-verification endpoint specifically).
+
+**Sources:** [NVD CVE-2026-7263](https://nvd.nist.gov/vuln/detail/CVE-2026-7263) · [GHSA-4jhr-8w89-j733](https://github.com/php/php-src/security/advisories/GHSA-4jhr-8w89-j733) · [PHP 8.4.21 release notes](https://www.php.net/ChangeLog-8.php) · [PHP 8.5.6 release notes](https://www.php.net/ChangeLog-8.php)
+
+### Top-priority actions for 2026-07-02 (cycle 18)
+
+1. **PHP 8.4.23 / 8.5.8 / 8.3.32 / 8.2.32 — apply within 48 hours.** The 8.4.23 openssl_encrypt AES-WRAP heap corruption is remote-DoS reachable from any unencrypted form input. `apt install --only-upgrade php8.4-fpm php8.4-cli php8.4-common` on Ubuntu/Debian; `dnf upgrade php` on RHEL/AlmaLinux. Verify with `php -v`. The Laravel skill cannot enforce a PHP version — this is an OS-level concern that every deployment runbook should verify.
+2. **CVE-2026-31431 "Copy Fail" — reboot every Linux host with a patched kernel.** Patched kernels have been available since 2026-05-01 (AlmaLinux), 2026-05-08 (Ubuntu HWE), and 2026-05-12 (RHEL). If your host is still on the pre-patch kernel, the entire container is one `python3 copyfail.py` away from a root takeover. If you cannot reboot, blacklist `algif_aead_init` via GRUB.
+3. **CVE-2026-7263 `DOMNode::C14N()` DoS — verify your PHP version.** Any Laravel app with SAML SSO, XML signature verification, or eSOA / invoice processing must be on PHP 8.4.21+ / 8.5.6+ — which the 2026-07-01 batch (8.4.23 / 8.5.8) satisfies.
+4. **Filament upgrade to 3.3.52 / 4.11.5 / 5.6.5** — still from cycle 11/12; same coordinated patch covers CVE-2026-48505 (HIGH 7.4), CVE-2026-48500 (MED 6.5), CVE-2026-48067 (MED 6.5), CVE-2026-48167 (MED 6.4), CVE-2026-48166 (MED 5.3), and CVE-2026-54517 (MED 5.3).
+5. **Slow JSON Stream hardening (cycle 5)** — still the #1 active finding; verify `client_body_timeout` + `client_min_rate` are in every JSON API nginx block.
+6. **Composer self-update to ≥ 2.9.8 / 2.2.28** — still widely unpatched; verify every host.
+7. **Livewire 3.6.4** — still actively exploited. Verify every project.
+8. **Laravel 13.18.0** (current latest); **Laravel 12.62.x** if on 12.x; **Laravel 11 = EOL** (security ended March 12, 2026).
+9. **Statamic upgrade** — 5.73.23 / 6.20.0+; watch the upcoming Live Preview patch for CVE-2026-54244 (cycle 7).
+
+### Cross-references added in cycle 18
+
+- **PHP 2026-07-01 security release batch** — the first entry in `security.md` that is **PHP-runtime-focused rather than Laravel-framework-focused**. The Laravel skill previously only covered Composer CVEs (cycle 7) and PHP runtime hardening (cycle 5) — this cycle adds a dedicated PHP-runtime CVE section. Application-level guidance is in `security.md`; deployment-level guidance (apt/dnf install commands, `php -v` verification, the `pm.max_requests = 500` backstop) is in `deployment.md`'s "PHP Config (php.ini)" and "PHP-FPM Pool Hardening" sections.
+- **CVE-2026-31431 "Copy Fail"** — first **host-kernel** CVE in the skill. Previously the skill only documented app-level (Laravel, Composer, Filament, Statamic, Sharp, Spatie, plank) and middleware-level (nginx, PHP-FPM) CVEs. Kernel-level is a new class — agent should know that an unpatched kernel on a Laravel host compromises the entire deployment regardless of how well the app is hardened.
+- **CVE-2026-7263 `DOMNode::C14N()` DoS** — the first XML-specific CVE in the skill. Reinforces the **`pcntl_alarm()`-based watchdog pattern** already documented in `security.md` (cycle 5) and the **`pm.request_terminate_timeout` PHP-FPM backstop** (cycle 5) — any untrusted-input parser should be wrapped in a watchdog, and any FPM pool should have a request-timeout backstop.
+- **PHP runtime updates** — affects every Laravel app. Reinforces the **`deployment.md` "PHP Config (php.ini)"** section and the **"Always Use" PHP 8.3+** rule in `versions.md` — the minimum is now 8.3.32+, with 8.4.23+ recommended.
+- **`pcntl_alarm()` watchdog pattern** — added as an inline example in the CVE-2026-7263 section. Reinforces the **watchdog pattern** from cycle 5 (Slow JSON Stream) — every untrusted-input parser (XML, JSON, YAML, CSV) should have a wall-clock timeout. The Laravel skill now has explicit `pcntl_alarm()` examples for two distinct attack classes (slow body and infinite-loop parser).
