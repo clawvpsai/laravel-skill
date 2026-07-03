@@ -219,10 +219,93 @@ $validator->validate([
 
 Source: [Laravel News — date_equals fix](https://laravel-news.com/laravel-13-15-0) | [PR #60393](https://github.com/laravel/framework/pull/60393)
 
-## Common Mistakes
+## Prohibited Validation Rule Family (Laravel 13)
 
+The "prohibited" family is the inverse of `required` — it forces a field to be **missing or empty**. Use it when you want to *forbid* a value rather than require one (either-or fields, "don't submit this in this state", "exactly one of these"):
 
-1. **`required` vs `filled`** — `required` fails on `""`, use `filled` when `0` or `false` are valid
+```php
+public function rules(): array
+{
+    return [
+        // Field MUST be missing or empty (no null, no string, no array, no file).
+        'legacy_id'         => 'prohibited',
+
+        // Field MUST be missing/empty WHEN another field equals a value.
+        // Pairs with `Rule::prohibitedIf(Closure)` for arbitrary boolean logic.
+        'coupon_code'       => 'prohibited_if:payment_method,stripe',
+
+        // Field MUST be missing/empty UNLESS another field equals a value.
+        'gift_message'      => 'prohibited_unless:order_type,gift',
+
+        // Field MUST be missing/empty WHEN another field is "accepted" (true/yes/1).
+        'refund_reason'     => 'prohibited_if_accepted:is_refundable',
+
+        // Field MUST be missing/empty WHEN another field is "declined" (false/no/0).
+        'followup_required' => 'prohibited_if_declined:needs_followup',
+
+        // REVERSE direction: if THIS field is present, the OTHER fields MUST be empty.
+        // Classic "either primary_email OR backup_email, not both" pattern.
+        'primary_email'     => 'prohibits:backup_email',
+        'backup_email'      => 'prohibits:primary_email',
+    ];
+}
+```
+
+**"Empty" definition (per Laravel 13 docs) — applies uniformly across the prohibited family:**
+A field is "empty" if it meets any of:
+- The value is `null`
+- The value is an empty string `""`
+- The value is an empty array or empty `Countable` object
+- The value is an uploaded file with an empty path
+
+**Closure form for arbitrary boolean logic:**
+```php
+'use_real_money' => [
+    Rule::prohibitedIf(fn () => $this->user()->isMinor() || $this->input('sandbox_mode')),
+],
+```
+
+**Common use cases:**
+- "Either coupon_code OR payment_method, never both" → `prohibits:payment_method` on `coupon_code` and vice versa
+- "If is_refundable=true, don't submit a refund_reason" → `prohibited_if_accepted:is_refundable`
+- "If order_type=gift, message is required; if not gift, no gift_message allowed" → `prohibited_unless:order_type,gift` + `required_unless:order_type,gift`
+- "Block admin-only fields from non-admins" → `prohibits` chained with `Rule::when()` (see below)
+
+## `Rule::when()` / `Rule::unless()` — Conditional Rule Builders
+
+For form requests where a rule applies only under some condition (admin role, feature flag, partial draft), branching in `rules()` works but gets messy. `Rule::when()` / `Rule::unless()` collapses it into a single expression:
+
+```php
+use Illuminate\Validation\Rule;
+
+public function rules(): array
+{
+    return [
+        'internal_notes' => Rule::when(
+            $this->user()->can('view-internal-notes'),
+            ['required', 'string', 'max:1000'],
+            ['nullable'],
+        ),
+
+        // Inverse: only apply when the condition is FALSE
+        'beta_flag' => Rule::unless(
+            $this->user()->hasFeature('beta-program'),
+            ['prohibited'],
+            ['nullable', 'boolean'],
+        ),
+    ];
+}
+```
+
+**Why prefer `Rule::when()` over conditional arrays:**
+- Keeps `rules()` as a flat, declarative array — easier to scan
+- The branch and fallback are visible on one line
+- Plays well with static analyzers and IDE autocompletion
+- No risk of accidentally producing duplicate keys
+
+**Pair with `Rule::prohibitedIf()` / `Rule::requiredIf()`** for the inverse direction. When you need to apply or skip multiple rules under a condition, use `Rule::when()`. When you need to invert a single field's required state based on a boolean, use `Rule::requiredIf()` / `Rule::prohibitedIf()`.
+
+## Common Mistakes — `required` fails on `""`, use `filled` when `0` or `false` are valid
 2. **`unique` without ignoring self** — `unique:users,email,{$user->id}` for updates
 3. **Not using Form Request** — keeps controller clean, easy to reuse
 4. **No custom error messages** — always provide user-friendly messages in `messages()`
@@ -234,6 +317,8 @@ Source: [Laravel News — date_equals fix](https://laravel-news.com/laravel-13-1
 - **Line break injection prevention (Laravel 13.10+)** — email validation now rejects values containing line breaks, preventing email header injection attacks.
 - Laravel 13 enhances `required_if` behavior and adds `prohibits` rule
 - `Rule::when()` method allows conditional rule application
+
+See full details below in **Prohibited Validation Rule Family (Laravel 13)** and **`Rule::when()` / `Rule::unless()`** sections — covering `prohibited`, `prohibited_if`, `prohibited_unless`, `prohibited_if_accepted`, `prohibited_if_declined`, and reverse-direction `prohibits` rules plus the conditional rule array builder.
 
 Source: [Laravel Validation](https://laravel.com/docs/13.x/validation)
 

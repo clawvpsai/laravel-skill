@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.8
+version: 1.22.9
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -30,6 +30,7 @@ metadata:
 | Composer self-update, CVE-2026-45793 / 40176 / 40261, supply chain | `security.md` (Composer section) + `deployment.md` step 0 | Updating Composer in deploy pipeline |
 | Translations, locales, pluralization | `localization.md` | i18n/l10n |
 | Rules, Form Requests, custom validators | `validation.md` | Input validation |
+| Prohibited rule family + `Rule::when()` / `Rule::unless()` | `validation.md` (Prohibited Family + Rule::when sections) | Either-or fields, conditional rule chains, "missing/empty" enforcement |
 | `#[Boot]` / `#[Initialize]` model lifecycle attributes | `observers.md` (model attribute hooks section) | Per-instance defaults + class-level event listeners without `boot()` override |
 | `#[FailOnUnknownFields]` Form Request attribute | `validation.md` (Failing on Unknown Fields section) | Reject unknown fields at validation time (defense in depth) |
 | `Context` facade for log context | `logging.md` (Context facade section) | Request/job-scoped context that auto-attaches to logs and survives queue dispatch |
