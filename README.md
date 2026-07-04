@@ -7,9 +7,9 @@
 [![MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Auto-updated](https://img.shields.io/badge/Auto--updated-6h-blue?style=flat-square)](#auto-updater)
 
-> **Latest tracked version:** Laravel **13.18.1** (July 2, 2026) — current as of cycle 24 (2026-07-04 12:00 UTC)
+> **Latest tracked version:** Laravel **13.18.1** (July 2, 2026) — current as of cycle 25 (2026-07-04 18:00 UTC)
 > **PHP baseline:** 8.3.32 / 8.4.23 / 8.5.8 (all security fixes as of 2026-07-01 batch)
-> **Skill version:** v1.22.11 (24 auto-update cycles since 2026-06-28)
+> **Skill version:** v1.22.12 (25 auto-update cycles since 2026-06-28)
 
 ---
 

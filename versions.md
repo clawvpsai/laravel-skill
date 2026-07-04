@@ -689,3 +689,55 @@ Cycle 23 (06:00 UTC) finished cross-reference completion for the 13.18.1 release
 - **`versions.md`** — no change to the "New in Laravel 13.18.1" section (no new release); added the cycle 24 auto-updater note above.
 
 SKILL.md bumped to **v1.22.11** (cycle-24 auth.md gap fill — `#[UsePolicy]` model attribute + `#[Authorize]` controller attribute + cross-link to `controllers.md`). 24 cycles in 4 days.
+
+### Cycle 25 (2026-07-04 18:00 UTC) — CVE-2026-12184 (PHP TLS Setup-Failure Remote DoS) Addition to `security.md`
+
+Cycle 24 (12:00 UTC) finished the auth.md gap-fill for `#[UsePolicy]` and `#[Authorize]`. No new Laravel framework release since v13.18.1 (tagged 2026-07-02 18:36 UTC) — GitHub `releases/latest` still resolves to 13.18.1 at cycle time. GitHub Security Advisories API for `laravel/framework` rechecked at 18:00 UTC — no new advisories since `GHSA-crmm-hgp2-wgrp` (CVE-2026-48041, June 8, 2026), already documented in `security.md`. No new framework releases, no new Laravel CVEs.
+
+**New finding:** The `php/php-src` Security Advisories API revealed a **NEW PHP CVE published 2026-07-02 17:01:28 UTC — `GHSA-mhmq-mmqj-2v39` / CVE-2026-12184** ("Failure to setup TLS with a remote server can result in a remote DoS", severity HIGH). The advisory was published ~28 hours *after* the 2026-07-01 PHP release batch (8.2.32 / 8.3.32 / 8.4.23 / 8.5.8) shipped — and the upstream fix (PR #21031) was already merged into those binaries. Anyone who applied the cycle 18 patch is automatically protected; the cycle 25 value is CVE database completeness for the "wait-for-CVE-before-patching" operators who are exposed during the 1–3 day disclosure-lag window.
+
+**What the CVE is:** A NULL-pointer dereference in `php_stream_url_wrap_http_ex` (PHP's internal HTTP/HTTPS stream wrapper). When TLS crypto setup fails — e.g., the remote server has an expired certificate, a hostname mismatch, or an aborted TLS handshake — the stream is closed and reset to `NULL`, but the subsequent peer-name cleanup block unconditionally tries to reset the peer name on the now-NULL stream. The result is a SIGSEGV in the PHP process. Triggers via a reproducer ([php/php-src#21468](https://github.com/php/php-src/issues/21468)) against **any** HTTPS endpoint with an expired certificate — no special protocol, no malicious server. The reproducer crashes the entire PHP-FPM pool because every request-handling worker that tries to call the bad endpoint dies.
+
+**Why this matters for Laravel apps specifically:** Outbound HTTPS is everywhere in modern Laravel code paths:
+
+- `Http::get()` / `Http::post()` / `Http::pool()` (the Laravel HTTP client wraps Guzzle, which uses PHP's stream handler by default — `GuzzleHttp\Psr7\Http\Stream` delegates to `php_stream_*` for HTTPS)
+- `Mail::send()` with SMTP+STARTTLS (`Illuminate\Mail\Transport\SmtpTransport`)
+- `Storage::disk('s3')->put()` and any S3 / R2 / GCS adapter (`league/flysystem-aws-s3-v3` → Guzzle → PHP stream)
+- `Notification::route('slack', ...)` (Slack webhooks), `Notification::route('mailgun', ...)`, Twilio, SendGrid, Stripe SDKs (all use Guzzle → PHP stream)
+- `OAuth` token refresh calls (`laravel/socialite` → Guzzle → PHP stream)
+- Health-check pings, webhook deliveries, scheduled task runners
+- Even `file_get_contents('https://...')` in any third-party package
+
+The realistic production scenario is a payment gateway, OAuth provider, or webhook receiver whose certificate expires overnight. Every Laravel app that integrates with that service starts crashing on the next outbound call. The crash signature is a worker-level SIGSEGV, but with `pm.max_children` = 50 and 1k req/s incoming, the entire pool can be exhausted in seconds.
+
+**Affected versions and patch levels:**
+
+| PHP branch | Affected (pre-patch) | Patched in (already shipped) |
+|---|---|---|
+| 8.2 (Laravel 12) | < 8.2.32 | 8.2.32 (released 2026-07-01) |
+| 8.3 (Laravel 13 minimum) | < 8.3.32 | 8.3.32 (released 2026-07-01) |
+| 8.4 (Laravel 13 recommended) | < 8.4.21 | 8.4.23 (released 2026-07-01) — note the patch threshold is 8.4.21, so 8.4.21+ are all safe, 8.4.23 is the current latest |
+| 8.5 (Laravel 13 supported) | < 8.5.6 | 8.5.8 (released 2026-07-01) — same logic, 8.5.6+ are all safe |
+
+**Key insight for the Laravel skill — the "fix-before-CVE" pattern:** PHP's release process ships security fixes in binary releases, but publishes the public advisory 1–3 days *after* the binary release. This means:
+
+- The **2026-07-01 batch was effectively a "fix-before-CVE" event** for CVE-2026-12184. Anyone who upgraded proactively on 2026-07-01 (cycle 18 of this skill) was safe; anyone who waited for the CVE to drop on 2026-07-02 17:01 UTC was exposed during the gap.
+- **Agents and operators should treat PHP release announcements (every 4–6 weeks) as a hard maintenance window**, not a "wait-and-see-if-CVE-drops" event. The cycle 18 emphasis on "apply the 2026-07-01 batch within 48 hours" is validated retroactively by this CVE.
+- This is the **second PHP-runtime CVE in the skill** (after cycle 18's `openssl_encrypt` AES-WRAP heap corruption). The pattern is: every PHP release batch deserves the same urgency as a Laravel Security Advisory, because the patch-vs-CVE lag means the upgrade window IS the protection window.
+
+**Skill files changed in cycle 25:**
+
+- **`security.md`** — appended a new "Updated from Research (2026-07-04, cycle 25)" section (~92 lines) with the full CVE-2026-12184 entry:
+  - Affected versions table with the 8.4.21 / 8.5.6 patch threshold (older than the 8.4.23 / 8.5.8 from cycle 18, which is why the 2026-07-01 batch already contains the fix).
+  - Detailed "Why this matters for Laravel apps" callout covering the 5 realistic production scenarios (Http::, Mail, S3, OAuth, file_get_contents).
+  - Process-level DoS explanation (worker SIGSEGV scaling to full pool exhaustion).
+  - 5 mitigations: outbound HTTPS audit, circuit-breaker `Http::safeGet()` macro, FPM `pm.max_requests=500` + systemd `Restart=always`, SIGSEGV monitoring, egress filtering.
+  - 5 cross-references to existing skill sections (circuit-breaker, FPM Restart policy, cert-expiry monitoring, PHP release batch as fix-before-CVE signal, CVSS-pending rule).
+  - Updated top-priority actions list (CVE-2026-12184 now first, with "already fixed by cycle 18 batch" note for those who applied it).
+- **`SKILL.md`** — bumped v1.22.11 → v1.22.12 (cycle 25).
+- **`README.md`** — bumped version stamp + research-cycle marker to reflect cycle 25.
+- **`versions.md`** — no change to the "New in Laravel 13.18.1" section (no new Laravel release); added this cycle 25 auto-updater note.
+
+**No changes to other files in cycle 25** — the targeted topic files (`ai.md`, `localization.md`, `eloquent.md`, `performance.md`, `file-uploads.md`, `api.md`, `observers.md`, `blade.md`, `artisan.md`, `controllers.md`, `deployment.md`, `logging.md`, `migrations.md`, `queues.md`, `testing.md`, `validation.md`, `SKILL.md`, `README.md`) are all within the 5–7 day staleness window and are still well-served by their cycle 4–24 content. Cycle 26 (2026-07-05 00:00 UTC) will target the next-stale file.
+
+SKILL.md bumped to **v1.22.12** (cycle-25 PHP-runtime CVE addition — CVE-2026-12184 / GHSA-mhmq-mmqj-2v39 TLS setup-failure remote DoS, severity HIGH, fix already shipped in 2026-07-01 PHP batch). 25 cycles in 4 days.

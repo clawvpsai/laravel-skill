@@ -1620,3 +1620,95 @@ This blocks the `algif_aead_init` initialization function from running, which pr
 - **CVE-2026-7263 `DOMNode::C14N()` DoS** — the first XML-specific CVE in the skill. Reinforces the **`pcntl_alarm()`-based watchdog pattern** already documented in `security.md` (cycle 5) and the **`pm.request_terminate_timeout` PHP-FPM backstop** (cycle 5) — any untrusted-input parser should be wrapped in a watchdog, and any FPM pool should have a request-timeout backstop.
 - **PHP runtime updates** — affects every Laravel app. Reinforces the **`deployment.md` "PHP Config (php.ini)"** section and the **"Always Use" PHP 8.3+** rule in `versions.md` — the minimum is now 8.3.32+, with 8.4.23+ recommended.
 - **`pcntl_alarm()` watchdog pattern** — added as an inline example in the CVE-2026-7263 section. Reinforces the **watchdog pattern** from cycle 5 (Slow JSON Stream) — every untrusted-input parser (XML, JSON, YAML, CSV) should have a wall-clock timeout. The Laravel skill now has explicit `pcntl_alarm()` examples for two distinct attack classes (slow body and infinite-loop parser).
+
+## Updated from Research (2026-07-04, cycle 25)
+
+This cycle is a **PHP-runtime CVE addition**. No new Laravel framework release since v13.18.1 (tagged 2026-07-02 18:36 UTC, still `releases/latest` at cycle time). No new Laravel Security Advisory since `GHSA-crmm-hgp2-wgrp` (CVE-2026-48041, June 8, 2026). The 2026-07-01 PHP security release batch (8.2.32 / 8.3.32 / 8.4.23 / 8.5.8) is the most recent PHP-runtime event — but on **2026-07-02 17:01:28 UTC**, GitHub published a new PHP CVE that was not in the 2026-07-01 batch disclosure and is not yet in the skill. This cycle adds it.
+
+### High: CVE-2026-12184 / GHSA-mhmq-mmqj-2v39 — PHP TLS Setup-Failure Remote DoS (2026-07-02, severity: HIGH)
+
+**Disclosed:** 2026-07-02 17:01:28 UTC on the [php/php-src](https://github.com/php/php-src/security/advisories/GHSA-mhmq-mmqj-2v39) security advisories list. **This is a NEW disclosure** that arrived ~24 hours after the 2026-07-01 PHP release batch — it is NOT in the 2026-07-01 batch advisory text, but the **upstream fix (PR #21031) was already shipped in the 8.2.32 / 8.3.32 / 8.4.23 / 8.5.8 binaries**.
+**Severity:** **HIGH** (per GitHub Advisory severity field). CVSS base score not yet published at cycle time (NVD usually lags 24–72h). Treat as **7.0+ HIGH** until NVD publishes.
+**Affected:** **PHP 8.3.x (all versions before 8.3.32), 8.4.x (all versions before 8.4.21), 8.5.x (all versions before 8.5.6).** The 8.4.21 / 8.5.6 patch levels are *older* than the 8.4.23 / 8.5.8 from the 2026-07-01 batch — which means the fix is already shipped in the current 8.4.23 / 8.5.8 builds. The 8.3.32 build from the 2026-07-01 batch is also patched (the version threshold is "before 8.3.32" which the 8.3.32 release itself satisfies).
+**CVE:** [CVE-2026-12184](https://nvd.nist.gov/vuln/detail/CVE-2026-12184) (NVD may lag GitHub).
+**GHSA:** [GHSA-mhmq-mmqj-2v39](https://github.com/php/php-src/security/advisories/GHSA-mhmq-mmqj-2v39).
+**CWE:** CWE-476 (NULL Pointer Dereference) + CWE-400 (Uncontrolled Resource Consumption) — NULL-deref after stream-reset, with process-level DoS as the realistic impact.
+
+**What it is:** In `php_stream_url_wrap_http_ex` (PHP's internal helper that wraps the `http://` / `https://` stream handler), when TLS crypto setup fails via `php_stream_xport_crypto_setup` or `php_stream_xport_crypto_enable` — e.g., the remote server's certificate is expired, the peer name doesn't match, or the TLS handshake is aborted — the stream is closed and reset to `NULL`. The **subsequent peer-name cleanup block** then unconditionally tries to reset the peer name on the now-NULL stream — a NULL-pointer dereference that crashes the PHP process. The advisory links a reproducer ([php/php-src#21468](https://github.com/php/php-src/issues/21468)) that triggers the crash against a **regular HTTPS endpoint with an expired certificate** — no specially-crafted protocol, no application code change, no malicious server. Any web request to an expired-cert HTTPS endpoint crashes the PHP process.
+
+**Why this matters for Laravel apps — this is worse than it looks at first glance:**
+
+1. **Outbound HTTPS is everywhere in modern Laravel apps.** `Http::get(...)`, `Http::post(...)`, `Mail::send()` (SMTP+STARTTLS), `Storage::disk('s3')->put(...)` (S3 HTTPS), `Notification::route('slack', '...')` (Slack webhooks), Stripe / Twilio / SendGrid / Mailgun SDKs, OAuth token refresh calls, health-check pings — every one of these opens a TLS connection through the affected code path.
+2. **The trigger is an expired or misconfigured certificate on a *remote* endpoint** — not a vulnerability in the Laravel app itself. If you integrate with a third-party API whose certificate expires overnight (it happens), every PHP-FPM worker that tries to call that API crashes the master. With `pm = dynamic` and `pm.max_children = 50`, the entire pool is dead in seconds.
+3. **Process-level, not worker-level.** This is a NULL-deref in the FPM worker context; the SIGSEGV is *per-request* but takes down the entire PHP-FPM pool's serving capacity. `pm.max_requests = 500` alone does not bound the outage — every inbound request that triggers an outbound HTTPS call to a bad endpoint still crashes a worker. The crash rate is bounded by `pm.max_children` because each child can only crash once before being reaped and respawned, but the wall-clock impact is a full pool restart cycle per child.
+4. **Triggerable via any inbound HTTP request that *internally* calls an expired-cert endpoint.** A user submits a form on your Laravel app, your controller calls a downstream API (e.g., a payment gateway whose cert expired at midnight), and your entire app goes down — even though the user's browser showed a valid cert. This is the realistic production scenario.
+5. **Upstream `curl` and `wget` are unaffected** (separate code path), so the issue is *specifically* in PHP's HTTP stream wrapper — meaning every Laravel app that uses `Http::`, `Illuminate\Mail`, `Illuminate\Filesystem\AwsS3V3Adapter`, `GuzzleHttp\Client` configured to use the PHP stream handler, or `file_get_contents('https://...')` is in scope.
+
+**Patch:** Upgrade PHP to one of the following minimums (the fix is already in the 2026-07-01 release batch builds, so anyone who applied the cycle 18 batch is automatically protected):
+
+| PHP branch | Patched minimum | Status |
+|---|---|---|
+| 8.2 (Laravel 12) | **8.2.32** | Released 2026-07-01 ✅ |
+| 8.3 (Laravel 13 minimum) | **8.3.32** | Released 2026-07-01 ✅ |
+| 8.4 (Laravel 13 recommended) | **8.4.23** | Released 2026-07-01 ✅ |
+| 8.5 (Laravel 13 supported) | **8.5.8** | Released 2026-07-01 ✅ |
+
+**If you applied the cycle 18 patch, you are already protected.** This cycle's value is CVE database completeness — the advisory was published 24 hours *after* the patch was already shipped in the 2026-07-01 batch, so the patch-first / CVE-disclosure-later timing means anyone who upgraded proactively is safe, and anyone who waits for the CVE to drop in their NVD feed before patching is exposed during the gap. (This is also why the cycle 18 batch was so heavily emphasized — it was a "fix-before-CVE" event.)
+
+**Mitigation if you cannot upgrade immediately:**
+
+1. **Audit every outbound HTTPS endpoint your app talks to** for certificate health — `openssl s_client -connect host:443 -servername host < /dev/null 2>/dev/null | openssl x509 -noout -dates`. Any endpoint with an expiry in the next 30 days is a trigger vector. Force a TLS probe in CI on the third-party endpoints you depend on (use `lyftoss/cert-monitor`, `spatie/crypto-checker`, or a 5-line `openssl s_client` script in a cron).
+2. **Wrap outbound `Http::` calls in a circuit-breaker** — so when a downstream endpoint starts failing (expired cert, 5xx, timeout), the app short-circuits to a safe default instead of retrying the bad endpoint and crashing the pool:
+   ```php
+   // app/Providers/AppServiceProvider.php — boot()
+   use Illuminate\Support\Facades\Http;
+   Http::macro('safeGet', function (string $url) {
+       $healthy = Cache::remember("downstream_health:{$url}", 60, function () use ($url) {
+           try {
+               return Http::timeout(5)->connectTimeout(2)->get($url)->successful();
+           } catch (\Throwable $e) {
+               Log::warning('Downstream unhealthy', ['url' => $url, 'err' => $e->getMessage()]);
+               return false;
+           }
+       });
+       return $healthy ? Http::timeout(5) : null;
+   });
+   ```
+3. **Add FPM `pm.max_requests` AND a `systemd` `Restart=` policy** — even with the fix, any future NULL-deref in PHP's HTTP stream handler will still crash workers. Pair `pm.max_requests = 500` with:
+   ```ini
+   # /etc/php/8.4/fpm/pool.d/www.conf
+   pm.max_requests = 500
+   ```
+   ```ini
+   # /etc/systemd/system/php8.4-fpm.service.d/restart.conf
+   [Service]
+   Restart=always
+   RestartSec=3
+   ```
+   This bounds the outage window to ~3 seconds + worker-recycle time, instead of the full `pm.max_children` worker count.
+4. **Monitor for FPM worker SIGSEGVs** — `journalctl -u php8.4-fpm -f` for `[pool www] child exited on signal 11 (SIGSEGV)`. A SIGSEGV spike from a single endpoint signature (e.g., all crashes hit the same `host:port`) is the CVE-2026-12184 signature pointing to an expired cert on that specific downstream.
+5. **Disable outbound HTTPS to unknown hosts** at the firewall level for the FPM workers — egress filtering is unusual for Laravel apps but for high-value production (PCI-DSS, financial services), restrict outbound to a known allowlist so a misconfigured internal endpoint can't be reached.
+
+**Why this is NOT in the cycle 18 (2026-07-01) batch entry:** The cycle 18 entry was written on 2026-07-01 and covered what was then public. The GitHub Advisory for CVE-2026-12184 was published at 2026-07-02 17:01:28 UTC — ~28 hours *after* the cycle 18 entry was finalised. The *fix* (PR #21031) was already merged into the 2026-07-01 release batch builds, but the *CVE / advisory* was not public until the next day. This is a recurring pattern in PHP's release process: security fixes ship in the binary release, the public advisory drops 1–3 days later. Any PHP release batch is therefore a signal to upgrade *immediately*, not after the corresponding CVE drops in your NVD feed. Agents and operators who wait for the CVE before patching are exposed during the gap.
+
+**Sources:** [GHSA-mhmq-mmqj-2v39 (php/php-src)](https://github.com/php/php-src/security/advisories/GHSA-mhmq-mmqj-2v39) · [CVE-2026-12184 (NVD, may lag)](https://nvd.nist.gov/vuln/detail/CVE-2026-12184) · [php/php-src#21031 (upstream fix)](https://github.com/php/php-src/pull/21031) · [php/php-src#21468 (reproducer)](https://github.com/php/php-src/issues/21468) · [PHP 8.4.23 / 8.5.8 release announcement](https://www.php.net/downloads) (cycle 18 — already contains the fix)
+
+### Top-priority actions for 2026-07-04 (cycle 25)
+
+1. **CVE-2026-12184 / GHSA-mhmq-mmqj-2v39** — already fixed by the 2026-07-01 PHP release batch (8.2.32 / 8.3.32 / 8.4.23 / 8.5.8). If you applied the cycle 18 patch, no further action needed. If you deferred PHP upgrades, **upgrade now** — this is a remote-DoS reachable from any outbound HTTPS call to a misconfigured endpoint.
+2. **Audit outbound HTTPS endpoints** for certificate health — every Laravel app that calls third-party APIs (payment gateways, OAuth providers, webhook receivers, S3, SES) needs an expiry-probe job. Add `openssl s_client` health check to your monitoring for each downstream endpoint you depend on.
+3. **Add `Restart=always` to php-fpm.service** — if not already present, so a future NULL-deref crash auto-restarts the pool within 3 seconds instead of staying down.
+4. **Laravel 13.18.1** (current latest — still); **Laravel 12.62.x** if on 12.x; **Laravel 11 = EOL** (security ended March 12, 2026). No new framework release since 13.18.1.
+5. **Filament upgrade to 3.3.52 / 4.11.5 / 5.6.5** — still from cycle 11/12; same coordinated patch covers CVE-2026-48505 (HIGH 7.4), CVE-2026-48500 (MED 6.5), CVE-2026-48067 (MED 6.5), CVE-2026-48167 (MED 6.4), CVE-2026-48166 (MED 5.3), and CVE-2026-54517 (MED 5.3).
+6. **Slow JSON Stream hardening (cycle 5)** — still the #1 active finding; verify `client_body_timeout` + `client_min_rate` are in every JSON API nginx block.
+7. **Composer self-update to ≥ 2.9.8 / 2.2.28** — still widely unpatched; verify every host.
+8. **Livewire 3.6.4** — still actively exploited. Verify every project.
+9. **CVE-2026-31431 "Copy Fail"** — still from cycle 18; verify every Linux host has a patched kernel and has been rebooted since 2026-05-01.
+
+### Cross-references added in cycle 25
+
+- **CVE-2026-12184 / GHSA-mhmq-mmqj-2v39** — second **PHP-runtime CVE** added to the skill (after cycle 18's `openssl_encrypt` AES-WRAP heap corruption). Reinforces the **"PHP release batches are a fix-before-CVE signal"** rule — any PHP release batch should trigger an upgrade *immediately*, not after the corresponding CVE drops 1–3 days later. The agent should treat PHP release announcements (every 4–6 weeks) as a hard maintenance window.
+- **Outbound HTTPS as a DoS surface** — first CVE in the skill where the trigger is an outbound call, not an inbound request. Reinforces the **circuit-breaker pattern** in `security.md` (cycle 5) and the **`Http::timeout()` / `connectTimeout()` patterns** in `api.md`. Every Laravel app's outbound integrations should be health-checked and circuit-broken.
+- **Process-level FPM crash + Restart=always** — the CVE-2026-12184 crash signature is a worker SIGSEGV that scales to a full pool DoS. Distinct from the cycle 18 AES-WRAP worker-level crash and the cycle 5 Slow JSON Stream worker-stuck signatures. Reinforces the **FPM `Restart=always` systemd policy** as a general DoS-mitigation backstop, not just a CVE-2026-12184-specific fix.
+- **Certificate-expiry monitoring** — the CVE is reachable from a benign expired-cert endpoint. Reinforces the **egress monitoring** patterns in `deployment.md` and the **third-party integration health-check** patterns in `api.md`. Any production Laravel app with >5 third-party HTTPS integrations should have a daily cert-expiry probe job.
+- **CVSS score pending at cycle time** — the GHSA was published with severity `high` but no CVSS base score; the NVD entry is also not yet published at cycle time (2026-07-04 18:00 UTC). Agents should treat "GHSA published with `severity: high` and no CVSS" as "treat as 7.0+ HIGH until NVD publishes" — same rule as cycle 18's `openssl_encrypt` CRITICAL entry.
