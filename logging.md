@@ -240,6 +240,7 @@ class AssignTraceContext
 - Structured logging with `shareContext()` is the recommended approach for request correlation
 - Sentry is the most common production error monitoring for Laravel apps
 - Laravel 13 Papertrail channel uses Monolog handler natively
+- **Channel Name Respected in `on-demand` Log Stacks (Laravel 13.18.1, PR #60635 by @maltf0)** — `Log::build([...])` and `Log::stack([...])` with `driver: 'errorlog'` or `driver: 'monolog'` on an `on-demand` channel previously ignored the configured `channel` name in some callsites (logs landed under the parent's channel instead). Each channel now writes to its own configured name. Affects anyone using `Log::stack(['on-demand-channel' => [...]])` or building dynamic log channels at runtime.
 - **JsonFormatter (Laravel 13.6+)** — native `Monolog\Formatter\JsonFormatter` support for structured JSON log output, ideal for log aggregation pipelines
 
 Source: [Laravel Logging](https://laravel.com/docs/13.x/logging)

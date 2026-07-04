@@ -644,3 +644,26 @@ At cycle start, `blade.md` had not been touched since 2026-06-28 (cycle 6) — *
 - **`SKILL.md`** — bumped v1.22.6 → v1.22.7; added four new nav-table entries for the new Blade sections.
 
 SKILL.md bumped to **v1.22.7** (cycle-19 Blade gap-fill — form-helper directives + `@verbatim` + `Blade::render()` + inline component views). 19 cycles in last 3 days.
+
+---
+
+## Auto-Updater Cycle Notes
+
+### Cycle 23 (2026-07-04 06:00 UTC) — Cross-Reference Completion for 13.18.1
+
+Cycle 22 (00:05 UTC) added the full Laravel 13.18.1 release notes to this file but only
+updated cross-references (e.g. "Covered in `queues.md`") — the actual content in the
+topic files was never written. Cycle 23 fills the gap by adding the missing content to:
+
+- `queues.md` — `Release` middleware (PR #60630) + `Queue::fake()` delayed-job inspection (PR #60636)
+- `artisan.md` — `input()` method on console commands (PR #60607)
+- `testing.md` — `assertDatabaseEmpty()` accepts iterables (PR #60621) + `assertPushed()->delay()` for queue fake (PR #60636)
+- `logging.md` — channel name respected in `on-demand` log stacks (PR #60635)
+- `validation.md` — `Str::mask()` UTF-8 boundary fix (PR #60646)
+- `deployment.md` — `php artisan down` intercepts `/api/*` and JSON routes (PR #60595)
+- `controllers.md` — maintenance-mode JSON response for API routes (PR #60595)
+- `migrations.md` — `foreignUuid()` / `foreignUlid()` Blueprint return types (PR #60643)
+
+Items deliberately not added to topic files (too narrow to justify a section):
+- Predis scalar retry config (PR #60642) — niche, Predis-only, no API-surface change
+

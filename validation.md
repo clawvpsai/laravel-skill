@@ -314,6 +314,7 @@ public function rules(): array
 
 ## Updated from Research (2026-05-20)
 - **starts_with/ends_with accept numeric values (Laravel 13.10+)** — fixed validation rule regression. Previously rejected integer/float values. Now accepts them alongside strings.
+- **`Str::mask()` Encoding Boundary Fix (Laravel 13.18.1, PR #60646 by @iammcoding)** — when the mask would truncate a multi-byte character at the tail of the string, `Str::mask()` previously chopped the encoding and emitted a partial character (rare display bugs on UTF-8 inputs that hit the mask boundary). Now pads with the encoding-aware character instead. Affects any code that uses `Str::mask($value, '*', $start, $length)` on user-controlled UTF-8 input — e.g. masking email/phone for display.
 - **Line break injection prevention (Laravel 13.10+)** — email validation now rejects values containing line breaks, preventing email header injection attacks.
 - Laravel 13 enhances `required_if` behavior and adds `prohibits` rule
 - `Rule::when()` method allows conditional rule application

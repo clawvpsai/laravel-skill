@@ -375,6 +375,7 @@ DB_PASSWORD=xxx
 - `SET LOCAL` is the only `SET` allowed (it resets at transaction end) — Laravel's `SET search_path` / `SET statement_timeout` should be `SET LOCAL`
 - Advisory locks (`pg_advisory_lock`) **do not work** in transaction mode — use a Redis lock instead
 - `LISTEN` / `NOTIFY` don't work (session-scoped) — use Postgres triggers that write to a queue table instead
+- **API/JSON Routes Respect `php artisan down` (Laravel 13.18.1, PR #60595 by @davidrushton)** — when the app is in maintenance mode with `secret` bypass (`php artisan down --secret=...`), requests to `/api/*` or routes that set `Accept: application/json` were not always gated correctly. Now the `Down` command handles both web and API/JSON routes uniformly — maintenance mode responses return JSON (`{"message": "Service Unavailable", "retry_after": N}`) for API/JSON callers instead of falling through to a 500. If you've hand-rolled a "maintenance mode" middleware for API routes because the built-in one didn't catch them, you can now delete it.
 
 Source: [PR #60425](https://github.com/laravel/framework/pull/60425) | [Laravel 13.17 Release Notes](https://github.com/laravel/framework/releases/tag/v13.17.0) | [Neon connection pooling docs](https://neon.tech/docs/connect/connection-pooling)
 

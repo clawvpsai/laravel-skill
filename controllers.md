@@ -344,6 +344,7 @@ try {
 ## Updated from Research (2026-06-29)
 
 - **Single Action Controllers (`__invoke`)** — One controller per non-CRUD endpoint. Combine with `#[Middleware]` / `#[Authorize]` for typed, narrowly-scoped action classes.
+- **Maintenance Mode Returns JSON for API/JSON Routes (Laravel 13.18.1, PR #60595)** — `php artisan down` now correctly intercepts requests to API routes (`/api/*`) and routes that set `Accept: application/json`, returning a proper JSON `{"message": "Service Unavailable", "retry_after": N}` body instead of falling through to a 500. Use the `secret` bypass flag (`--secret=...`) for staff bypass during deploys. See `deployment.md` for the full maintenance-mode workflow.
 - **`Route::pattern()` global constraints** — `Route::pattern('id', '\d+')` applies to every route in the app. Watch for 404 vs `ModelNotFoundException` after applying.
 - **HEAD request cache headers fix (PR #60589)** — `SetCacheHeaders` middleware now applies to `HEAD` requests as of 13.18.0+. Fixes CDN cache-warming scripts that previously saw no `Cache-Control` / `ETag` on HEAD probes.
 - **API versioning convention** — `prefix('vN')->name('api.vN.')` keeps URL helpers stable; use `Route::apiResource()` instead of `Route::resource()` for JSON-only endpoints; add `Sunset` HTTP header for deprecated versions via metadata.

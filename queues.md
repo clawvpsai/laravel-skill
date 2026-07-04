@@ -785,6 +785,7 @@ $batch->failed(); // number of failures
 5. **Not using unique job IDs** — duplicate dispatches cause double-processing
 6. **No retry backoff** — hammer the failing service with immediate retries
 7. **Duplicate dispatches causing double-processing** — use `#[DebounceFor]` for bursty workloads where only the last dispatch matters
+8. **Manually calling `$this->release($delay)` in every job** — if your `handle()` is *only* releasing (not actually processing), move the policy into `Illuminate\Queue\Middleware\Release` and attach via `->middleware(new Release($delay))` on the job or its default middleware stack (Laravel 13.18.1+).
 
 ## Updated from Research (2026-06-29)
 
@@ -805,6 +806,8 @@ $batch->failed(); // number of failures
 - **Cloud-Request-ID (renamed from X-Request-ID, Laravel 13.11+)** — renamed for clarity in cloud deployments. Auto-written to log entries for distributed request tracing.
 - **WorkerIdle Event (Laravel 13.10+)** — fires when the queue worker has no jobs to process (only on empty queue, unlike `WorkerLooping` which fires every iteration). Useful for scaling down, cleanup, and idle metrics.
 - **assertPushedOnce (Laravel 13.10+)** — `Queue::assertPushedOnce($job)` asserts a job was pushed exactly once. Accepts optional callback for partial matching.
+- **`Release` Queue Middleware (Laravel 13.18.1, PR #60630)** — declarative companion to `$this->release($delay)`. Attach via `->middleware(new \Illuminate\Queue\Middleware\Release($delayInSeconds))` so the job releases itself back to the queue after middleware runs, without `handle()` needing to call `release()` manually. Use for "try, and if it would conflict, hand off to another worker" patterns without scattering `release()` calls across job classes. Add to `withMiddleware()` in `bootstrap/app.php` or apply per-job via `->middleware(new Release(60))` on the dispatch chain.
+- **Inspect Delayed Jobs on `Queue::fake()` (Laravel 13.18.1, PR #60636)** — `Queue::fake()` now tracks the `availableAt` timestamp on pushed jobs. Tests can inspect delayed releases via `Queue::assertReleased()` / `Queue::assertDelayed()` instead of losing the delay metadata when reading the fake.
 
 Source: [Laravel 13 Docs - Queues](https://laravel.com/docs/13.x/queues)
 

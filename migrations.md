@@ -239,6 +239,10 @@ Schema::table('posts', function (Blueprint $table) {
 composer require doctrine/dbal
 ```
 
+## Laravel 13.18.1 Migration Blueprint Improvements
+
+- **`foreignUuid()` / `foreignUlid()` Blueprint return types (PR #60643 by @LiddleDev)** — these Blueprint methods now declare `ColumnType::Uuid` / `ColumnType::Ulid` to match `foreignId()`, so schema-dumpers and migration generators handle them uniformly. No runtime behavior change — only matters for tooling that introspects Blueprint method return types.
+
 ## Foreign Key Constraints
 
 ```php

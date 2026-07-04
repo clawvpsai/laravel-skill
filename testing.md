@@ -202,6 +202,12 @@ $this->assertDatabaseMissing('posts', ['id' => $deletedId]);
 
 // Assert count
 $this->assertDatabaseCount('posts', 5);
+
+// Assert table(s) are empty (Laravel 13.18.1+ — accepts string|iterable)
+$this->assertDatabaseEmpty('posts');                  // table name (string)
+$this->assertDatabaseEmpty(User::all());             // Eloquent collection
+$this->assertDatabaseEmpty([$tableA, $tableB]);      // array of table names
+$this->assertDatabaseEmpty(collect(['posts', 'users'])); // any iterable
 ```
 
 ## Validation Assertions — Use `assertInvalid` / `assertValid` (Laravel 11+)
@@ -427,6 +433,9 @@ Queue::fake(); // jobs aren't actually dispatched
 
 // Assert a job was dispatched
 Queue::assertPushed(ProcessPostJob::class, fn($job) => $job->postId === 5);
+
+// Assert a job was pushed with a specific delay (Laravel 13.18.1+)
+Queue::assertPushed(ProcessPostJob::class)->delay(60);
 
 // Assert job was NOT dispatched
 Queue::assertNotPushed(ProcessPostJob::class);
@@ -704,5 +713,6 @@ Source: [PR #60489](https://github.com/laravel/framework/pull/60489) | [Laravel 
 - **Pest PHP** — increasingly standard in Laravel ecosystem; `pest()` function replaces `TestCase` class methods.
 - **HTTP Client Mocking** — `Http::fake()` for mocking external API calls in tests.
 - **Mocking Best Practices** — use `mock()` for services, `spy()` when you only need to verify calls happened, `Queue::fake()` for job queues.
+- **`assertDatabaseEmpty()` Accepts Iterables (Laravel 13.18.1, PR #60621 by @jackbayliss)** — previously only worked with table-name strings (`'posts'`); passing an Eloquent collection or Builder threw `Argument #1 must be of type string`. Now `assertDatabaseEmpty(string|iterable $table)` accepts collections, arrays of table names, or any iterable. Lets you write `$this->assertDatabaseEmpty(User::all())` to verify a table is empty after a destructive operation.
 
 Source: [Laravel 13 Docs - Testing](https://laravel.com/docs/13.x/testing)

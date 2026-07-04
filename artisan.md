@@ -55,6 +55,11 @@ class ProcessPostsCommand extends Command
             return Command::SUCCESS;
         }
 
+        // Laravel 13.18.1+ — typed CLI input reader (parallel to request()->input()):
+        $email = $this->input('email');                  // single value
+        [$email, $name] = $this->input(['email', 'name']); // multiple values, returns array
+        $all = $this->input();                            // all args + options as array
+
         $count = 0;
         $query->chunk(100, function ($posts) use (&$count) {
             foreach ($posts as $post) {
@@ -267,6 +272,8 @@ $durationMs = $process->recordDuration();
 - `abortIf($condition)` — call `signal(SIGTERM)` then `wait()` based on a condition
 
 **Why this matters:** `InvokedProcess` was previously a sealed-shape object — the only way to add helpers was to wrap it. `Macroable` removes the need for a wrapper and keeps call sites clean.
+
+- **`input()` on Console Commands (Laravel 13.18.1, PR #60607 by @stevebauman)** — `$this->input('name')` returns a single value (string|array|null), `$this->input(['a', 'b'])` returns an associative array of named values, `$this->input()` (no args) returns everything. Cleaner than `$this->argument()` + `$this->option()` + manual casting for every command. Works on `Illuminate\Console\Command` subclasses only.
 
 Source: [PR #60392](https://github.com/laravel/framework/pull/60392) | [Laravel 13.15 Release Notes](https://github.com/laravel/framework/releases/tag/v13.15.0)
 
