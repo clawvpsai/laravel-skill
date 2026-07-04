@@ -255,6 +255,88 @@ if (Gate::denies('update', $post)) {
 }
 ```
 
+## Laravel 13 Policy Registration — `#[UsePolicy]` Attribute
+
+The classic `Gate::policy(Model::class, PolicyClass::class)` registration in `AppServiceProvider` still works in Laravel 13, but there's now a **declarative, model-side** alternative — the `#[UsePolicy]` PHP attribute on the model class itself. Laravel reads the attribute via reflection and wires the policy automatically; no service-provider boot code required.
+
+```php
+<?php
+
+namespace App\Models;
+
+use App\Policies\OrderPolicy;
+use Illuminate\Database\Eloquent\Attributes\UsePolicy;
+use Illuminate\Database\Eloquent\Model;
+
+#[UsePolicy(OrderPolicy::class)]
+class Order extends Model
+{
+    //
+}
+```
+
+**Why prefer `#[UsePolicy]` over `Gate::policy()` in Laravel 13:**
+
+- **Colocation** — the policy is declared next to the model, so a code reviewer scanning `app/Models/Order.php` sees exactly which policy gates it. No need to grep `AppServiceProvider` to find out which policy class applies.
+- **No boot-time race** — the registration is part of class metadata, so it works correctly in every request lifecycle (including Octane / FrankenPHP long-lived workers where `boot()` may run once per worker respawn but the model class is loaded per request).
+- **No service provider bloat** — `AppServiceProvider` stays focused on app-level concerns (Gate::define closures, observers, Route::pattern global constraints) instead of accumulating policy registration for every model.
+
+**What this does NOT change:**
+
+- Policy method signatures (`view`, `viewAny`, `create`, `update`, `delete`, custom methods) are identical.
+- The `Gate::authorize()`, `$this->authorize()`, and `Gate::forUser($user)->allows()` call sites are identical.
+- The `#[Authorize('action', 'routeParam')]` controller attribute (covered below) still works without modification — it just resolves the policy via the same auto-discovery.
+
+**Edge cases:**
+
+- `#[UsePolicy]` lives at `Illuminate\Database\Eloquent\Attributes\UsePolicy`. Don't confuse it with the controller-side `#[Authorize]` attribute (`Illuminate\Routing\Attributes\Controllers\Authorize`) — same family of "declarative auth" attributes, but they live in different namespaces and serve different purposes.
+- If you have BOTH `#[UsePolicy]` on the model AND `Gate::policy(Model::class, PolicyClass::class)` in `AppServiceProvider`, the explicit `Gate::policy()` call wins (it runs later in the boot cycle and overrides). Strip the manual registration to avoid the drift.
+- For Laravel 12 and earlier, this attribute doesn't exist — keep using `Gate::policy()` for those versions. The attribute is Laravel 13+ only.
+
+## Laravel 13 Controller Authorization Attributes — `#[Authorize]` + `#[Middleware]`
+
+Laravel 13 adds PHP attributes that let you put policy authorization and middleware directly on the controller — replacing the `__construct()` middleware assignments and `$this->authorize()` / `Gate::authorize()` calls inside action methods.
+
+```php
+use Illuminate\Routing\Attributes\Controllers\Authorize;
+use Illuminate\Routing\Attributes\Controllers\Middleware;
+
+#[Middleware('auth:sanctum')]                              // class-level — all methods
+class CommentController
+{
+    #[Authorize('create', [Comment::class, 'post'])]       // requires Post model in route + create permission
+    public function store(Post $post) { /* ... */ }
+
+    #[Authorize('delete', 'comment')]                       // comment is the route parameter name
+    public function destroy(Comment $comment) { /* ... */ }
+
+    #[Middleware('throttle:api')]                           // method-level middleware addition
+    public function index() { /* ... */ }
+}
+```
+
+**Two-argument `#[Authorize(ability, target)]` semantics:**
+
+| Second argument | What happens | Example |
+|---|---|---|
+| Route parameter name (string) | Resolves the bound model from the route and passes it to the policy method | `#[Authorize('update', 'post')]` → `PostPolicy::update($user, $post)` |
+| Model class (FQCN) | Policy method called WITHOUT a model instance (e.g. `create`) | `#[Authorize('create', Comment::class)]` |
+| `[Class::class, 'routeParam']` tuple | Pass the class + a different route param to the policy (for actions that authorize one model based on another) | `#[Authorize('create', [Comment::class, 'post'])]` → `CommentPolicy::create($user, $post)` |
+
+**Why use `#[Authorize]` over `$this->authorize()` in the method body:**
+
+- **No "did I forget the auth check?" audit problem** — the attribute is on the controller method, declarative, and visible in code review at a glance. With `$this->authorize()` you have to read the first 3 lines of every action method.
+- **Hard fail on missing policy** — if the policy method doesn't exist on the resolved policy class, the route throws at registration time (when the attribute is parsed), not at request time when the user is already authenticated.
+- **Survives copy-paste** — if you scaffold a `ResourceController` and copy-paste methods, the auth attribute goes with the method. With `$this->authorize()` it's easy to paste a method and forget the call.
+
+**What this does NOT replace:**
+
+- Route-level middleware (`Route::middleware('auth:web')->group(...)`) — still useful for grouping many endpoints.
+- Inline `$request->user()->can('do-thing')` checks — fine inside Blade views for showing/hiding UI affordances.
+- `Gate::define()` for ad-hoc permissions that aren't tied to a model.
+
+See `controllers.md` (Laravel 13 Controller Attributes section) for the full `#[Middleware]` / `#[Authorize]` usage patterns including `only:` / `except:` filters and middleware parameter syntax.
+
 ## Gates
 
 ```php
@@ -360,6 +442,11 @@ php artisan fortify:install
 
 Source: [Laravel 13 Docs - Sanctum](https://laravel.com/docs/13.x/sanctum) | [Laravel Passkeys](https://laravel.com/docs/13.x/passkeys) | [CSRF](https://laravel.com/docs/13.x/csrf)
 
+
+### Laravel 13 PHP Attribute Authorization (cycle 24, 2026-07-04)
+
+- **`#[UsePolicy]` on Eloquent models** — Laravel 13 auto-discovers a model's policy via the `Illuminate\Database\Eloquent\Attributes\UsePolicy` PHP attribute. Lets you colocate policy registration with the model instead of centralizing all `Gate::policy()` calls in `AppServiceProvider`. Compatible with the existing `Gate::policy()` registration (explicit call wins on conflict).
+- **`#[Authorize]` controller attribute** — Laravel 13's declarative policy check on controller methods. Signature: `#[Authorize('ability', $target)]` where `$target` is a route parameter name, a model class FQCN, or `[Class::class, 'routeParam']`. Pairs with the existing `#[Middleware]` attribute on controllers. See `controllers.md` (Laravel 13 Controller Attributes section) for full usage.
 
 ### Laravel 13 Starter Kit Passkey Integration
 

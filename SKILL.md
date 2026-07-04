@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.10
+version: 1.22.11
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -36,6 +36,8 @@ metadata:
 | `Context` facade for log context | `logging.md` (Context facade section) | Request/job-scoped context that auto-attaches to logs and survives queue dispatch |
 | `Password::toPasswordRulesString()` | `validation.md` (Password rules section) | Derive JS `passwordrules` HTML hint from server-side `Password::` rule |
 | `Features::passkeyAuthentication()` / `passkeyRegistration()` | `auth.md` (Starter Kits section) | Laravel 13 starter-kit + Fortify passkey integration |
+| `#[UsePolicy]` model attribute (Laravel 13) | `auth.md` (Policy Registration section) | Colocate policy with model — replace `Gate::policy()` boot code |
+| `#[Authorize]` controller attribute (Laravel 13) | `auth.md` (Controller Authorization Attributes section) + `controllers.md` | Declarative policy check on controller methods, route-param resolution built-in |
 | `assertInvalid()` / `assertValid()` / `assertOnlyInvalid()` | `testing.md` (Validation Assertions section) | Laravel 11+ generic validation assertions for JSON + session flows |
 | `Exceptions` facade (`assertReported`, `assertNothingReported`, `throwFirstReported`) | `testing.md` (Exception Assertions section) | Laravel 11.5+ clean exception assertions without try/catch |
 | Pest 3 architecture testing (`->arch()->preset()->laravel()`, `->toBeFinal()`, `->toHaveMethodsDocumented()`) | `testing.md` (Pest 3 section) | Enforce Laravel conventions + design rules in CI |

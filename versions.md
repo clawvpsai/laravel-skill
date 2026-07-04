@@ -667,3 +667,25 @@ topic files was never written. Cycle 23 fills the gap by adding the missing cont
 Items deliberately not added to topic files (too narrow to justify a section):
 - Predis scalar retry config (PR #60642) — niche, Predis-only, no API-surface change
 
+
+---
+
+### Cycle 24 (2026-07-04 12:00 UTC) — auth.md Gap Fill (Laravel 13 PHP Attribute Authorization)
+
+Cycle 23 (06:00 UTC) finished cross-reference completion for the 13.18.1 release notes. No new Laravel framework release since v13.18.1 (tagged 2026-07-02 18:36 UTC) — GitHub `releases/latest` still resolves to 13.18.1 at cycle time. GitHub Security Advisories API for `laravel/framework` rechecked at 12:00 UTC — no new advisories since `GHSA-crmm-hgp2-wgrp` (CVE-2026-48041, June 8, 2026), already documented in `security.md`. No new PHP batch, no new ecosystem CVEs.
+
+`auth.md` was the **oldest untouched topic file** at cycle start (last modified 2026-06-28 — **6 days stale**), and was missing two of Laravel 13's headline authorization features:
+
+1. **`#[UsePolicy]` PHP attribute on Eloquent models** (`Illuminate\Database\Eloquent\Attributes\UsePolicy`) — declarative model-side policy registration that replaces `Gate::policy(Model::class, PolicyClass::class)` in `AppServiceProvider`. Reviewed-by-reflection auto-registration. AI models writing fresh Laravel 13 code default to the verbose `AppServiceProvider` boot pattern instead of the attribute, because the attribute shipped in Laravel 13 and most training data is pre-13.
+2. **`#[Authorize]` controller attribute** (`Illuminate\Routing\Attributes\Controllers\Authorize`) — declarative policy check on controller methods. Signature: `#[Authorize('ability', $target)]` where `$target` is a route parameter name, a model class FQCN, or `[Class::class, 'routeParam']`. Eliminates the `$this->authorize()` first-line-of-method pattern that's easy to forget on copy-paste. The attribute was already documented in `controllers.md` (Laravel 13 Controller Attributes section, line 84+) — `auth.md` just didn't cross-link to it.
+
+- **`auth.md`** — added two new sections between "Policies" and "Gates":
+  1. **Laravel 13 Policy Registration — `#[UsePolicy]` Attribute** — full example, three-reason preference rationale (colocation, no boot-time race in Octane/FrankenPHP, no service-provider bloat), explicit non-changes (policy method signatures and call sites identical), and three edge cases (namespace confusion with the controller-side `#[Authorize]`, manual `Gate::policy()` override rule, Laravel 12 backward-compat note).
+  2. **Laravel 13 Controller Authorization Attributes — `#[Authorize]` + `#[Middleware]`** — full example, three-row table covering the three `#[Authorize]` second-argument forms (route param name, model class FQCN, `[Class::class, 'routeParam']` tuple), three reasons to prefer attribute over `$this->authorize()` (audit visibility, hard-fail on missing policy at registration time, copy-paste safety), explicit non-replacements (route-level middleware, Blade `can()` checks, ad-hoc `Gate::define()`), and cross-link to `controllers.md`.
+  - Updated the "Updated from Research" section at the bottom with a `### Laravel 13 PHP Attribute Authorization (cycle 24, 2026-07-04)` entry.
+
+- **`SKILL.md`** — bumped v1.22.10 → v1.22.11 (cycle 24).
+- **`README.md`** — bumped version stamp + research-cycle marker to reflect cycle 24.
+- **`versions.md`** — no change to the "New in Laravel 13.18.1" section (no new release); added the cycle 24 auto-updater note above.
+
+SKILL.md bumped to **v1.22.11** (cycle-24 auth.md gap fill — `#[UsePolicy]` model attribute + `#[Authorize]` controller attribute + cross-link to `controllers.md`). 24 cycles in 4 days.
