@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.9
+version: 1.22.10
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -49,6 +49,15 @@ metadata:
 | `php artisan dev --kill-others-on-fail` (PR #60606) | `artisan.md` (Dev Orchestration section) | 13.18.0+ tears down sibling dev processes on non-zero exit; use in CI / one-shot dev, leave off for normal local dev |
 | TaggedCache `flexible()` lock/defer namespace fix (PR #60626) | `performance.md` (TaggedCache section) | 13.18.0+ namespaces `flex_lock:` and `flex_defer:` keys separately so a custom lockName can't collide with a defer label |
 | Debounced-jobs cache-hit reduction (PR #60575) | `performance.md` (Cache debounce subsection) | 13.18.0+ skips lock acquisition when already inside the debounce window — pairs with the 13.17.0 `maxWait` fix |
+| `Release` queue middleware (`Illuminate\Queue\Middleware\Release`) (PR #60630) | `queues.md` (Job Middleware section) | 13.18.1+ declarative `->middleware(new Release($delay))` so jobs release themselves without `$this->release()` calls scattered through `handle()` |
+| `$this->input()` on console commands (PR #60607) | `artisan.md` (Defining Commands section) | 13.18.1+ typed `$this->input('email')` / `$this->input(['email', 'name'])` — cleaner than `$this->argument()` + `$this->option()` + manual casting |
+| `assertDatabaseEmpty()` accepts iterables (PR #60621) | `testing.md` (Database Assertions section) | 13.18.1+ lets you write `$this->assertDatabaseEmpty(User::all())` or `[$tableA, $tableB]` — was string-only and threw on collections |
+| `api` / `json` routes respect `php artisan down` (PR #60595) | `controllers.md` (Maintenance section) + `deployment.md` (Maintenance Mode section) | 13.18.1+ returns JSON `503` for API/JSON callers under maintenance with `secret` bypass — drop hand-rolled maintenance middleware for API routes |
+| `on-demand` log stacks respect configured channel name (PR #60635) | `logging.md` (Stacked / On-Demand Channels section) | 13.18.1+ `Log::build(['driver' => 'errorlog', 'channel' => 'audit'])` writes to the `audit` channel — was silently falling through to parent in some callsites |
+| Inspect delayed jobs on `Queue::fake()` (PR #60636) | `testing.md` (Queue Assertions section) | 13.18.1+ queue fake tracks `availableAt` so `assertPushed(Job::class)` followed by `->delay(60)` inspections work — was lost on dispatch |
+| `Str::mask()` encoding-aware tail (PR #60646) | `validation.md` (Sanitization Helpers section) + `security.md` (Output Encoding section) | 13.18.1+ doesn't chop a multi-byte character at the mask boundary — was emitting partial UTF-8 characters on long-tail strings |
+| `foreignUuid` / `foreignUlid` Blueprint return types (PR #60643) | `migrations.md` (Foreign Key Constraints section) | 13.18.1+ returns `ColumnType::Uuid` / `ColumnType::Ulid` matching `foreignId()` — schema-dumpers and migration generators handle them uniformly |
+| Predis retry config accepts scalar values (PR #60642) | `deployment.md` (Redis Configuration section) | 13.18.1+ `redis.options.read_write_timeout` etc. can be scalars in `config/database.php` without breaking `config:cache` (Predis-only; PhpRedis unaffected) |
 | `RateLimited` middleware `releaseAfter` `__sleep()` fix (PR #60609) | `queues.md` (RateLimited middleware section) | 13.18.0+ serializes throttle timestamps so `dispatch($job->afterCommit())` doesn't lose the throttle window |
 | `schedule:work` graceful signal handling (PR #60616) | `artisan.md` (schedule:work section) | Long-lived scheduler in Docker/K8s/supervisord exits cleanly on SIGTERM, lets in-flight runs finish |
 | Soft-delete `restore()` event gating (PR #60605) | `observers.md` (restored callback note) | Laravel 13.17+ only fires `restored` when the underlying save() actually succeeded — check the boolean return |

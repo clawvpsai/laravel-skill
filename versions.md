@@ -4,7 +4,7 @@
 
 - **Laravel 11** — **End of life** (security support ended March 12, 2026). Upgrade to 12 or 13.
 - **Laravel 12** — Active development (v12.62.0 as of June 9, 2026; bug fixes until Aug 13, 2026, security until Feb 24, 2027)
-- **Laravel 13** — Current latest (v13.18.0 as of June 30, 2026; bug fixes until Q3 2027, security until Mar 17, 2028)
+- **Laravel 13** — Current latest (v13.18.1 as of July 2, 2026; bug fixes until Q3 2027, security until Mar 17, 2028)
 
 ## Version Selector Prompt
 
@@ -17,7 +17,7 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — June 2026, v13.18.0)
+## Laravel 13 (Latest — July 2026, v13.18.1)
 
 ### New in Laravel 13
 
@@ -97,6 +97,49 @@ Tagged 2026-06-30 12:55 UTC. **All post-v13.17.0 fixes originally tracked in the
 - `php artisan dev` priority + `--kill-others-on-fail` → `artisan.md` (Dev Orchestration section)
 - TaggedCache `flexible()` lock/defer namespace fix → `performance.md` (TaggedCache subsection)
 
+### New in Laravel 13.18.1 (July 2, 2026, v13.18.1)
+
+Tagged 2026-07-02 18:36 UTC (two days after 13.18.0). Pure patch release — `composer update laravel/framework` is safe; no breaking changes. Mostly bug fixes and developer-experience improvements, plus one genuinely useful new feature (`Release` queue middleware) and one JSON parsing hardening (`api`/`json` routes respect `Down` maintenance).
+
+**New features (2 PRs):**
+
+- **`Release` queue middleware (`Illuminate\Queue\Middleware\Release`)** — declarative companion to `$this->release()` / `$this->release($delay)`. Attach via `->middleware(new Release($delayInSeconds))` so a job automatically releases itself back to the queue after the middleware runs (without your `handle()` needing to call `release()` manually). Use for "try, and if it would conflict, hand off to another worker" patterns without scattering release calls across every job class. PR #60630 by @mgcodeur. Covered in `queues.md` (Job Middleware section).
+
+- **`input()` method on console commands** — first-class CLI input reader that returns a typed array, parallel to `request()->input()` for HTTP. `$this->input('email')`, `$this->input(['email', 'name'])`, `$this->input()` (all). Cleaner than `$this->argument()` + `$this->option()` + manual casting in every command. PR #60607 by @stevebauman. Covered in `artisan.md` (Defining Commands section).
+
+**Bug fixes (6 PRs):**
+
+- **`assertDatabaseEmpty()` accepts iterables** — previously only worked with table-name strings; passing an Eloquent collection or Builder threw `Argument #1 must be of type string`. Now accepts `string|iterable`. Lets you write `$this->assertDatabaseEmpty(User::all())` or `$this->assertDatabaseEmpty([$tableA, $tableB])`. PR #60621 by @jackbayliss. Covered in `testing.md`.
+
+- **`api` / `json` routes respect `php artisan down` (Maintenance)** — when the app is in maintenance mode with `secret` bypass, `php artisan down --secret=...`, requests to `/api/*` or routes that set `Accept: application/json` were not always gated correctly. Now the `Down` command handles both web and API/JSON routes uniformly — maintenance mode responses return JSON (`{"message": "Service Unavailable", "retry_after": N}`) for API/JSON callers instead of falling through to a 500. PR #60595 by @davidrushton. Covered in `controllers.md` + `deployment.md` (Maintenance section).
+
+- **Channel name respected in `on-demand` log stacks** — `Log::build([...])`/`Log::stack([...])` with `driver: 'errorlog'` or `driver: 'monolog'` on an `on-demand` channel was previously ignoring the configured `channel` name in some callsites (logs landed under the parent's channel). Each channel now writes to its own configured name. PR #60635 by @maltf0. Covered in `logging.md` (Stacked / On-Demand Channels section).
+
+- **Inspect delayed jobs on `Queue::fake()`** — `$this->artisan(...)` test helper plus `Queue::fake()` previously lost delayed-job metadata when inspecting the queue fake after a dispatch (`assertPushed` worked, but `assertReleased`/`assertDelayed` couldn't see delays). Now the queue fake tracks the `availableAt` timestamp so you can assert `$queue->assertPushed(Job::class)->delay(60)`-style inspections. PR #60636 by @jackbayliss. Covered in `testing.md` (Queue Assertions section).
+
+- **`Str::mask()` respects encoding at the end of the string** — when the mask would truncate a multi-byte character at the tail, `Str::mask()` previously chopped the encoding and emitted a partial character (rare display bugs on UTF-8 inputs that hit the mask boundary). Now pads with the encoding-aware character instead. PR #60646 by @iammcoding. Covered in `validation.md` + `security.md` (output encoding section).
+
+- **Predis retry config supports scalars for `config:cache`** — `config/database.php` `redis.options.read_write_timeout` and similar Predis options historically required arrays (so `php artisan config:cache` blew up when you set them to scalar values). Now scalars are accepted and passed through. PR #60642 by @crynobone. Niche — affects Predis users only; PhpRedis unaffected.
+
+**Docblock / type-only fixes (1 PR):**
+
+- **`foreignUuid` / `foreignUlid` Blueprint return types** — `foreignUuid()` / `foreignUlid()` on Blueprint now declare `ColumnType::Uuid` / `ColumnType::Ulid` to match `foreignId()`, so schema-dumpers and migration generators handle them uniformly. No runtime behavior change. PR #60643 by @LiddleDev. Covered in `migrations.md` (Foreign Key Constraints section).
+
+**Upgrade notes:** No breaking changes vs 13.18.0. Drop-in safe to upgrade. The two most useful additions to actually pull from 13.18.1 in your codebase:
+
+1. **`Release` middleware** (PR #60630) — lets you delete a handful of `$this->release(...)` calls scattered across job classes and centralize the release policy in `withMiddleware()` / job default middleware. Worth doing the next time you touch a job that releases itself.
+2. **`api`/`json` routes respect `Down`** (PR #60595) — if you've hand-rolled a "maintenance mode" middleware for API routes because the built-in one didn't catch them, you can now delete it.
+
+**Where each 13.18.1 change lives in this skill (cross-references):**
+- `Release` queue middleware → `queues.md` (Job Middleware section)
+- `input()` on console commands → `artisan.md` (Defining Commands section)
+- `assertDatabaseEmpty()` iterable → `testing.md` (Database Assertions section)
+- `api`/`json` routes respect `Down` → `controllers.md` (Maintenance section) + `deployment.md` (Maintenance Mode section)
+- `on-demand` log stack channel name → `logging.md` (Stacked / On-Demand Channels section)
+- Inspect delayed jobs on queue fake → `testing.md` (Queue Assertions section)
+- `Str::mask()` encoding-aware tail → `validation.md` (Sanitization Helpers section) + `security.md` (Output Encoding section)
+- `foreignUuid`/`foreignUlid` return types → `migrations.md` (Foreign Key Constraints section)
+- Predis retry scalar config → `deployment.md` (Redis Configuration section)
 ### Late-June 2026 Bug Fixes — Now Shipped in v13.18.0 (History Note)
 
 > **Status as of 2026-06-30:** every item originally listed in this section shipped in v13.18.0 on 2026-06-30 12:55 UTC. See the **"New in Laravel 13.18"** section above for the canonical description of each fix. This section is preserved as a historical trail showing the cycle-by-cycle tracking — useful when triaging incidents on older patch versions.
