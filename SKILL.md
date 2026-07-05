@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.12
+version: 1.22.13
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -66,6 +66,10 @@ metadata:
 | Embedding caching (`Embeddings::for(...)->cache(seconds: ...)`) | `ai.md` (Embedding Caching section) | Skip duplicate API calls for repeated inputs (knowledge base, FAQs) |
 | `->queue()` for long-running AI calls | `ai.md` (Queue Long-Running AI Calls section) | Audio transcription, image gen, large-doc summarization — don't block HTTP |
 | Prompt caching (`providerOptions(['cache_control' => [...]])`) | `ai.md` (Prompt Caching section) | Anthropic / OpenAI 90% discount on cached input tokens for agents with fixed system prompts |
+| `RemembersConversations` trait + `Conversational` interface | `ai.md` (Conversation Memory section) | Multi-turn chat that persists history automatically — required for any real chatbot / support agent / in-product assistant |
+| Per-class `Agent::fake()` + `preventStrayPrompts()` + `assertPrompted()` | `ai.md` (Testing AI Agents section) | Zero-API-cost AI tests in CI; per-agent scoping is cleaner than facade-level `AI::fake()` |
+| Per-resource fakes (`Image::fake`, `Transcription::fake`, `Embeddings::fake`, `Reranking::fake`, `Files::fake`) | `ai.md` (Testing AI Agents section) | Each AI resource has its own fake + assertions — `AI::fake()` only covers text completions |
+| `HasStructuredOutput` interface + `schema()` auto-fake | `ai.md` (Testing AI Agents section) | Structured-output fakes auto-generate schema-matching fake data — no hand-written JSON |
 | `php artisan i18n:check` (missing translation detector) | `localization.md` (Detecting Missing Translations section) | CI integration to fail builds on incomplete translations |
 | Lazy translation loading (JSON-only, lazy namespaces, DB+cache) | `localization.md` (Lazy Translation Loading section) | Avoid loading thousands of keys on every request for large apps |
 | `Model::preventLazyLoading()` / `preventSilentlyDiscardingAttributes()` / `preventAccessingMissingAttributes()` / `prohibitDestructiveCommands()` | `eloquent.md` (Eloquent Strictness Hardening section) | Turn silent Eloquent bugs into loud exceptions in dev — N+1, missing `$fillable`, typos, accidental mass-delete |
@@ -97,6 +101,8 @@ metadata:
 - **`firstOrCreate` persists immediately** — `firstOrNew` lets you validate before saving
 - **Route model binding defaults to `id`** — override `getRouteKeyName()` for slugs
 - **`Route::metadata()` survives `route:cache`** (Laravel 13.17+) — first-class route metadata via dot notation; use for audit, feature flags, OpenAPI emitters
+- **`Agent::fake()` belongs in every AI test** — never hit a real LLM in CI. Add `->preventStrayPrompts()` so any unmocked agent call throws (catches newly-added agent invocations before they leak API costs into CI).
+- **Don't pair `messages()` with `RemembersConversations`** — defining `messages()` manually makes the trait silently no-op. Pick ONE: trait = automatic DB-backed history, `messages()` = you own storage (Redis, custom scoped table, etc.).
 - **`schedule:work` now catches signals** (Laravel 13.17+, PR #60616) — `SIGINT`/`SIGTERM`/`SIGQUIT` stop new runs cleanly and let in-flight `schedule:run` finish; long-lived scheduler processes no longer need wrapper scripts
 - **HEAD request cache headers** (Laravel 13.18.0+, PR #60589) — `SetCacheHeaders` middleware now applies to `HEAD`. Before: CDN cache-warm scripts got no `Cache-Control`/`ETag`. Force cache headers explicitly if stuck on 13.16
 

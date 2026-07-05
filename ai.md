@@ -234,6 +234,91 @@ foreach (AI::stream('openai', 'gpt-4o', [
 
 ---
 
+## Conversation Memory — Multi-Turn Chat That Remembers
+
+By default, every `Agent::prompt(...)` call is **stateless** — the LLM only sees the single user message. For any real chatbot / support agent / in-product assistant, you need the agent to remember previous turns. The Laravel AI SDK gives you two ways to add memory, both backed by database tables created by `php artisan migrate`.
+
+### Option 1: `RemembersConversations` trait (zero-config)
+
+The trait handles load + persist automatically. New user/assistant messages are written after each interaction; previous messages are loaded on the next prompt. Pair with `Conversational` to mark the agent as stateful:
+
+```php
+use Laravel\Ai\Agents\Agent;
+use Laravel\Ai\Attributes\Conversational;
+use Laravel\Ai\Concerns\RemembersConversations;
+
+#[Conversational]  // marks this agent as having multi-turn context
+class SupportAgent extends Agent
+{
+    use RemembersConversations;  // auto-loads + auto-saves history
+
+    protected function instructions(): string
+    {
+        return 'You are a helpful customer support agent. Use prior turns '
+             . 'to avoid asking the user to repeat themselves.';
+    }
+}
+
+// First turn
+$agent = new SupportAgent;
+$reply = $agent->prompt('My order #1234 never arrived.');
+// → assistant reply, both user + assistant messages persisted
+
+// Second turn — same instance (or new one with same conversation key)
+$reply = $agent->prompt('What should I do next?');
+// → assistant can see the prior "My order #1234" turn and answer coherently
+```
+
+**Under the hood:** the trait reads from / writes to `agent_conversations` + `agent_conversation_messages` tables (created by the AI SDK's published migrations). Conversations are keyed by a stable identifier (e.g. user ID, session ID, ticket ID).
+
+### Option 2: `messages()` method (full control)
+
+If you need a custom history source (Redis, an external chat service, your own `messages` table with tenant scoping), implement `Conversational` and define `messages()` yourself. **When you provide `messages()` manually, the trait will NOT auto-load — you take full control:**
+
+```php
+use Laravel\Ai\Agents\Agent;
+use Laravel\Ai\Attributes\Conversational;
+use Laravel\Ai\Contracts\Conversational as ConversationalContract;
+use Laravel\Ai\Message;
+
+#[Conversational]
+class TenantScopedAgent extends Agent implements ConversationalContract
+{
+    public function instructions(): string
+    {
+        return 'You are a tenant-aware assistant.';
+    }
+
+    /**
+     * Load prior turns from YOUR table (with tenant scoping, filters, etc.).
+     * Return an iterable of Message instances in chronological order.
+     */
+    public function messages(): iterable
+    {
+        return ChatMessage::query()
+            ->where('tenant_id', $this->tenantId)
+            ->where('user_id', $this->userId)
+            ->orderBy('created_at')
+            ->limit(50)
+            ->get()
+            ->map(fn ($m) => new Message($m->role, $m->content));
+    }
+}
+```
+
+**Critical warning from the docs:** *"When using the `RemembersConversations` trait, do not manually define a `messages` method in your agent class. If a `messages` method is present, it will take precedence over the trait's implementation and conversation history will not be loaded from the database."* — if you want the trait, leave `messages()` alone; if you define `messages()`, drop the trait.
+
+### Production gotchas
+
+- **Cap the history.** A 200-turn conversation burns serious tokens. Pass a `limit(50)` (or whatever your model can stomach) in your custom `messages()` query. Claude 3.5 Sonnet fits ~20-40 turns comfortably; GPT-4o handles more, but still rate-limit.
+- **Don't leak across users.** Every agent instance should be scoped to a tenant + user key. The trait uses `agent_conversation_key` (configurable) to namespace — make sure you set it per-request via `$agent->forUser($user->id)` or your constructor.
+- **Persist tool calls too.** If your agent uses tools, the conversation history should include the assistant's tool-call + tool-response pairs, not just the final text. The trait handles this for you; manual `messages()` implementations must include them.
+- **Don't store secrets in history.** If a tool returns an API key, token, or PII in its payload, the trait will persist it. Strip sensitive fields before returning from tool `handle()` methods, or filter them in your custom `messages()` query.
+
+Source: [Laravel AI SDK Docs — Conversation Context](https://laravel.com/docs/13.x/ai-sdk#conversation-context) | [Introducing the Laravel AI SDK — Conversation Memory](https://laravel.com/blog/introducing-the-laravel-ai-sdk)
+
+---
+
 ## Sub-Agents (June 3, 2026) — Multi-Agent Orchestration
 
 Agents can **delegate to specialized sub-agents** by returning them from `tools()`. The parent agent decides when to call a sub-agent; the sub-agent runs in isolation (no parent conversation history) and returns its response back to the parent.
@@ -436,32 +521,158 @@ $result = AI::prompt('anthropic', 'claude-3-5-sonnet', [
 
 ## Testing AI Agents
 
+The Laravel AI SDK ships **per-resource fakes** — fake agents, images, transcriptions, embeddings, rerankings, and files without ever touching a real API. Fakes make CI fast (sub-millisecond instead of multi-second HTTP calls) and deterministic (no flaky network or rate-limit flakiness). **Every AI test should use fakes** — never hit a real provider in CI.
+
+### `Agent::fake()` — Per-Class Fake (Recommended)
+
+The cleanest way to fake an agent is the per-class static `fake()` method. It accepts either a response array (consumed in order, FIFO) or a closure that receives the prompt and returns a response:
+
 ```php
-use Laravel\AI\Facades\AI;
+use App\Ai\Agents\TicketClassifier;
 use Tests\TestCase;
 
 class SupportAgentTest extends TestCase
 {
     public function test_agent_classifies_ticket_correctly(): void
     {
-        // Mock the LLM response
-        AI::fake([
-            'choices' => [
-                ['message' => ['content' => '{"category":"billing","sentiment":"frustrated","priority":"high"}']]
-            ]
+        // Queue of canned responses (consumed one per prompt, FIFO)
+        TicketClassifier::fake([
+            ['category' => 'billing', 'sentiment' => 'frustrated', 'priority' => 'high'],
+            ['category' => 'shipping', 'sentiment' => 'neutral',   'priority' => 'low'],
         ]);
 
-        $result = AI::generate('openai', 'gpt-4o', [
-            'prompt' => 'Billing issue: charged twice',
-            'output' => TicketClassification::class,
-        ]);
+        $first  = (new TicketClassifier)->prompt('Charged twice on my card');
+        $second = (new TicketClassifier)->prompt('Where is my package?');
 
-        $this->assertEquals('billing', $result->category);
-        $this->assertEquals('high', $result->priority);
+        $this->assertSame('billing', $first->category);
+        $this->assertSame('shipping', $second->category);
     }
 }
 ```
 
+### Dynamic responses with a closure
+
+```php
+TicketClassifier::fake(function ($prompt) {
+    // Return a different response based on the prompt content
+    return str_contains($prompt->prompt, 'refund')
+        ? ['category' => 'refund', 'priority' => 'medium']
+        : ['category' => 'other',  'priority' => 'low'];
+});
+```
+
+### `preventStrayPrompts()` — Catch Unmocked Agent Calls
+
+By default, an unfaked agent call falls back to a real provider. **`preventStrayPrompts()`** flips that to "throw an exception" — essential for CI to ensure every agent interaction is mocked:
+
+```php
+public function test_no_unmocked_agent_runs(): void
+{
+    TicketClassifier::fake()->preventStrayPrompts();
+
+    (new TicketClassifier)->prompt('Valid input');      // ✅ uses fake
+    (new TicketClassifier)->prompt('Unmocked input');   // 💥 throws — caught in test
+}
+```
+
+Pair with `expectException(...)` for clean failure reporting, or let it fail the test naturally.
+
+### Assertions — Did the Agent Actually Run?
+
+After faking, assert that the agent was (or wasn't) called and inspect what it was sent:
+
+```php
+public function test_handler_invokes_classifier(): void
+{
+    TicketClassifier::fake([['category' => 'billing', 'priority' => 'high']]);
+
+    (new \App\Actions\ProcessTicket)->handle($ticket);
+
+    TicketClassifier::assertPrompted('charged twice');           // contains substring
+    TicketClassifier::assertPrompted(fn ($prompt) =>            // or a closure
+        str_contains($prompt->prompt, 'charged twice')
+    );
+    TicketClassifier::assertNeverPrompted('refund');              // negative assertion
+}
+```
+
+### Structured Output Fakes — Auto-Generate Matching Schema
+
+If your agent implements `HasStructuredOutput` and defines a `schema()` method, `Agent::fake()` automatically generates fake data that matches the schema — no need to hand-write the JSON:
+
+```php
+// Given TicketClassifier implements HasStructuredOutput with schema() returning
+// {category: string, priority: 'low|medium|high', sentiment: 'positive|neutral|negative|frustrated'}
+
+TicketClassifier::fake();  // no arguments — auto-generates schema-matching fake
+$result = (new TicketClassifier)->prompt('anything');
+// $result is a real TicketClassification DTO with valid faked values
+```
+
+Pass an explicit array when you want to control the values (assertions about specific fields).
+
+### Per-Resource Fakes — Image, Audio, Embeddings, Reranking, Files
+
+Every AI resource has its own fake class. Use them when testing code paths that hit image gen / transcription / embeddings / reranking / file uploads without touching a real provider:
+
+```php
+use Laravel\Ai\Images;
+use Laravel\Ai\Audio\Transcription;
+use Laravel\Ai\Embeddings;
+use Laravel\Ai\Reranking;
+use Laravel\Ai\Files;
+use Laravel\Ai\RankedDocument;
+
+// Images — return base64 (or use the closure form to inspect the prompt)
+Image::fake(function (ImagePrompt $prompt) {
+    return base64_encode('fake-png-bytes');
+});
+
+// Transcriptions — provide text responses
+Transcription::fake(['Hello world transcript']);
+Transcription::fake()->preventStrayTranscriptions();   // require all to be faked
+
+// Embeddings — auto-generate vectors of the right dimensions, or supply explicit ones
+Embeddings::fake();                                    // auto-dimension fakes
+Embeddings::fake([                                     // explicit response vectors
+    [0.1, 0.2, 0.3, /* ... 1536 dims for ada-002 */],
+]);
+
+// Reranking — return RankedDocument instances with scores
+Reranking::fake([
+    [
+        new RankedDocument(index: 0, document: 'Most relevant doc', score: 0.95),
+        new RankedDocument(index: 1, document: 'Second',          score: 0.80),
+    ],
+]);
+
+// Files (vector store uploads / deletes)
+Files::fake();   // intercepts add() / remove() without hitting the provider
+// then assert: Files::assertUploaded(...), Files::assertDeleted(...)
+```
+
+### Facade-Level Fake (Legacy Pattern)
+
+The `AI::fake()` facade-level approach still works — it's just lower-level. **Prefer per-class fakes for new code:**
+
+```php
+use Laravel\AI\Facades\AI;
+
+AI::fake([
+    'choices' => [
+        ['message' => ['content' => '{"category":"billing","priority":"high"}']],
+    ],
+]);
+
+$result = AI::generate('openai', 'gpt-4o', [
+    'prompt' => 'Billing issue',
+    'output' => TicketClassification::class,
+]);
+```
+
+**Why per-class is better:** clearer intent (you read `TicketClassifier::fake()` and know exactly which agent is being faked), better assertions (`TicketClassifier::assertPrompted()` vs digging through a generic prompt list), and safer scoping (each agent class can have its own fake independently — no cross-test pollution).
+
+Source: [Laravel AI SDK Docs — Testing](https://laravel.com/docs/13.x/ai-sdk#testing) | [Lexo.ch — Getting Started with the Laravel AI SDK](https://www.lexo.ch/blog/2026/03/getting-started-with-the-laravel-ai-sdk-agents-tools-structured-output)
 ---
 
 ---
@@ -623,8 +834,20 @@ Source: [Laravel AI issue #119 — Prompt caching](https://github.com/laravel/ai
 12. **No embedding cache for repeated inputs** — knowledge base articles, FAQs, and product descriptions get re-embedded on every search query. Use `->cache(seconds: 3600)` or enable globally via `ai.caching.embeddings.cache = true` in config.
 13. **Confusing AI SDK with Laravel MCP/Boost** — AI SDK is for your app to call AI providers; Laravel MCP is for exposing your app as an MCP server for external AI clients; Laravel Boost is a dev tool for AI coding assistants. Installing the wrong one wastes hours.
 14. **Unique system prompts killing prompt-cache savings** — Anthropic/OpenAI cache only hits on a consistent prompt prefix. If every request has a different system prompt, you pay full price on every call.
+15. **No conversation memory on chat agents** — every `prompt()` call is stateless by default. For any real chatbot / support agent / in-product assistant, add `RemembersConversations` (auto) or implement `messages()` (manual). Without it, your agent "forgets" between turns and users get frustrated.
+16. **Defining `messages()` AND using `RemembersConversations`** — they conflict. If `messages()` exists, the trait is bypassed silently. Pick one: trait = automatic DB-backed history, `messages()` = you own the storage layer (Redis, custom table with tenant scoping, etc.).
+17. **Real API calls in CI tests** — every `Agent::fake()` without `preventStrayPrompts()` will silently hit a real provider if you add a new agent call. Always use `Agent::fake()->preventStrayPrompts()` to catch unmocked agent interactions before they reach production CI.
+18. **No per-resource fakes for image/audio/embedding tests** — `AI::fake()` only fakes text completions. For image gen / transcription / embeddings / reranking / files, use the resource-specific fakes: `Image::fake()`, `Transcription::fake()`, `Embeddings::fake()`, `Reranking::fake()`, `Files::fake()` — each has its own assertions.
 
 ---
+
+## Updated from Research (2026-07-05)
+
+### Cycle 26 additions (2026-07-05)
+
+- **Conversation memory** — `Conversational` attribute + `RemembersConversations` trait for zero-config auto-persisted multi-turn chat (backed by `agent_conversations` + `agent_conversation_messages` tables from the AI SDK migration). For full control, implement the `Conversational` interface and define `messages()` yourself — but then the trait is bypassed. Critical warning: defining `messages()` AND using the trait = the trait silently loses (per official docs).
+- **Per-class testing fakes (`Agent::fake()`)** — preferred over the `AI::fake([...])` facade-level pattern. Accepts an array of canned responses (FIFO) or a closure receiving `$prompt`. Pairs with `preventStrayPrompts()` to catch unmocked calls in CI, and `assertPrompted()` / `assertNeverPrompted()` for assertions (string contains OR closure). Structured-output fakes auto-generate schema-matching data when the agent implements `HasStructuredOutput`.
+- **Per-resource fakes** — `Image::fake(closure)`, `Transcription::fake([...])->preventStrayTranscriptions()`, `Embeddings::fake()` (auto-dimension or explicit vectors), `Reranking::fake([RankedDocument, ...])`, `Files::fake()`. Each has its own assertions. Facade-level `AI::fake()` still works but is the lower-level legacy path.
 
 ## Updated from Research (2026-06-29)
 

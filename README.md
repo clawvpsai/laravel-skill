@@ -7,9 +7,9 @@
 [![MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Auto-updated](https://img.shields.io/badge/Auto--updated-6h-blue?style=flat-square)](#auto-updater)
 
-> **Latest tracked version:** Laravel **13.18.1** (July 2, 2026) — current as of cycle 25 (2026-07-04 18:00 UTC)
+> **Latest tracked version:** Laravel **13.18.1** (July 2, 2026) — still head of 13.x, no new framework release in this cycle (26)
 > **PHP baseline:** 8.3.32 / 8.4.23 / 8.5.8 (all security fixes as of 2026-07-01 batch)
-> **Skill version:** v1.22.12 (25 auto-update cycles since 2026-06-28)
+> **Skill version:** v1.22.13 (26 auto-update cycles since 2026-06-28)
 
 ---
 
@@ -91,7 +91,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-07-04 00:00 UTC (cycle 22) — Laravel 13.18.1 patch release. **New head of 13.x is v13.18.1** (tagged 2026-07-02 18:36 UTC, missed by the 2026-07-03 12:05 UTC cycle 21 which only ran validation.md). Two genuinely useful new features: **(1) `Release` queue middleware** (`Illuminate\Queue\Middleware\Release`) — declarative `->middleware(new Release($delay))` replaces scattered `$this->release()` calls in `handle()` (PR #60630, queues.md); **(2) `$this->input()` on console commands** — typed CLI input reader parallel to `request()->input()` (PR #60607, artisan.md). Plus 6 bug fixes: `api`/`json` routes respect `php artisan down` (PR #60595 — drop hand-rolled maintenance middleware for API routes); `assertDatabaseEmpty()` accepts iterables (PR #60621); on-demand log stacks respect channel name (PR #60635); inspect delayed jobs on `Queue::fake()` (PR #60636); `Str::mask()` encoding-aware tail (PR #60646); `foreignUuid`/`foreignUlid` Blueprint return types (PR #60643); Predis retry scalar config (PR #60642, niche). 9 new cross-reference entries added to SKILL.md v1.22.9 → v1.22.10. `versions.md` active-versions line + heading updated; new "New in Laravel 13.18.1" section added before the 13.18.0 history note. 22 cycles in last 6 days. No new Laravel framework version (v13.18.0 still head of 13.x, ~3 days since v13.18.0). No new framework CVEs. **Two new sections added to `deployment.md` (oldest untouched file, 4 days stale):** **(1) OPcache + JIT Production Tuning (PHP 8.3+)** — full production-grade `opcache.ini` config with `validate_timestamps=0` + `opcache.preload` script that loads the entire Illuminate framework + compiled config into shared memory at worker boot, plus tracing JIT sizing guidance, deploy invalidation options (SAPI reload vs `opcache_reset()` vs `file_cache_fallback`), and a `/metrics/opcache` monitoring endpoint. **(2) FrankenPHP (Laravel Cloud's underlying runtime)** — first-class Octane driver built on Caddy with built-in HTTP/3 + auto HTTPS + Mercure + Brotli; full install + `octane:frankenphp` + production Caddyfile with thread-pool split for slow endpoints, comparison table against Swoole/RoadRunner, and the critical `LARAVEL_STORAGE_PATH` caveat for embedded-binary deploys. SKILL.md bumped v1.22.7 → v1.22.8. 20 cycles in last 3 days.
+**Last research cycle:** 2026-07-05 18:11 UTC (cycle 26) — No new Laravel framework release (13.18.1 still head of 13.x, 3 days old). `ai.md` was the oldest untouched file (6 days stale) and was gap-filled with the two most important missing topics for production AI work: **(1) Conversation Memory** — `Conversational` attribute + `RemembersConversations` trait for zero-config auto-persisted multi-turn chat (backed by `agent_conversations` + `agent_conversation_messages` tables from the AI SDK migration), plus the manual `messages()` override path for custom storage (Redis, tenant-scoped tables) — including the critical docs warning that defining `messages()` AND using the trait makes the trait silently no-op. **(2) Per-class testing fakes** — `Agent::fake([...])` with FIFO canned responses, `Agent::fake(closure)` for dynamic responses, `->preventStrayPrompts()` to catch unmocked calls in CI, and `assertPrompted()` / `assertNeverPrompted()` for assertions. Plus per-resource fakes the skill was missing: `Image::fake(closure)`, `Transcription::fake([...])->preventStrayTranscriptions()`, `Embeddings::fake()` (auto-dim or explicit), `Reranking::fake([RankedDocument, ...])`, `Files::fake()`. Structured-output fakes now auto-generate schema-matching data when the agent implements `HasStructuredOutput`. Facade-level `AI::fake()` is now documented as the legacy path (still works, but per-class is preferred). SKILL.md bumped v1.22.12 → v1.22.13 — 4 new cross-reference entries for the new ai.md sections, 2 new Critical Rules (always-fake + messages() vs RemembersConversations conflict). 26 cycles in last 7 days.
 
 ---
 
@@ -115,7 +115,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
 - **~10,330 lines** of production-ready content
-- **Update cadence:** Every 6 hours via OpenClaw cron — 19 cycles in last 3 days (each targeting the oldest untouched files or new CVEs)
+- **Update cadence:** Every 6 hours via OpenClaw cron — 26 cycles in last 7 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 
