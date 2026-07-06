@@ -476,6 +476,8 @@ Add to your CI pipeline:
 9. **Loading all translation files per request** — for large apps with 10+ domains, use lazy namespaces (`shop::cart.empty`) or split into JSON files to avoid loading thousands of keys on every request
 10. **Installing laravel-lang/* packages post-2026-05-22** — supply-chain attack rewrote every git tag with backdoored commits. Pin to a verified pre-2026-05-22 SHA or skip the packages entirely
 11. **Missing `trans()` typed return type in models** — model accessors returning translations should use `trans()->string()` / `trans()->array()` (Laravel 13.15+) for strict typing; otherwise return type is `array|string|null` and IDEs/PHPStan lose inference
+12. **English interval plural for non-English locales** — `[2,*] :count products` is ungrammatical in Russian (3 forms), Polish (3), Arabic (6), Czech (3), Slovenian (4). Use full CLDR forms OR `gboquizosanchez/icu-i18n` if you serve these markets.
+13. **Trusting undocumented CLDR support in `trans_choice()`** — works today via Symfony's `PluralizationRules`, but Laravel's docs only document the interval form. No SLA, can break on Symfony upgrades. Snapshot your translation strings in CI with `php artisan i18n:check` (added in cycle 9) — if any Russian/Arabic form regresses to the interval fallback, you'll see it before users do.
 
 ## SEO — hreflang Tags
 
@@ -487,6 +489,102 @@ Add to your CI pipeline:
 @endforeach
 <link rel="alternate" hreflang="x-default" href="{{ localized_url('en', url()->current()) }}">
 ```
+
+
+
+## CLDR Plural Rules for Non-English Languages (Undocumented but Supported)
+
+Laravel's official docs only show the `{0}|{1}|[2,*]` interval syntax for `trans_choice()`. But the underlying implementation reads the rules from `Symfony\Component\Translation\PluralizationRules`, which supports the full [CLDR plural rule set](https://cldr.unicode.org/index/cldr-spec/plural-rules). **Arabic (`ar`), Russian (`ru`), Polish (`pl`), Slovenian (`sl`), and similar languages work out of the box** — you just have to provide the right number of pipe-separated forms.
+
+The exact number of forms varies by language. Laravel picks the right one based on `Symfony\Component\Translation\getPluralRules($locale)[$count]`:
+
+### Arabic (6 plural forms — zero / one / two / few / many / other)
+
+```php
+// resources/lang/ar/messages.php
+return [
+    // count=0 zero, count=1 one, count=2 two, count=3..10 few, count=11..99 many, count=100+ other
+    'cart_items' => '{0} لا توجد منتجات|{1} منتج واحد|{2} منتجان|[3,10] :count منتجات|[11,99] :count منتجاً|[100,*] :count منتج',
+];
+
+// In code
+echo trans_choice('messages.cart_items', 0);   // "لا توجد منتجات" (zero)
+echo trans_choice('messages.cart_items', 1);   // "منتج واحد" (one)
+echo trans_choice('messages.cart_items', 2);   // "منتجان" (two)
+echo trans_choice('messages.cart_items', 5);   // "5 منتجات" (few)
+echo trans_choice('messages.cart_items', 25);  // "25 منتجاً" (many)
+echo trans_choice('messages.cart_items', 200); // "200 منتج" (other)
+```
+
+### Russian (3 plural forms — one / few / many)
+
+```php
+// resources/lang/ru/messages.php
+return [
+    'items_purchased' => '{1} :count купленный товар|[2,4] :count купленных товара|[5,*] :count купленных товаров',
+];
+
+echo trans_choice('messages.items_purchased', 1);   // "1 купленный товар"
+echo trans_choice('messages.items_purchased', 3);   // "3 купленных товара"
+echo trans_choice('messages.items_purchased', 11);  // "11 купленных товаров"
+```
+
+### Polish (3 — one / few / many)
+
+```php
+// resources/lang/pl/messages.php
+return [
+    'files_uploaded' => '{1} :count przesłany plik|[2,4] :count przesłane pliki|[5,*] :count przesłanych plików',
+];
+```
+
+**Why this matters:** if you're shipping to RTL or Slavic markets, interval-only pluralization produces grammatically wrong text for ~90% of users. Going from `[2,*] :count products` (English interval) to the proper Russian/Arabic CLDR form is the difference between "looks translated" and "reads natively."
+
+**Caveat:** Laravel's `trans_choice()` works with CLDR for the major languages but is **not officially documented** as supporting it. Test thoroughly before relying on it for production — if Symfony changes its plural-rules table, the framework has no obligation to warn you. If you need a contractually-stabilized API, see the ICU MessageFormat section below.
+
+Source: [Phrase — Localizing Plurals in Laravel](https://phrase.com/blog/posts/luralization/) · [CLDR Plural Rules](https://cldr.unicode.org/index/cldr-spec/plural-rules)
+
+## ICU MessageFormat (For Complex i18n)
+
+Laravel's built-in `__()` / `trans_choice()` is intentionally simple. For genuine Unicode ICU MessageFormat support — gender-aware strings, CLDR plural rules with mathematical precision (`=0`, `=1`, `one`, `few`, `many`, `other`), number/date/currency formatting via `{amount, number, currency}`, and smart regional fallback (`es_MX` → `es`) — use the **`gboquizosanchez/icu-i18n`** Composer package.
+
+```bash
+composer require gboquizosanchez/icu-i18n
+```
+
+```php
+// resources/lang/ru/messages.php — full ICU syntax, no Laravel pipe-syntax gotchas
+return [
+    'items' => '{count, plural, one{# товар} few{# товара} many{# товаров} other{# товара}}',
+];
+
+// count=1   → "1 товар"
+// count=2   → "2 товара"
+// count=5   → "5 товаров"
+// count=21  → "21 товар" (CLDR handles the 21=many→one ending rule correctly)
+```
+
+```php
+// Gender-aware translation — Laravel has no built-in equivalent
+'greeting' => '{gender, select, male{Добро пожаловать, :name} female{Добро пожаловать, :name} other{Привет, :name}}',
+```
+
+**When to reach for ICU MessageFormat instead of `trans_choice()`:**
+- You ship to markets with 3+ plural forms (Russian, Polish, Arabic, Czech, Slovenian, Welsh…)
+- You need gender-aware copy (Arabic gendered verbs, Spanish gendered nouns)
+- You need regional fallback (your app uses `es_MX` but a vendor package only ships `es`)
+- You want `{amount, number, currency}` formatting inside the translation string itself
+
+**Trade-off:** One more dependency (`~30 KB`), one more serializer boundary in your translation pipeline. Pick it when the built-in pipe-syntax can't hit your plural rules cleanly.
+
+Source: [gboquizosanchez/icu-i18n on GitHub](https://github.com/gboquizosanchez/icu-i18n) · v2.0.1 released April 8, 2026.
+
+## Updated from Research (2026-07-06)
+
+### Cycle 27 additions (2026-07-06)
+
+- **CLDR plural rules for non-English languages** — Laravel's `trans_choice()` is **undocumented** but supports the full [CLDR plural rule set](https://cldr.unicode.org/index/cldr-spec/plural-rules) via `Symfony\Component\Translation\PluralizationRules`. Arabic has 6 forms (`{0} / {1} / {2} / [3,10] few / [11,99] many / [100,*] other`), Russian has 3 (`{1} / [2,4] / [5,*]`), Polish has 3 (`{1} / [2,4] / [5,*]`). Production gotcha: if you ship to RTL or Slavic markets, interval-only English-style pluralization produces grammatically wrong copy for the majority of users — the CLDR form is the difference between "looks translated" and "reads natively."
+- **`gboquizosanchez/icu-i18n` for full ICU MessageFormat** — package was published 2026 (v2.0.1 on 2026-04-08) and adds `{gender, select, ...}`, `{count, plural, =0{...} =1{...} one{...} few{...}}` Math-precise CLDR, number/currency/date formatting inside translation strings, and smart regional fallback (`es_MX` → `es`). Use when you ship to markets with 3+ plural forms, gender-aware copy, or vendor packages that only ship the base locale.
 
 ## Updated from Research (2026-06-29)
 

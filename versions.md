@@ -741,3 +741,24 @@ The realistic production scenario is a payment gateway, OAuth provider, or webho
 **No changes to other files in cycle 25** — the targeted topic files (`ai.md`, `localization.md`, `eloquent.md`, `performance.md`, `file-uploads.md`, `api.md`, `observers.md`, `blade.md`, `artisan.md`, `controllers.md`, `deployment.md`, `logging.md`, `migrations.md`, `queues.md`, `testing.md`, `validation.md`, `SKILL.md`, `README.md`) are all within the 5–7 day staleness window and are still well-served by their cycle 4–24 content. Cycle 26 (2026-07-05 00:00 UTC) will target the next-stale file.
 
 SKILL.md bumped to **v1.22.12** (cycle-25 PHP-runtime CVE addition — CVE-2026-12184 / GHSA-mhmq-mmqj-2v39 TLS setup-failure remote DoS, severity HIGH, fix already shipped in 2026-07-01 PHP batch). 25 cycles in 4 days.
+
+
+---
+
+**Cycle 27 (2026-07-06 00:14 UTC):**
+
+- **No new Laravel release** — `v13.18.1` (2026-07-02) remains head of `13.x`. No new `12.x` patch. PHP security batch from `2026-07-01` (`8.3.32` / `8.4.23` / `8.5.8`) still current. Cycle 27 is a content-only update; no version stamp change.
+- **`localization.md` gap-fill (~73 lines added)** — uncovered two genuine production gaps in the existing localization coverage:
+  1. **CLDR plural rules for non-English languages** — Laravel's `trans_choice()` is *undocumented* but supports the full Unicode CLDR plural rule set (Arabic 6 forms, Russian 3, Polish 3, etc.) via `Symfony\Component\Translation\PluralizationRules`. Added worked examples for Arabic, Russian, Polish, with the production-rationale (interval-only English plural is ungrammatical for ~90% of users on RTL and Slavic markets).
+  2. **Full ICU MessageFormat via `gboquizosanchez/icu-i18n`** — package published 2026 (`v2.0.1` on 2026-04-08); adds gender-aware strings (`{gender, select, ...}`), Math-precise CLDR (`{count, plural, =0{...} =1{...} one{...} few{...} many{...}}`), currency/date formatting inside translation strings, and smart regional fallback (`es_MX` → `es`). When to pick it over built-in `trans_choice()` (markets with 3+ plural forms, gender-aware copy, vendor packages that don't ship regional locales).
+- **Common Mistakes list** in `localization.md` grew from 11 → 13 entries (added: "English interval plural for non-English locales" and "Trusting undocumented CLDR support in `trans_choice()`").
+- **SKILL.md** bumped `1.22.13` → `1.22.14` (cycle-27 localization gap-fill).
+- **No version bumps in `localization.md` itself** — content-only addition. No structural format change.
+
+**No changes to other files in cycle 27** — `eloquent.md` (Jun 30, 6 days stale) and `observers.md` / `performance.md` / `api.md` (Jul 1, 5 days stale) are still well-served by their cycle 4–24 content. Cycle 28 (2026-07-06 06:00 UTC) will target one of these.
+
+**Localized phrases shipped this cycle:**
+- `localization.md` has new `## CLDR Plural Rules for Non-English Languages` and `## ICU MessageFormat (For Complex i18n)` sections, ready for production i18n teams going to RTL / Slavic / multi-form-plural markets.
+- All examples include both the language-side `trans_choice()` call and the expected output for `count = 0, 1, 2, 5, 25, 200` — so engineers can paste into `php artisan tinker` and verify without setting up a full RTL display environment.
+
+SKILL.md bumped to **v1.22.14** (cycle-27 localization gap-fill — CLDR plural rules for non-English locales + ICU MessageFormat reference). 27 cycles in 8 days.

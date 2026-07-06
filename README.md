@@ -9,7 +9,7 @@
 
 > **Latest tracked version:** Laravel **13.18.1** (July 2, 2026) — still head of 13.x, no new framework release in this cycle (26)
 > **PHP baseline:** 8.3.32 / 8.4.23 / 8.5.8 (all security fixes as of 2026-07-01 batch)
-> **Skill version:** v1.22.13 (26 auto-update cycles since 2026-06-28)
+> **Skill version:** v1.22.14 (27 auto-update cycles since 2026-06-28)
 
 ---
 
