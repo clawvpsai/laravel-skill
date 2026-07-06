@@ -172,6 +172,42 @@ public function scopeOrderByDate($query, string $direction = 'desc')
 }
 ```
 
+**Multi-column `whereAll()` / `whereAny()` (Laravel 10.47+):**
+```php
+// whereAny — match if AT LEAST ONE column contains the value (OR across columns)
+User::query()
+    ->whereAny(['first_name', 'last_name', 'email'], 'LIKE', "%{$search}%")
+    ->get();
+// SQL: WHERE (first_name LIKE ? OR last_name LIKE ? OR email LIKE ?)
+
+// whereAll — match if ALL columns contain the value (AND across columns)
+User::query()
+    ->whereAll(['first_name', 'last_name'], 'LIKE', "{$term}%")
+    ->get();
+// SQL: WHERE (first_name LIKE ? AND last_name LIKE ?)
+
+// orWhereAny / orWhereAll — same logic but as OR-joined to the previous group
+User::query()
+    ->where('active', true)
+    ->orWhereAny(['first_name', 'last_name'], 'LIKE', "%{$search}%")
+    ->get();
+```
+
+**When to pick `whereAny` over `orWhere(fn)`:** Use `whereAny` when you have a flat list of columns and a single value/operator — it generates cleaner SQL and is faster (no closure overhead). Use `orWhere(fn($q) => ...)` when you need different operators or values per column, or when you need to wrap complex sub-clauses.
+
+**`whereRelation` / `whereMorphRelation` (Laravel 10+/12+):**
+```php
+// whereRelation — relationship-scoped whereHas with shorter syntax
+$posts = Post::whereRelation('author', 'verified', true)->get();
+$posts = Post::whereRelation('author', fn($q) => $q->where('role', 'admin'))->get();
+
+// whereRelation with operator
+$posts = Post::whereRelation('author', 'followers', '>', 1000)->get();
+
+// whereMorphRelation (Laravel 12+) — same for polymorphic relations
+$activities = Activity::whereMorphRelation('parentable', [Post::class, Video::class], 'featured', true)->get();
+```
+
 **Always use DB bindings — never string interpolation:**
 ```php
 // SAFE
@@ -284,6 +320,10 @@ Post::factory()->unpublished()->make();
 5. **N+1 with counts** — use `withCount('comments')` instead of `$post->comments->count()` in loop
 6. **Not handling unique constraint violations** — wrap in try/catch or use `firstOrCreate`
 7. **`nestedWhere` with complex AND/OR without parentheses** — always wrap OR groups in `where()` callback to ensure correct precedence
+8. **Forgetting `embedding` cast on `vector` columns** — without `'embedding' => 'array'` cast, the attribute comes back as a raw `pgvector` literal string (e.g. `'[0.05,0.10,...]'`) and your code has to parse it by hand. Always cast `vector` columns.
+9. **Using `whereVectorSimilarTo` without `pgvector` enabled** — the query fails with `extension "vector" is not available`. Run `CREATE EXTENSION IF NOT EXISTS vector;` in your database first, or use `Schema::ensureVectorExtensionExists()` in a migration.
+10. **Eager-loading the world with `Model::automaticallyEagerLoadRelationships()`** — the feature only fires when a relation is *accessed* on a model inside a collection, and only loads what was touched. It does NOT override an explicit `->select(['id', 'name'])` — you still get the N+1 on missing columns. Combine with `Model::preventAccessingMissingAttributes()` to surface that mistake in dev.
+11. **`#[Fillable]` attribute not picked up by `Model::query()->create()` in some 13.x patch versions** — known bug [laravel/framework#59270](https://github.com/laravel/framework/issues/59270) where the reflection-based attribute registration misses the static `create()` call path on certain 13.x point releases. If you migrate from `$fillable` to `#[Fillable]` and tests start failing with `MassAssignmentException`, either pin a newer 13.x or keep `$fillable` until the patch ships. The class-level attribute is correctly honored on `new Model()` + `->save()` paths in all 13.x versions.
 
 ## Eloquent Strictness Hardening (`Model::preventX()`)
 
@@ -436,6 +476,242 @@ PR #60574 fixes this by resetting the transaction manager when a connection is l
 - Retry helpers (e.g. `DB::transaction($cb, $attempts)`) recover cleanly on transient disconnects
 
 If you see that error in logs after a Postgres failover or pooler rotation, upgrade to 13.17+.
+
+## Laravel 13 Class-Level Model Attributes
+
+Laravel 13 ships a parallel set of class-level PHP attributes under `Illuminate\Database\Eloquent\Attributes\` that replace the legacy `$fillable` / `$hidden` / `$casts` / `$table` protected properties. The legacy properties still work (no breaking change) — the attributes are an opt-in stylistic choice for teams that prefer configuration to live above the class body.
+
+### The full attribute cheat sheet
+
+| Attribute | Replaces | Namespace |
+|---|---|---|
+| `#[Table('flights', dateFormat: 'U')]` | `$table`, `$primaryKey`, `$incrementing`, `$timestamps`, `$dateFormat` | `Illuminate\Database\Eloquent\Attributes\Table` |
+| `#[Fillable(['name', 'email'])]` | `$fillable` | `Illuminate\Database\Eloquent\Attributes\Fillable` |
+| `#[Hidden(['password', 'remember_token'])]` | `$hidden` | `Illuminate\Database\Eloquent\Attributes\Hidden` |
+| `#[Visible(['id', 'name'])]` | `$visible` | `Illuminate\Database\Eloquent\Attributes\Visible` |
+| `#[Casts(['active' => 'boolean', 'password' => 'hashed'])]` | `$casts` | `Illuminate\Database\Eloquent\Attributes\Casts` |
+| `#[UsePolicy(PostPolicy::class)]` | `Gate::policy()` in `AppServiceProvider` | `Illuminate\Database\Eloquent\Attributes\UsePolicy` |
+
+> `#[UsePolicy]` is documented in detail in `auth.md` (Policy Registration section, cycle 24).
+
+### Full example
+
+```php
+use Illuminate\Database\Eloquent\Attributes\Casts;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Attributes\Table;
+use Illuminate\Database\Eloquent\Attributes\Visible;
+
+#[Table('users')]                                              // optional — only if non-conventional table name
+#[Fillable(['name', 'username', 'email', 'password'])]
+#[Hidden(['password', 'remember_token'])]
+#[Visible(['id', 'name', 'email'])]                            // use Visible OR Hidden, not both
+#[Casts([
+    'email_verified_at' => 'datetime',
+    'password'          => 'hashed',
+    'is_admin'          => 'boolean',
+    'settings'          => 'array',
+])]
+class User extends Authenticatable
+{
+    public function posts(): HasMany
+    {
+        return $this->hasMany(Post::class);
+    }
+
+    // business logic only — no protected $properties clutter
+}
+```
+
+### When to prefer attributes over protected properties
+
+1. **Colocation of configuration with imports** — class body is reserved for behaviour, configuration sits above alongside the `use` block where it can be grep'd alongside the namespace. Reads like a "schema declaration".
+2. **PHPStan / Psalm / Rector compatibility** — class-level attributes are first-class PHP AST nodes. Static analyzers can verify that `#[Fillable(['emial'])]` only references actual column names (with a Rector rule), whereas a typo in `$fillable = ['emial']` is invisible until runtime.
+3. **Inheritance is cleaner** — child classes can re-declare the attribute. Protected properties force you to copy/paste the parent's `$fillable` array into the child.
+4. **No magic property precedence** — with both `$fillable` AND `#[Fillable]` set, the attribute wins. With attributes only, the framework's reflection cache is the single source of truth.
+
+### When to stick with protected properties
+
+1. **You're on Laravel 12 or below** — the attributes are a Laravel 13 addition.
+2. **You rely on dynamic `$fillable` mutation** (e.g. `$this->fillable = array_merge(parent::$fillable, ['legacy_field'])`). Attributes are resolved once via reflection at boot.
+3. **You use a code-style tool that bans class-level attributes** (rare, but some shops have a rule).
+
+### Pitfalls
+
+- **Known bug with `Model::query()->create()` on some 13.x patches** ([laravel/framework#59270](https://github.com/laravel/framework/issues/59270)) — the reflection-based attribute registration misses the static `create()` query-builder path on certain point releases. `new Model()` + `->save()` is always fine. If migrating from `$fillable`, keep an eye on your test suite and pin a patched 13.x.
+- **Don't mix `#[Visible]` and `$hidden`** — pick one. If both are set, the attribute wins and the property is ignored.
+- **Class-level attributes are NOT inherited by default** — a child model without `#[Fillable]` has zero fillable columns. Re-declare on each child, or use the property.
+
+See [Laravel 13 Eloquent docs — Mutators & Casting](https://laravel.com/docs/13.x/eloquent-mutators) for the full API reference.
+
+## Vector Similarity Search (Laravel 13+)
+
+Laravel 13 ships first-party **semantic / vector search** built on PostgreSQL + `pgvector`. No third-party wrapper, no raw SQL — `whereVectorSimilarTo()` works on both `DB::table()` and the Eloquent query builder, accepts a plain string, embeds it through the Laravel AI SDK, runs cosine similarity against a `vector` column, and returns a relevance-sorted Eloquent collection.
+
+### Setup
+
+```php
+// 1. Ensure the pgvector extension is installed
+// In a migration:
+public function up(): void
+{
+    Schema::ensureVectorExtensionExists();   // runs CREATE EXTENSION IF NOT EXISTS vector
+
+    Schema::create('documents', function (Blueprint $table) {
+        $table->id();
+        $table->string('title');
+        $table->text('body');
+        $table->vector('embedding', dimensions: 1536)->index();   // HNSW index, cosine distance
+        $table->timestamps();
+    });
+}
+```
+
+### Cast + similarity query
+
+```php
+use Laravel\Ai\Embeddings;
+use App\Models\Document;
+
+// 2. Cast the embedding column on the model so it round-trips as a PHP array
+class Document extends Model
+{
+    protected function casts(): array
+    {
+        return ['embedding' => 'array'];   // ['embedding' => 'array'] in #[Casts(...)] form too
+    }
+}
+
+// 3. Generate embeddings (one-time per chunk)
+$texts = Document::pluck('body')->all();
+$embeddings = Embeddings::for($texts)->generate();   // uses OpenAI / Gemini / etc.
+foreach ($embeddings->embeddings as $i => $vector) {
+    Document::find($i + 1)->update(['embedding' => $vector]);
+}
+
+// 4. Run a similarity search — accepts a STRING, embeds it, ranks results
+$results = Document::query()
+    ->whereVectorSimilarTo('embedding', 'Best wineries in Napa Valley', minSimilarity: 0.3)
+    ->limit(10)
+    ->get();
+// SQL (Postgres): SELECT * FROM documents ORDER BY embedding <=> $query_embedding LIMIT 10
+
+// Works on DB::table() too
+$rows = DB::table('documents')
+    ->whereVectorSimilarTo('embedding', 'Best wineries in Napa Valley')
+    ->limit(10)
+    ->get();
+```
+
+### `minSimilarity` semantics
+
+`minSimilarity` is a cosine similarity between `0.0` and `1.0`:
+- `1.0` = identical vectors
+- `0.0` = orthogonal / unrelated
+- Default threshold (no value passed) is `0.0` — returns all rows ranked. Always pass a real threshold in production or you'll fetch the entire table.
+
+### Backfill pattern (don't block writes)
+
+```php
+// app/Jobs/BackfillDocumentEmbeddings.php
+class BackfillDocumentEmbeddings implements ShouldQueue
+{
+    use Queueable;
+
+    public function handle(): void
+    {
+        Document::whereNull('embedding')
+            ->chunkById(100, function ($docs) {
+                $texts = $docs->pluck('body')->all();
+                $resp = Embeddings::for($texts)->generate();
+                foreach ($docs as $i => $doc) {
+                    $doc->update(['embedding' => $resp->embeddings[$i]]);
+                }
+            });
+    }
+}
+```
+
+### Common pitfalls
+
+- **Forgot the cast** — without `'embedding' => 'array'`, the attribute returns the raw `[0.05,0.10,...]` string and your downstream code breaks. Add the cast in step 2.
+- **Forgot the pgvector extension** — query fails with `extension "vector" is not available`. Use `Schema::ensureVectorExtensionExists()` in a migration so it's reproducible.
+- **Dimension mismatch** — OpenAI `text-embedding-3-small` is 1536 dims; `text-embedding-3-large` is 3072. Match your `->vector('embedding', dimensions: N)` column to the model you embed with, or pgvector rejects the insert.
+- **No HNSW index** — `->index()` on the vector column creates the HNSW index. Without it, similarity search is O(N) brute-force; with it, O(log N) approximate nearest-neighbor. Below ~10k rows you can skip it; above, you need it.
+- **Passing a `null` similarity threshold** — `minSimilarity: 0` returns everything. Always set a real floor (typically 0.3–0.5 depending on domain).
+
+For a full production walkthrough (RAG agent, hybrid BM25 + vector, streaming), see `ai.md` (Laravel AI SDK vs MCP vs Boost section).
+
+## Automatic Eager Loading (Laravel 12.8+)
+
+The fourth `Model::` boot switch (alongside `preventLazyLoading` / `preventSilentlyDiscardingAttributes` / `preventAccessingMissingAttributes`):
+
+```php
+// AppServiceProvider::boot()
+Model::automaticallyEagerLoadRelationships();
+```
+
+### What it does
+
+When this is enabled, Laravel watches for relation access *on a model inside a collection of models*. The moment any relation is touched on any model in the collection, Laravel automatically issues a single `WHERE IN` query to fetch that relation for the entire collection — *not* per-row.
+
+```php
+// With automaticallyEagerLoadRelationships() enabled:
+
+$users = User::all();   // 1 query, no with()
+
+// Later, somewhere deep in the view:
+@foreach ($users as $user)
+    {{ $user->posts->count() }}   // ← first access triggers a single SELECT ... WHERE user_id IN (...)
+@endforeach
+// Result: 2 queries total, not 1001.
+```
+
+### When to use it vs `Model::preventLazyLoading()`
+
+| Mode | Behaviour | Use when |
+|---|---|---|
+| `Model::preventLazyLoading(true)` | Throws on lazy access | Dev / CI — fail-fast on forgotten `with()` |
+| `Model::automaticallyEagerLoadRelationships()` | Silently fixes the N+1 | Production — keep N+1s from sneaking into dashboards |
+| **Both** | Throws in dev, auto-fixes in prod | **Recommended default** — see AppServiceProvider block below |
+
+### Recommended combined setup
+
+```php
+// AppServiceProvider::boot()
+public function boot(): void
+{
+    Model::preventLazyLoading(! app()->isProduction());         // fail-fast in dev
+    Model::automaticallyEagerLoadRelationships();               // safety net in prod
+
+    Model::preventSilentlyDiscardingAttributes(! app()->isProduction());
+    Model::preventAccessingMissingAttributes(! app()->isProduction());
+    Model::prohibitDestructiveCommands(
+        ! app()->isProduction() && ! app()->runningInConsole()
+    );
+}
+```
+
+### Limitations
+
+- **Only fires for relations accessed on a model inside a collection** — `$user->posts` on a single model is still lazy. (But `$user->posts` on a single model is just one query, so no N+1.)
+- **Only loads what was actually accessed** — if you access `$user->posts` then later `$user->comments`, you get two queries, not one combined eager load. Use `with(['posts', 'comments'])` explicitly for known relations.
+- **Doesn't help with `select()`-clipped columns** — if you `User::select(['id', 'name'])->get()`, accessing `$user->email` still triggers a missing-attribute error (and the auto-eager-loader won't fix it). Pair with `Model::preventAccessingMissingAttributes()` to catch that case in dev.
+- **First-touch latency cost** — the very first access adds one query (the auto-fetch), so dashboards that touch 10 different relations pay 10 queries serially. If you know the relations up front, explicit `->with([...])` is still faster.
+
+## Updated from Research (2026-07-06, cycle 28)
+
+- **Laravel 13 Class-Level Model Attributes (`#[Table]` / `#[Fillable]` / `#[Hidden]` / `#[Visible]` / `#[Casts]`)** — added a new top-level "Laravel 13 Class-Level Model Attributes" section documenting the full attribute cheat sheet under `Illuminate\Database\Eloquent\Attributes\`. Cross-linked to `auth.md` for `#[UsePolicy]` (already documented in cycle 24). The attributes are an opt-in stylistic alternative to `$fillable` / `$hidden` / `$casts` / `$table` / `$primaryKey` — they live above the class body and are first-class PHP AST nodes (PHPStan/Psalm/Rector-compatible). Includes the known bug [laravel/framework#59270](https://github.com/laravel/framework/issues/59270) where `Model::query()->create()` misses the attribute registration on certain 13.x point releases.
+- **Vector Similarity Search (`whereVectorSimilarTo`, Laravel 13+)** — added a new top-level "Vector Similarity Search" section covering `pgvector` setup (`Schema::ensureVectorExtensionExists()`), `->vector('embedding', dimensions: N)->index()` migrations, the required `'embedding' => 'array'` cast, `whereVectorSimilarTo('embedding', $queryString, minSimilarity: 0.3)` query usage on both `Eloquent` and `DB::table()`, `minSimilarity` semantics (0.0–1.0 cosine), and a queued `chunkById` backfill pattern. Cross-linked to `ai.md` for the RAG agent / hybrid BM25+vector walkthrough. This was the largest gap in `eloquent.md` — first-party semantic search shipped in Laravel 13 and was completely undocumented.
+- **`Model::automaticallyEagerLoadRelationships()` (Laravel 12.8+)** — added a new top-level "Automatic Eager Loading" section covering the auto-N+1-prevention boot switch, the when-to-use-it vs `preventLazyLoading` matrix, a recommended combined `AppServiceProvider::boot()` block (preventLazy in dev + auto-eager in prod), and four explicit limitations (only fires on collection members, only loads accessed relations, doesn't help with `select()`-clipped columns, first-touch latency cost).
+- **`whereAll()` / `whereAny()` / `orWhereAll()` / `orWhereAny()` (Laravel 10.47+)** — added a "Multi-column whereAll / whereAny" block in the Query Builder section. Multi-column WHERE with AND/OR semantics — cleaner alternative to nested closures for flat column lists. Includes when-to-pick-it vs `orWhere(fn)` rationale.
+- **`whereRelation` and `whereMorphRelation` (Laravel 10+/12+)** — the `whereMorphRelation` Laravel 12 addition was missing from the existing `whereRelation` mention. Added both with examples.
+- **Common Mistakes list grew 7 → 11 entries** — added "Forgetting `embedding` cast on `vector` columns", "Using `whereVectorSimilarTo` without `pgvector` enabled", "Eager-loading the world with `automaticallyEagerLoadRelationships()`", and the `#[Fillable]` `Model::query()->create()` bug.
+- **No `versions.md` release-notes change** — `v13.18.1` (2026-07-02) remains head of `13.x`. No new framework release since cycle 27. No new PHP batch. No new Laravel CVE.
+
+---
+
 
 ## Updated from Research (2026-06-30, cycle 13)
 

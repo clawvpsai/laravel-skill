@@ -745,6 +745,25 @@ SKILL.md bumped to **v1.22.12** (cycle-25 PHP-runtime CVE addition — CVE-2026-
 
 ---
 
+**Cycle 28 (2026-07-06 06:00 UTC):**
+
+- **No new Laravel release** — `v13.18.1` (2026-07-02) remains head of `13.x`. No new `12.x` patch. PHP security batch from `2026-07-01` (`8.3.32` / `8.4.23` / `8.5.8`) still current. Cycle 28 is a content-only update; no version-stamp change to the "New in Laravel 13.18.1" section.
+- **Cycle 27 explicitly named `eloquent.md` as the cycle-28 target** — last modified 2026-06-30 (**6 days stale**), and cycle 27's closing note said: "Cycle 28 (2026-07-06 06:00 UTC) will target one of these [eloquent/observers/performance/api]." Targeted `eloquent.md`.
+- **`eloquent.md` gap-fill (~276 lines added, 460 → 736 lines)** — uncovered four genuine production gaps in the existing Eloquent coverage that shipped in Laravel 12.8+ and Laravel 13 but were not documented anywhere in this skill:
+  1. **Laravel 13 class-level model attributes** (`#[Table]`, `#[Fillable]`, `#[Hidden]`, `#[Visible]`, `#[Casts]` under `Illuminate\Database\Eloquent\Attributes\`) — Laravel 13's headline shift for Eloquent models, configuration above the class body instead of protected properties. Includes full cheat-sheet table, complete example, when-to-prefer rationale (PHPStan/Psalm/Rector compatibility, colocation, inheritance), when-to-stick-with-properties, and the known bug [laravel/framework#59270](https://github.com/laravel/framework/issues/59270) where `Model::query()->create()` misses the attribute registration on some 13.x point releases. `#[UsePolicy]` cross-linked to `auth.md` (already documented cycle 24).
+  2. **Vector Similarity Search (`whereVectorSimilarTo`)** — Laravel 13's first-party semantic search built on PostgreSQL + `pgvector`. New top-level section covering `Schema::ensureVectorExtensionExists()` migration, `->vector('embedding', dimensions: 1536)->index()` HNSW index, the required `'embedding' => 'array'` cast, `whereVectorSimilarTo($column, $queryString, minSimilarity: 0.3)` query usage on both Eloquent and `DB::table()`, `minSimilarity` semantics, queued `chunkById` backfill pattern, and 5 common pitfalls (forgot cast, forgot extension, dimension mismatch, no HNSW index, default 0 threshold). Cross-linked to `ai.md` for the RAG agent / hybrid BM25+vector walkthrough.
+  3. **`Model::automaticallyEagerLoadRelationships()` (Laravel 12.8+)** — auto-N+1-prevention boot switch, complement to `preventLazyLoading()`. New top-level section with behaviour example, when-to-use-it vs `preventLazyLoading()` matrix, recommended combined `AppServiceProvider::boot()` block (preventLazy in dev + auto-eager in prod), and four explicit limitations (only fires on collection members, only loads accessed relations, doesn't help with `select()`-clipped columns, first-touch latency cost).
+  4. **`whereAll()` / `whereAny()` / `orWhereAll()` / `orWhereAny()` (Laravel 10.47+)** — multi-column WHERE with AND/OR semantics, cleaner alternative to nested closures for flat column lists. Added to Query Builder section with when-to-pick-it vs `orWhere(fn)` rationale.
+  5. **`whereRelation` and `whereMorphRelation` (Laravel 10+/12+)** — the `whereMorphRelation` Laravel 12 addition was missing from the existing `whereRelation` mention. Added both with examples.
+- **Common Mistakes list in `eloquent.md` grew 7 → 11 entries** — added "Forgetting `embedding` cast on `vector` columns", "Using `whereVectorSimilarTo` without `pgvector` enabled", "Eager-loading the world with `automaticallyEagerLoadRelationships()`", and the `#[Fillable]` `Model::query()->create()` bug.
+- **`SKILL.md`** bumped `1.22.14` → `1.22.15` (cycle-28 eloquent.md gap-fill).
+- **`README.md`** — bumped version stamp + research-cycle marker to reflect cycle 28.
+- **No changes to `versions.md` Laravel-version sections** — `v13.18.1` is still head of `13.x`, no new framework release. PHP batch unchanged. No new Laravel CVE.
+
+SKILL.md bumped to **v1.22.15** (cycle-28 eloquent.md gap-fill — Laravel 13 class-level model attributes + vector similarity search + automatic eager loading + multi-column whereAll/whereAny). 28 cycles in 8 days.
+
+---
+
 **Cycle 27 (2026-07-06 00:14 UTC):**
 
 - **No new Laravel release** — `v13.18.1` (2026-07-02) remains head of `13.x`. No new `12.x` patch. PHP security batch from `2026-07-01` (`8.3.32` / `8.4.23` / `8.5.8`) still current. Cycle 27 is a content-only update; no version stamp change.

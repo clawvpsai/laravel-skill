@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.14
+version: 1.22.15
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -73,6 +73,12 @@ metadata:
 | `php artisan i18n:check` (missing translation detector) | `localization.md` (Detecting Missing Translations section) | CI integration to fail builds on incomplete translations |
 | Lazy translation loading (JSON-only, lazy namespaces, DB+cache) | `localization.md` (Lazy Translation Loading section) | Avoid loading thousands of keys on every request for large apps |
 | `Model::preventLazyLoading()` / `preventSilentlyDiscardingAttributes()` / `preventAccessingMissingAttributes()` / `prohibitDestructiveCommands()` | `eloquent.md` (Eloquent Strictness Hardening section) | Turn silent Eloquent bugs into loud exceptions in dev — N+1, missing `$fillable`, typos, accidental mass-delete |
+| Laravel 13 class-level model attributes (`#[Table]` / `#[Fillable]` / `#[Hidden]` / `#[Visible]` / `#[Casts]`) | `eloquent.md` (Class-Level Model Attributes section) | Replace `$fillable` / `$hidden` / `$casts` / `$table` with class-level PHP attributes — Laravel 13's headline Eloquent shift |
+| `whereVectorSimilarTo()` + `pgvector` + AI SDK embeddings | `eloquent.md` (Vector Similarity Search section) + `ai.md` | First-party semantic search on PostgreSQL + `pgvector`; accepts a plain string, embeds via AI SDK, ranks by cosine similarity |
+| `Model::automaticallyEagerLoadRelationships()` (Laravel 12.8+) | `eloquent.md` (Automatic Eager Loading section) | Auto-fix N+1s at runtime — pairs with `preventLazyLoading()` (dev: throw, prod: auto-fix) |
+| `whereAll()` / `whereAny()` / `orWhereAll()` / `orWhereAny()` (Laravel 10.47+) | `eloquent.md` (Query Builder section) | Multi-column WHERE with AND/OR semantics — cleaner alternative to nested closures for flat column lists |
+| `whereMorphRelation` (Laravel 12+) | `eloquent.md` (Query Builder section) | Relationship-scoped `whereHas` shortcut for polymorphic relations |
+| `#[Fillable]` / `#[Casts]` known bug [framework#59270](https://github.com/laravel/framework/issues/59270) | `eloquent.md` (Class-Level Model Attributes — Pitfalls) | `Model::query()->create()` misses the attribute registration on some 13.x point releases; `new Model()` + `->save()` is always fine |
 | `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` INF/NaN guard (PR #60617 + #60625) | `performance.md` (Number OOM section) + `api.md` (Number DoS section) | 13.18.0+ stops these from recursing on `INF`/`NaN` and OOM-crashing the worker — treat as a remote-DoS vector on API responses that render user input |
 | `Request::json()` top-level zero body fix (PR #60614) | `api.md` (Error Responses section) | 13.18.0+ preserves a literal `0` request body (was coerced to `[]`); `PUT /counters/abc/reset` endpoints with body `0` now work without a `?? 0` workaround |
 | `@checked` / `@selected` / `@disabled` / `@readonly` / `@required` form-helper directives | `blade.md` (Form-Helper Directives section) | Collapse the verbose `{{ old(...) == $x ? 'checked' : '' }}` pattern into single conditional attributes; emits static attribute when truthy, nothing when falsy (also XSS-safer than hand-rolled concatenations) |
