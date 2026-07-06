@@ -781,3 +781,27 @@ SKILL.md bumped to **v1.22.15** (cycle-28 eloquent.md gap-fill — Laravel 13 cl
 - All examples include both the language-side `trans_choice()` call and the expected output for `count = 0, 1, 2, 5, 25, 200` — so engineers can paste into `php artisan tinker` and verify without setting up a full RTL display environment.
 
 SKILL.md bumped to **v1.22.14** (cycle-27 localization gap-fill — CLDR plural rules for non-English locales + ICU MessageFormat reference). 27 cycles in 8 days.
+
+---
+
+**Cycle 29 (2026-07-06 18:00 UTC):**
+
+- **No new Laravel release** — `v13.18.1` (2026-07-02) remains head of `13.x`. No new `12.x` patch. PHP security batch from `2026-07-01` (`8.3.32` / `8.4.23` / `8.5.8`) still current. Cycle 29 is a content-only update; no version-stamp change.
+- **Cycle 28 explicitly named `observers.md` / `performance.md` / `api.md` (Jul 1, 5 days stale) as cycle-29 candidates.** Targeted `api.md` because the gap-fill value was highest (see below).
+- **`api.md` gap-fill (~330 lines added, 542 → 879 lines)** — uncovered six genuine production gaps in the existing API coverage that shipped across Laravel 9–13 but were not documented anywhere in this skill:
+  1. **Conditional attributes (`when()` / `whenAppends()` / `whenCounted()` / `whenPivotLoaded()` / `whenPivotLoadedAs()`)** — these resource-side helpers cover most "show field X only when Y" use cases without controller branching. AI models default to building separate response paths or putting conditionals in `if` blocks at the controller level, which produces verbose code and breaks under caching.
+  2. **`mergeWhen()` / `merge()`** — for merging multiple conditional fields at once without flattening the parent shape. Pair with `when()` for admin-only subtrees.
+  3. **`additional()` / `with()` for response-level metadata** — injection of collection-level meta (totals, generated_at, request_id, server_id) into the JsonResponse without hand-rolling `response()->json([...])`. Pairs with pagination meta automatically.
+  4. **`wrap()` / `withoutWrapping()` for `data` wrapper control** — per-resource (`public static $wrap = 'post'`), per-collection, per-call (`->withoutWrapping()`), or global (`JsonResource::withoutWrapping()` in `AppServiceProvider::boot()`). Documented the **Octane + `withoutWrapping()` static-property gotcha** ([laravel/framework#42777](https://github.com/laravel/framework/issues/42777)) — the underlying property is static, so once set in one request, every subsequent request in the same Octane worker inherits it. Don't conditionally flip it per-request.
+  5. **`withResponse()` hook for HATEOAS, custom headers, ETag** — the right place to add `self`/`related` links, custom `X-Resource-Id` / cache headers, and ETags. Fires once on the outermost `JsonResponse`, not per-item. Documented why it beats `response()->json([...])` (colocation, Octane survival, works inside `JsonResource::collection()` / `JsonApiResource`).
+  6. **`JsonApiResource::toLinks()` / `toMeta()` for JSON:API spec compliance** — JSON:API spec expects `self` / `related` / pagination / custom domain links plus `meta` for non-link metadata. The existing JSON:API section only showed `toAttributes()` / `toRelationships()`; `toLinks()` and `toMeta()` were undocumented in this skill.
+- **Resource Collections decision tree** — `JsonResource::collection()` vs dedicated `PostCollection extends JsonResource` vs `JsonApiResource`. Includes a 7-row "When to pick which" table.
+- **Resource Link Generation (`route()` inside resources)** — the cached-response staleness pitfall. `route()` reads URL state at request time; cached resource output returns stale URLs after a host/domain change. Documented the workaround pattern (store route name + params, resolve in `withResponse()` at response time).
+- **Common Mistakes list in `api.md` grew 8 → 14 entries** — added "Calling `route()` inside cached `toArray()`", "Setting `JsonResource::withoutWrapping()` per-request under Octane", "Building HATEOAS links in the controller instead of `withResponse()`", "Hand-rolling `meta` blocks when `additional()` already injects them", "Using `whenLoaded()` outside a resource", and "Using `mergeWhen()` outside a resource".
+- **`SKILL.md`** bumped `1.22.15` → `1.22.16` (cycle-29 api.md gap-fill).
+- **`README.md`** — bumped version stamp + research-cycle marker to reflect cycle 29.
+- **No changes to `versions.md` Laravel-version sections** — `v13.18.1` is still head of `13.x`, no new framework release. PHP batch unchanged. No new Laravel CVE.
+
+**No changes to other files in cycle 29** — `file-uploads.md` and `observers.md` (Jul 1, 5 days stale) are still well-served by their cycle 4–24 content; `blade.md` (Jul 2, 4 days stale) by cycle 19. Cycle 30 (2026-07-07 00:00 UTC) will target one of these (most likely `observers.md` — it's the biggest topic file by gap potential and was named by cycle 28).
+
+SKILL.md bumped to **v1.22.16** (cycle-29 api.md gap-fill — JsonResource Advanced Patterns + JsonApiResource toLinks/toMeta). 29 cycles in 8 days.

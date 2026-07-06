@@ -83,6 +83,254 @@ public function show(Post $post)
 {
     return new PostResource($post->load('author'));
 }
+
+## API Resource Advanced Patterns
+
+Once you have the basic `JsonResource` shape down, four families of methods cover ~90% of the production API patterns: **conditional attributes**, **response-level metadata**, **data wrapping**, and **response hooks**. AI models default to verbose `response()->json([...])` calls when these helpers do the work in one line and survive collection wrapping, caching, and Octane — so this section exists mostly to make sure they get used.
+
+### Conditional Attributes — `when()`, `whenAppends()`, `whenCounted()`, `whenPivotLoaded()`
+
+```php
+use App\Http\Resources\UserResource;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+class PostResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [
+            'id'         => $this->id,
+            'title'      => $this->title,
+
+            // Field appears only when truthy (e.g., user is admin)
+            'draft_body' => $this->when($request->user()?->isAdmin, fn () => $this->draft_body),
+
+            // Field appears only when the user was authenticated (check + value)
+            'viewer_pinned' => $this->when($request->user(), fn ($u) => $this->pinnedFor($u)),
+
+            // Field appears only when the relationship was eager-loaded (avoids N+1 in resources)
+            'author'     => UserResource::make($this->whenLoaded('author')),
+            'tags_count' => $this->whenCounted('tags'),           // needs ->withCount('tags')
+            'tags'       => TagResource::collection($this->whenLoaded('tags')),
+
+            // Pivot-only fields (BelongsToMany / HasManyThrough / etc.)
+            'joined_at'  => $this->whenPivotLoaded('group_user', fn () => $this->pivot->joined_at),
+            'role'       => $this->whenPivotLoadedAs('group_user', 'subscription', fn () => $this->pivot->role),
+        ];
+    }
+}
+```
+
+**`mergeWhen()` / `merge()`** — merge multiple fields at once without flattening into the parent shape:
+
+```php
+public function toArray(Request $request): array
+{
+    return [
+        'id' => $this->id,
+        $this->mergeWhen($request->user()?->isAdmin, [
+            'internal_notes'   => $this->internal_notes,
+            'moderation_flags' => $this->moderation_flags,
+        ]),
+        $this->merge([
+            // Always present, computed at runtime
+            'comment_count' => $this->comments()->count(),
+        ]),
+    ];
+}
+```
+
+> **Pitfall — `when()` evaluates the condition at JSON-serialization time**, not at controller time. For expensive conditions (DB queries, API calls), compute the value once in the controller and pass it via the resource constructor or `additional()` metadata instead.
+
+### Response-Level Metadata — `additional()` / `with()`
+
+For collection-level metadata (totals, generated-at timestamps, server info), use `additional()` rather than hand-rolling the wrapper:
+
+```php
+// Controller
+public function index()
+{
+    $posts = Post::with('author')->paginate(20);
+
+    return PostResource::collection($posts)
+        ->additional([
+            'meta' => [
+                'generated_at' => now()->toIso8601String(),
+                'server_id'    => gethostname(),
+                'request_id'   => request()->header('X-Request-Id'),
+            ],
+        ]);
+}
+```
+
+**Response:**
+```json
+{
+  "data": [ ... ],
+  "links": { "first": "...", "last": "...", "prev": null, "next": "..." },
+  "meta": {
+    "current_page": 1,
+    "per_page": 20,
+    "total": 142,
+    "generated_at": "2026-07-06T18:00:00+00:00",
+    "server_id": "web-01",
+    "request_id": "abc-123"
+  }
+}
+```
+
+> **Nested `meta` vs flat `meta`** — Laravel merges `additional()` directly into the response root. Wrap your keys (`'meta' => [...]`) explicitly if you want a nested meta block — otherwise you pollute the top level.
+
+### Data Wrapping — `wrap()` / `withoutWrapping()`
+
+By default Laravel wraps the outermost resource in `{"data": ...}`. Override per-resource, per-collection, or globally:
+
+```php
+// 1. Per-resource
+class PostResource extends JsonResource
+{
+    // Default: 'data'. Use 'post' for single-resource endpoints that should NOT use 'data'
+    public static $wrap = 'post';
+}
+
+// 2. Per-collection (the wrapper key for a collection response)
+class PostCollection extends JsonResource
+{
+    public static $wrap = 'posts';
+}
+
+// 3. Globally — kill the wrapper for ALL resources in this app
+// app/Providers/AppServiceProvider.php
+public function boot(): void
+{
+    JsonResource::withoutWrapping();   // applies to outermost response only
+}
+
+// 4. Per-controller, single call
+return PostResource::make($post)->withoutWrapping();   // {'id': 1, 'title': '...'} (no data wrapper)
+```
+
+**Gotchas:**
+- `JsonResource::withoutWrapping()` only affects the **outermost** response. Inner resource collections in a tree still wrap themselves.
+- **Paginated collections always re-add `data`** even when `withoutWrapping()` is set — Laravel needs somewhere to put the items so pagination links can sit alongside. Strip with a custom resource collection if you must.
+- **Octane + `withoutWrapping()` is global**: the underlying property is static. Once set in one request, every subsequent request in the same Octane worker inherits it (laravel/framework#42777). Don't conditionally flip it per-request; use `additional()` + a custom response macro if you need mixed wrapping.
+
+### Response Hooks — `withResponse()` (HATEOAS, Custom Headers, ETags)
+
+The `withResponse()` method fires when the resource is the **outermost** resource in a response. Use it for self/related links (HATEOAS), cache headers, ETag generation, or rate-limit headers:
+
+```php
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+class PostResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [
+            'id'    => $this->id,
+            'title' => $this->title,
+            'body'  => $this->body,
+        ];
+    }
+
+    public function withResponse(Request $request, \Illuminate\Http\JsonResponse $response): void
+    {
+        $response->header('X-Resource-Id', (string) $this->id);
+
+        // HATEOAS self + related links
+        $response->setData($response->getData(true) + [
+            'links' => [
+                'self'    => route('api.posts.show', $this->id),
+                'author'  => route('api.users.show', $this->author_id),
+                'comments' => route('api.posts.comments.index', $this->id),
+            ],
+        ]);
+
+        // ETag for client-side caching (returns 304 Not Modified on If-None-Match)
+        $etag = md5($response->getContent());
+        $response->setEtag($etag);
+        $response->headers->set('Cache-Control', 'private, must-revalidate');
+    }
+}
+```
+
+**For collections** the hook runs once on the outermost `JsonResponse`, not per-item — perfect for collection-level ETag (one hash for the whole page).
+
+**Why this beats `response()->json([...])`** — keeps the transformation colocated with the resource, survives Octane/FrankenPHP re-use, works inside `JsonResource::collection()` and `JsonApiResource`, and lets you unit-test the headers via `assertJsonPath('links.self', ...)`.
+
+### Resource Collections — `JsonResource::collection()` vs Dedicated `ResourceCollection` Class
+
+```php
+// 1. Inline collection (most cases)
+return PostResource::collection(Post::paginate(20));
+
+// 2. Dedicated collection class — needed when you want:
+//    - Custom $wrap key ('posts' instead of 'data')
+//    - Custom meta in the response
+//    - Override toArray() to reshape items beyond the per-resource pattern
+class PostCollection extends JsonResource
+{
+    public static $wrap = 'posts';
+
+    public function toArray(Request $request): array
+    {
+        return [
+            'data' => $this->collection,
+            'meta' => [
+                'totals' => [
+                    'published' => Post::where('status', 'published')->count(),
+                    'drafts'    => Post::where('status', 'draft')->count(),
+                ],
+            ],
+        ];
+    }
+}
+
+// In the controller:
+return new PostCollection(Post::paginate(20));
+```
+
+**Decision tree:**
+- **Inline `PostResource::collection()`** — default, covers 80% of cases
+- **Dedicated `PostCollection` class** — when you need collection-only meta, a non-`data` wrap key, or to nest the collection under a key (`'posts'`, `'results'`, etc.)
+- **Custom `toArray()`** with `'data' => $this->collection` (the pattern shown above) — when the per-item resource class doesn't have the shape you want and you'd rather reshape inline
+
+### Resource Link Generation (`route()` Inside Resources)
+
+`route()` works inside `toArray()` and `withResponse()` but **stale-URLs in cached responses** are a known pitfall — `route()` reads the URL state at request time. If you cache the resource output:
+
+```php
+// BAD — cached response returns stale URLs after a host change
+'url' => route('api.posts.show', $this->id),
+
+// GOOD — store the route name + params, resolve at serialization time
+'url' => [
+    'name'   => 'api.posts.show',
+    'params' => $this->id,
+],
+
+// Or, in withResponse() (fires at response time, after cache read):
+public function withResponse(Request $request, JsonResponse $response): void
+{
+    $data = $response->getData(true);
+    $data['url'] = route('api.posts.show', $this->id);
+    $response->setData($data);
+}
+```
+
+### When to Pick Which API Resource Family
+
+| Need | Use |
+|------|-----|
+| Internal/admin/BFF API where you control both ends | `JsonResource` + `additional()` / `withResponse()` |
+| Public mobile/3rd-party API, want spec compliance | `JsonApiResource` (Laravel 13 first-party) |
+| Flat (non-wrapped) single-resource response | `JsonResource::make($x)->withoutWrapping()` |
+| Collection with custom wrapper (`'posts'`, `'results'`) | Dedicated `PostCollection extends JsonResource` with `$wrap` |
+| HATEOAS-style self/related links | `withResponse()` hook |
+| Sparse fieldsets / `include` query params | `JsonApiResource` + `JsonApiQueryParameters` |
+| Conditional attributes per request | `when()`, `mergeWhen()`, `whenLoaded()`, `whenCounted()` |
 ```
 
 ## JSON:API Resources (Laravel 13 — Spec-Compliant APIs)
@@ -211,6 +459,82 @@ public function index(JsonApiQueryParameters $params): JsonApiResource
 **When to use JsonApiResource vs JsonResource:**
 - **JsonApiResource** — public APIs consumed by mobile apps, third-party developers, or any client that benefits from a standardized spec. The structure is rigid but predictable.
 - **JsonResource** — internal APIs, admin panels, B2B integrations where you control both client and server and want full flexibility over the response shape.
+
+## JsonApiResource — `toLinks()` for Self/Related Links (JSON:API Spec Compliance)
+
+`JsonApiResource` (Laravel 13 first-party) auto-emits `links.self` for each resource, but JSON:API also expects `related`, `first`/`prev`/`next`/`last` pagination links, and custom domain links. Override `toLinks()`:
+
+```php
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonApiResources\JsonApiResource;
+
+class PostResource extends JsonApiResource
+{
+    public function toAttributes(Request $request): array
+    {
+        return [
+            'title' => $this->title,
+            'body'  => $this->body,
+        ];
+    }
+
+    public function toLinks(Request $request): array
+    {
+        return [
+            'self'    => route('api.v1.posts.show', $this->id),
+            'related' => [
+                'author'   => route('api.v1.users.show', $this->author_id),
+                'comments' => route('api.v1.posts.comments.index', $this->id),
+            ],
+        ];
+    }
+
+    public function toRelationships(Request $request): array
+    {
+        return [
+            'author' => fn () => UserResource::make($this->whenLoaded('author')),
+        ];
+    }
+}
+```
+
+**Generated response:**
+```json
+{
+  "data": {
+    "type": "posts",
+    "id": "42",
+    "attributes": { "title": "...", "body": "..." },
+    "links": {
+      "self": "https://api.example.com/v1/posts/42",
+      "related": {
+        "author": "https://api.example.com/v1/users/7",
+        "comments": "https://api.example.com/v1/posts/42/comments"
+      }
+    },
+    "relationships": { ... }
+  }
+}
+```
+
+**Pagination links in JsonApiResource collections** are added automatically by the framework based on the paginator's `url()` / `nextPageUrl()` / `previousPageUrl()` outputs — no extra wiring needed.
+
+### Custom Resource Collection Pagination Meta (`toMeta()`)
+
+For JSON:API spec compliance, collections also accept a `toMeta()` hook for non-Links metadata (totals, generated-at, etc.):
+
+```php
+class PostCollection extends JsonResource
+{
+    public function toMeta(Request $request): array
+    {
+        return [
+            'generated_at' => now()->toIso8601String(),
+            'request_id'   => $request->header('X-Request-Id'),
+        ];
+    }
+}
+```
 
 ## Pagination
 
@@ -516,6 +840,19 @@ Source: [PR #60617 — Fix Number::forHumans and Number::abbreviate crashing on 
 6. **Exposing internal errors** — never return `exception->getMessage()` to API clients in production
 7. **Mixing JsonApiResource and JsonResource** — pick one approach per API; mixing makes client code harder
 8. **Missing `type` in JSON:API responses** — JsonApiResource handles this automatically; don't hand-roll responses that omit it
+9. **Calling `route()` inside cached `toArray()`** — returns stale URLs after a host/domain change; move to `withResponse()` or store the route name + params and resolve at serialization time
+10. **Setting `JsonResource::withoutWrapping()` per-request under Octane** — the underlying property is static; once flipped in one request, every subsequent request in the worker inherits it (laravel/framework#42777). Set globally in `AppServiceProvider::boot()` only.
+11. **Building HATEOAS links in the controller instead of `withResponse()`** — keeps the transformation colocated with the resource and works under `JsonResource::collection()` / Octane / route caching
+12. **Hand-rolling `meta` blocks** when `additional()` already injects them at the response level — saves the `response()->json([...])` wrap and integrates with pagination meta
+13. **Using `whenLoaded('author')` outside a resource** — it's a JsonResource method, not a model method; call it inside `toArray()` where `$this` is the resource proxy
+14. **Using `mergeWhen()` outside a resource** — same restriction; `mergeWhen()` only exists on the resource's `toArray()` context
+
+## Updated from Research (2026-07-06, cycle 29)
+
+- **API Resource Advanced Patterns** — `when()` / `whenAppends()` / `whenCounted()` / `whenPivotLoaded()` / `whenPivotLoadedAs()` for conditional attributes, `additional()` / `with()` for response-level metadata, `wrap()` / `withoutWrapping()` for data wrapper control, `withResponse()` for HATEOAS self/related links and custom headers/ETags. Decision tree for choosing between inline `JsonResource::collection()`, dedicated `ResourceCollection`, and `JsonApiResource`. Notes the Octane + `withoutWrapping()` static-property gotcha (laravel/framework#42777) and the `route()` + cached-resource staleness pitfall. Common Mistakes list grew 8 → 14 entries.
+- **JsonApiResource `toLinks()` / `toMeta()`** — JSON:API spec compliance for `self` / `related` / pagination / domain-specific links, plus `toMeta()` for collection-level metadata (totals, generated_at, request_id). Pairs with the existing JSON:API Resources section above.
+
+---
 
 ## Updated from Research (2026-06-26, cycle 5)
 

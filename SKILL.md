@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.15
+version: 1.22.16
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -48,6 +48,8 @@ metadata:
 | HEAD request cache headers (PR #60589) | `controllers.md` (API Versioning section) | 13.18.0+ finally sets `Cache-Control` / `ETag` on HEAD; CDN cache-warming scripts broke before |
 | `WorkerStopping` `jobsProcessed` + `lastJobProcessedAt` (PR #60592) | `queues.md` (WorkerStopping section) | Lifetime-job-count and graceful-shutdown-gap dashboards without dirty reflection hacks |
 | `php artisan dev` priority-based registration (PR #60580) | `artisan.md` (Dev Orchestration section) | 13.18.0+ lets vendor packages register a deterministic order so critical dev processes (log tail, queue worker) come first |
+| `JsonResource` Advanced Patterns (`when`/`whenLoaded`/`whenCounted`/`whenPivotLoaded`, `additional`, `wrap`/`withoutWrapping`, `withResponse` for HATEOAS) | `api.md` (API Resource Advanced Patterns section) | Conditional attributes, response-level metadata, data wrapper control, and HATEOAS self/related links — covers ~90% of production API resource patterns that AI models default to verbose `response()->json([...])` for |
+| `JsonApiResource::toLinks()` / `toMeta()` | `api.md` (JsonApiResource toLinks section) | JSON:API spec compliance for `self`/`related`/pagination/domain links and collection metadata (totals, generated_at, request_id) |
 | `php artisan dev --kill-others-on-fail` (PR #60606) | `artisan.md` (Dev Orchestration section) | 13.18.0+ tears down sibling dev processes on non-zero exit; use in CI / one-shot dev, leave off for normal local dev |
 | TaggedCache `flexible()` lock/defer namespace fix (PR #60626) | `performance.md` (TaggedCache section) | 13.18.0+ namespaces `flex_lock:` and `flex_defer:` keys separately so a custom lockName can't collide with a defer label |
 | Debounced-jobs cache-hit reduction (PR #60575) | `performance.md` (Cache debounce subsection) | 13.18.0+ skips lock acquisition when already inside the debounce window — pairs with the 13.17.0 `maxWait` fix |
