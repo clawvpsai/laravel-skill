@@ -31,6 +31,58 @@ function cleanHtml(string $html): string
 $post->html_content = cleanHtml($request->input('html_content'));
 ```
 
+## Flash-Message XSS via OAuth Error Parameters (CISA SB26-187, July 6 2026)
+
+**Pattern:** A Laravel OAuth callback controller reads an `?error=...` (or `?error_description=...`) query parameter that an attacker controls, passes it into the session flash bag, and the SPA front-end re-renders that flash value through Vue's `v-html` directive (or React's `dangerouslySetInnerHTML` / Svelte's `{@html}`). The attacker ships `<img src=x onerror="fetch('/api/keys')">` in the error parameter and the browser executes it inside the authenticated session context.
+
+```php
+// ⚠️ VULNERABLE — never pass raw request data to flash() if the SPA renders via v-html
+public function oauthCallback(Request $request): RedirectResponse
+{
+    if ($request->has('error')) {
+        return redirect('/dashboard')
+            ->with('error', $request->query('error') . ': ' . $request->query('error_description'));
+    }
+    // ...
+}
+```
+
+```html
+<!-- ⚠️ VULNERABLE SPA side — v-html is the dangerous sink -->
+<div class="alert alert-danger" v-html="$page.props.flash.error"></div>
+```
+
+**Why it matters for Laravel apps:**
+
+- **Standard `{{ $flash.error }}` (Blade auto-escape) is safe.** The XSS only fires when the front-end uses a raw-HTML sink to render the flash value. Vue's `{{ }}` and React's `{value}` are safe by default.
+- **Even "harmless-looking" error strings are attacker-controlled.** RFC 6749 §4.1.2.1 lets the OAuth provider return arbitrary `error_description` text. Many implementations concatenate that text into a user-facing banner.
+- **The session cookie already authenticated the user** before the redirect, so the payload runs in an authenticated context — exactly what you don't want for XSS-as-session-hijack. An attacker can drain the Laravel session via `/sanctum/csrf-cookie` + `fetch('/api/...')` from the injected script.
+
+**Fix:**
+
+```php
+// ✅ SAFE — flash the machine-readable code, sanitize the human-readable message
+$request->session()->flash('oauth_error_code', $request->query('error'));
+$request->session()->flash('oauth_error_message', strip_tags(
+    (string) $request->query('error_description')
+));
+```
+
+```html
+<!-- ✅ SAFE — Blade {{ }} auto-escapes; OR drop v-html in Vue -->
+<div class="alert alert-danger">{{ $flash.error }}</div>
+<!-- or in SPA: <div>{{ error }}</div> -->
+```
+
+**Defense-in-depth checklist for any Laravel SPA:**
+
+1. **Audit every `v-html`, `@html`, `[innerHTML]`, or `dangerouslySetInnerHTML` binding** — search the SPA codebase for those directives on values that originate from `with('error', ...)`, `withErrors(...)`, `session()->flash(...)`, or `redirect()->with(...)`. Each one is a potential XSS sink if upstream values aren't sanitized.
+2. **Treat OAuth error params as untrusted text.** Even when "the provider only sends our app's client_id," an attacker can register their own OAuth client against the same provider (or compromise the redirect URL chain) and emit arbitrary error strings.
+3. **Defense-in-depth sanitize.** If you must pass provider-returned text through, run it through `strip_tags()` + `htmlspecialchars()` server-side before flashing it. Better: only flash the machine-readable error code (`invalid_request`, `access_denied`, etc.) and map to a localized UI string on the client.
+4. **Set a strict CSP.** `default-src 'self'; script-src 'self'` with nonce-based scripts prevents any inline event handler (`onerror`, `onclick`) from executing even if a payload reaches the DOM. Covered in the "Content Security Policy (CSP)" section below.
+5. **Rotate session cookies on OAuth callback.** If a pre-OAuth session existed, generate a fresh session ID before redirecting back — prevents session-fixation attacks layered on top of the flash XSS.
+6. **Reference.** This is the SPA-layer pattern catalogued in CISA SB26-187 (July 6, 2026): *"Attackers can exploit the OAuth callback controller's failure to sanitize error parameters before rendering them through Laravel flash messages via the Vue v-html directive to hijack authenticated user sessions."* No CVE number was assigned at disclosure; treat this as a preventive checklist rather than waiting for an official CVE tag.
+
 ## SQL Injection Prevention
 
 ```php
