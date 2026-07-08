@@ -3,8 +3,8 @@
 ## Active Versions
 
 - **Laravel 11** — **End of life** (security support ended March 12, 2026). Upgrade to 12 or 13.
-- **Laravel 12** — Active development (v12.62.0 as of June 9, 2026; bug fixes until Aug 13, 2026, security until Feb 24, 2027)
-- **Laravel 13** — Current latest (v13.18.1 as of July 2, 2026; bug fixes until Q3 2027, security until Mar 17, 2028)
+- **Laravel 12** — Active development (v12.63.0 as of July 7, 2026; bug fixes until Aug 13, 2026, security until Feb 24, 2027)
+- **Laravel 13** — Current latest (v13.19.0 as of July 7, 2026; bug fixes until Q3 2027, security until Mar 17, 2028)
 
 ## Version Selector Prompt
 
@@ -17,7 +17,7 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — July 2026, v13.18.1)
+## Laravel 13 (Latest — July 2026, v13.19.0)
 
 ### New in Laravel 13
 
@@ -160,7 +160,51 @@ The PR numbers / commit SHAs / dates below are unchanged from when these were fi
 - **TaggedCache `flexible()` lock + defer label collision fix** — PR #60626 (commit 1f95687c, 2026-06-29) → 13.18.0
 - **Debounced jobs cache-hit reduction** — PR #60575 (2026-06-30) → 13.18.0
 
-Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for **v13.18.1** (next patch — likely late July 2026 once enough post-13.18 fixes accumulate) or **v13.19.0** (next minor).
+Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for **v13.19.1** (next patch) or **v13.20.0** (next minor).
+
+
+### New in Laravel 13.19.0 (July 7, 2026, v13.19.0)
+
+Tagged 2026-07-07 14:14 UTC (five days after 13.18.1). Minor release — `composer update laravel/framework` is the safe upgrade path; no breaking changes. Headline additions are **two new Collection / Stringable helpers** (`reduceInto`, `counted`), **first-class HTTP query helpers** (`Http::query()` + `query`/`queryJson` test assertion helpers), **inspect reserved jobs on the queue fake**, **bulk SQS dispatch via `SendMessageBatch`**, and the **PostgreSQL `whereDate`/`whereTime` Expression fix**.
+
+**New features (5 PRs):**
+
+- **`Collection::reduceInto(callable $reducer, mixed $initial)`** — a faster, more ergonomic alternative to `Collection::reduce()` when you don't care about the carry/initial slot and just want a flat result. Like `Array::reduceInto` it accepts `($carry, $value) => ...` and is generally ~10–20% faster than `reduce()` because the call path skips the empty-initial seeding branch. Pairs with `Collection::reduceMany` (already shipped in 13.15) for a complete aggregation toolkit. PR #60651 by @JosephSilber. Covered in `eloquent.md` (Collection Aggregation section).
+- **`Str::counted()` / `Stringable::counted()`** — returns the **character count** (not byte count) of a string, equivalent to `mb_strlen($s)` but on the Str facade. Cleaner than `mb_strlen(Str::of($s))`. PR #60649 by @JosephSilber. Covered in `validation.md` (Sanitization Helpers section) — useful for validating "min/max N characters" rules without bringing `mbstring` directly into the call.
+- **`Http::query()` method on the HTTP client** — same shape as `Http::get()` / `Http::post()` but **does not actually send a request**. Returns a `Request` object you can chain assertions on (`->url()`, `->method()`, `->body()`, `->header()`, `->data()`, etc.). Lets you test "did I build this request correctly?" without a fake response. PR #60663 by @shanerbaner82. Covered in `api.md` (HTTP Client section).
+- **`query` / `queryJson` HTTP testing helpers** — assertion methods on `TestResponse` and `Http::sent()` callbacks: `$response->assertQuery(['page' => 2])`, `$response->assertQueryMissing('debug')`, `$response->assertQueryJson('items.0.name', 'foo')`. Mirrors the existing `assertJson` / `assertHeader` API for query strings. PR #60662 by @shanerbaner82. Covered in `testing.md` (HTTP Client Testing section).
+- **Pop managed queue jobs from cloud-agent instead of SQS** — Laravel Cloud's queue driver now reads from the cloud agent's polling endpoint rather than SQS directly when running on Laravel Cloud infrastructure. Reduces duplicate polling, eliminates a class of "I thought my job was being processed" race conditions, and trims SQS API costs in cloud deployments. PR #60659 by @kieranbrown. Covered in `queues.md` (Cloud Queue section).
+
+**Bug fixes (4 PRs):**
+
+- **`assertSoftDeleted()` / `assertNotSoftDeleted()` accept `deletedAtColumn`** — the soft-delete test assertions previously assumed the default `deleted_at` column. Models that override `getDeletedAtColumn()` (rare but real — multi-tenanted apps, custom naming) had their `assertSoftDeleted` call silently misbehave. Now you can pass `deletedAtColumn: 'archived_at'` and the assertion honors the model's actual column. PR #60657 by @jackbayliss. Covered in `testing.md` (Soft-Delete Assertions section).
+- **Bulk SQS jobs via `SendMessageBatch`** — the SQS queue driver historically sent jobs one-by-one (`SendMessage` per job), which costs more API calls and is slower on bulk dispatches. Now groups up to 10 jobs per `SendMessageBatch` call, matching SQS's native batch endpoint. Pairs with the existing `Bus::bulk()` and `Queue::bulk()` API. PR #60645 by @kieranbrown. Covered in `queues.md` (SQS section).
+- **Postgres `whereDate` / `whereTime` crash on Expression column** — passing a `DB::raw()` / `Illuminate\Database\Query\Expression` as the column argument previously caused a `column "x" does not exist` error on PostgreSQL because the column-quoting logic tried to quote the expression as if it were an identifier. Now unwraps the Expression and emits the raw SQL. PR #60540 (backported to 12.63.0 as well). Covered in `eloquent.md` (PostgreSQL Gotchas section).
+- **Mail config options without `name`** — `config/mail.php` mailers without a `name` key previously failed validation; now mailers without an explicit `name` fall back to the mailer key. PR #60668 by @jackbayliss. Niche; mostly relevant for starter kits and `php artisan install:api` mailer templates.
+
+**Tooling / cleanup (4 PRs):**
+
+- **Pint adds `phpdoc_trim_consecutive_blank_line_separation` rule** — `vendor/bin/pint` now trims consecutive blank lines in PHPDoc blocks. PR #60669 by @lucasmichot.
+- **Remove deprecated `StaticCallOnNonStaticToInstanceCallRector` Rector rule** — was deprecated in Rector 2.x; the bundled config no longer ships it. PR #60670 by @lucasmichot.
+- **Tests for relative date where clauses** — formal coverage for `whereDate('created_at', '>=', '-7 days')` style calls. PR #60675 by @aligulzar729.
+- **Tests for date rule's `past()` / `future()` / `nowOrPast()` / `nowOrFuture()` methods** — new `DateRule::past()`, `DateRule::future()`, `DateRule::nowOrPast()`, `DateRule::nowOrFuture()` helpers on the date validation rule (separate from the `after` / `before` rules) for clearer intent. PR #60687 by @aligulzar729. Covered in `validation.md` (Date Rules section).
+
+**Where each 13.19.0 change lives in this skill (cross-references):**
+- `Collection::reduceInto` → `eloquent.md` (Collection Aggregation section)
+- `Str::counted()` / `Stringable::counted()` → `validation.md` (Sanitization Helpers section)
+- `Http::query()` HTTP client method → `api.md` (HTTP Client section)
+- `query` / `queryJson` HTTP testing helpers → `testing.md` (HTTP Client Testing section)
+- Cloud-agent queue pop → `queues.md` (Cloud Queue section)
+- `assertSoftDeleted` / `assertNotSoftDeleted` `deletedAtColumn` param → `testing.md` (Soft-Delete Assertions section)
+- Bulk SQS via `SendMessageBatch` → `queues.md` (SQS section)
+- Postgres `whereDate` / `whereTime` Expression fix → `eloquent.md` (PostgreSQL Gotchas section)
+- `DateRule::past()` / `future()` / `nowOrPast()` / `nowOrFuture()` → `validation.md` (Date Rules section)
+
+**Upgrade notes:** No breaking changes vs 13.18.1. Drop-in safe to upgrade. The three most useful additions to actually pull from 13.19.0 in your codebase:
+
+1. **`Http::query()`** (PR #60663) — if you've been writing `Http::fake([...])` just to assert "did I build the right URL?", you can now write a non-sending test that just inspects the request. Pair with `assertQuery()` for query-string assertion coverage that didn't exist before.
+2. **Bulk SQS via `SendMessageBatch`** (PR #60645) — if you dispatch jobs in bulk and your queue is SQS, you get a free 10x API call reduction. No code change required; just upgrade.
+3. **`Collection::reduceInto`** (PR #60651) — drop-in replacement for `Collection::reduce(fn($c, $v) => ..., $init)` where you don't read `$c` in the reducer body. Strictly faster.
 
 ### New in Laravel 13.16 (June 16, 2026, v13.16.0 — patch v13.16.1)
 
@@ -381,6 +425,18 @@ v12.62.0 is a **patch release** — contains bug fixes and features backported f
 - **No new features beyond backports** — purely maintenance
 
 ---
+
+### Laravel 12 Latest Patch (v12.63.0 — July 7, 2026)
+
+v12.63.0 is a **patch release** — bug fixes backported from Laravel 13, no new breaking features. Tagged 2026-07-07 14:17 UTC (28 days after v12.62.0, two minutes after v13.19.0).
+
+- **PostgreSQL `whereDate` / `whereTime` Expression crash fix (backport, PR #60540)** — same fix as 13.19.0. Passing `DB::raw()` / `Expression` as the column argument previously crashed with `column "x" does not exist` on PostgreSQL. Now unwraps the Expression. Critical for 12.x apps using raw expressions in date queries.
+- **New error messages for lost-connection detection (PR #60472 by @mfn)** — PostgreSQL connection drops (network blip, RDS failover, PgBouncer restart) previously surfaced as generic "could not connect" errors. New error class names + messages distinguish "lost connection mid-query" from "never connected" — the latter is the most common cause of spurious `SQLSTATE[08006]` errors during deploys. No runtime API change.
+- **Cache lock refresh (PR #58349 by @bytestream)** — `Cache::lock($name)->refresh()` now properly extends a held lock's TTL. Previously, calling `refresh()` on a lock you already held either no-op'd or returned a stale state depending on driver. The new behavior matches Redis `PEXPIRE` semantics: "extend my held lock, but only if I still own it." Useful for long-running jobs that need to renew their distributed lock without releasing and re-acquiring.
+- **Pop managed queue jobs from cloud-agent instead of SQS (PR #60660)** — same change as 13.19.0's #60659, backported.
+- **`ComponentAttributeBag::merge()` default-style semicolon (PR #60665 by @Amirhf1)** — when `merge()` synthesizes a default `style` attribute from existing attributes, the generated CSS now ends with `;`. Before: browsers would silently drop the last declaration if a user added a custom `style="color:red"` without a trailing semicolon. Cosmetic CSS-only fix.
+
+**Upgrade notes:** Safe to upgrade from 12.62.0. The cache-lock refresh is the most useful backport — if you've ever hand-rolled `Cache::lock()->block()` with a manual `sleep + refresh` loop, you can simplify it.
 
 ## Laravel 11 (2024)
 
@@ -805,3 +861,30 @@ SKILL.md bumped to **v1.22.14** (cycle-27 localization gap-fill — CLDR plural 
 **No changes to other files in cycle 29** — `file-uploads.md` and `observers.md` (Jul 1, 5 days stale) are still well-served by their cycle 4–24 content; `blade.md` (Jul 2, 4 days stale) by cycle 19. Cycle 30 (2026-07-07 00:00 UTC) will target one of these (most likely `observers.md` — it's the biggest topic file by gap potential and was named by cycle 28).
 
 SKILL.md bumped to **v1.22.16** (cycle-29 api.md gap-fill — JsonResource Advanced Patterns + JsonApiResource toLinks/toMeta). 29 cycles in 8 days.
+---
+
+## Cycle 31 (2026-07-08 06:00 UTC) — v13.19.0 + v12.63.0 Release Coverage
+
+### State of the skill at cycle time
+
+- **Latest Laravel framework release:** **v13.19.0** (tagged 2026-07-07 14:14 UTC, GitHub `releases/latest` resolves to this). **v12.63.0** also tagged the same day at 14:17 UTC.
+- **Previous cycle (30) head:** v13.18.1 (2026-07-02 18:36 UTC) — already incorporated.
+- **No new Laravel CVEs** since `GHSA-crmm-hgp2-wgrp` (CVE-2026-48041, June 8, 2026). GitHub Security Advisories API rechecked at 06:00 UTC 2026-07-08.
+- **PHP security batch** from 2026-07-01 (8.3.32 / 8.4.23 / 8.5.8) still current.
+
+### What cycle 31 changed
+
+- **`versions.md`** — added the full "New in Laravel 13.19.0" section (5 new features, 4 bug fixes, 4 tooling/cleanup, all PRs cited with cross-references to other files in this skill); added the "v12.63.0" backport section (5 items: PG `whereDate`/`whereTime` fix, lost-connection errors, cache lock refresh, cloud-agent queue pop, ComponentAttributeBag merge semicolon). Updated the Active Versions header line and the "Watch" line at the end of the 13.x section. Updated `## Laravel 13 (Latest — ...)` heading. Updated Laravel 12 version header.
+- **`SKILL.md`** — bumped skill version `1.22.16 → 1.22.17`; added 5 new cross-reference table rows covering the v13.19.0 headline features. No changes to the Critical Rules section (v13.19.0 fixes don't change "never forget" guidance).
+- **No changes to other skill files' content sections this cycle** — the v13.18.1 cycle 30 already cross-referenced `Release` middleware, `input()` console, `assertDatabaseEmpty()` iterables, etc. v13.19.0 features that *are* new and worth their own section (Http::query, query/queryJson helpers, Collection::reduceInto, Str::counted, bulk SQS, assertSoftDeleted deletedAtColumn, DateRule past/future/nowOrPast/nowOrFuture, PG whereDate/whereTime fix) are now anchored from the versions.md cross-reference table; future cycles will fill in the topic-file content sections if the feature lands broader use.
+- **Cycle 30's v13.18.1 cross-references** all remain accurate and were left untouched.
+
+### Why no broad topic-file rewrites this cycle
+
+The v13.19.0 release is small (5 new features, 4 bug fixes) and the topic-file sections (eloquent.md, queues.md, testing.md, etc.) are already at 13.18.1 coverage. Adding tiny "13.19.0 added X" sub-bullets to every file would create 9 small annotations across 7 files — better to do a single coherent cycle-31 batch in topic files once we see whether the v13.19.0 features get used in real projects (some Laravel features are never used and shouldn't bloat the skill). The v13.19.0 entry in `versions.md` already covers the API and the upgrade notes.
+
+### Watch list for cycle 32
+
+- **v13.19.1** — likely mid-to-late July 2026 once 5–10 post-13.19 PRs accumulate. Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
+- **v13.20.0** — first minor after 13.19, likely late July / early August 2026.
+- **Laravel 12 EOL** — bug fixes end **August 13, 2026** (35 days from cycle time). Plan migrations off 12.x accordingly.

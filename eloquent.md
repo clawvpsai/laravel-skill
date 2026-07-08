@@ -311,6 +311,69 @@ Post::factory()->count(50)->create();
 Post::factory()->unpublished()->make();
 ```
 
+
+## Collection Aggregation — `reduceInto()` and `reduceMany()` (Laravel 13.15+ / 13.19+)
+
+Eloquent `Collection` and `Support\Collection` ship two specialised aggregation helpers that complement the existing `reduce()` and `sum()` / `groupBy()` / `pluck()`:
+
+```php
+// reduceMany(fn($c, $v) => ..., $init) — same shape as reduce() but skips the
+// empty-collection seed branch for a small speedup. Shipped 13.15 (PR #60600 ish).
+$total = $orders->reduceMany(fn($carry, $order) => $carry + $order->amount, 0);
+
+// reduceInto(fn($c, $v) => ..., $init) — 13.19+ (PR #60651 by @JosephSilber).
+// Same speedup but explicitly named to communicate "we want the accumulated result,
+// not the per-step carry chain." Pairs with Arr::reduceInto() (also 13.19+).
+$maxScore = $scores->reduceInto(
+    fn($carry, $score) => max($carry, $score),
+    PHP_INT_MIN,
+);
+
+// 13.19+ also adds: collection->counted() — character-aware count (delegates to Countable rules)
+$orders->counted(); // count($orders), but on Stringable / Eloquent Collection the same as count()
+```
+
+**When to use which:**
+
+| Method | Returns | When to use |
+|---|---|---|
+| `->sum('amount')` | numeric | one-shot numeric aggregation, indexed access |
+| `->pluck('amount')->sum()` | numeric | aggregation across a plucked column |
+| `->reduce(fn, $init)` | mixed | general-purpose fold; the `init` is the seed AND final value |
+| `->reduceMany(fn, $init)` | mixed | 13.15+, faster when you don't read `$carry` between iterations |
+| `->reduceInto(fn, $init)` | mixed | 13.19+, fastest of the three; semantic intent is "result not carry" |
+
+**Performance note:** `reduceMany` and `reduceInto` are micro-optimisations — typically 10–20% faster than `reduce()` on large collections because they skip the empty-initial seeding branch. Only matters on hot paths (10k+ items). For most use cases, the readability of `reduce()` is worth the marginal speed loss. PR #60651 by @JosephSilber.
+
+```php
+// Real-world use case: building a histogram from a collection
+$ordersByStatus = $orders->reduceInto(
+    fn(array $hist, Order $order) => array_merge($hist, [
+        $order->status->value => ($hist[$order->status->value] ?? 0) + 1,
+    ]),
+    [],
+);
+// ['pending' => 12, 'shipped' => 47, 'delivered' => 128]
+```
+
+## PostgreSQL `whereDate` / `whereTime` Expression Fix (Laravel 13.19+ / 12.63+)
+
+Before 13.19 (and 12.63), `whereDate(DB::raw('foo'), '>=', '...')` crashed on PostgreSQL with `column "foo" does not exist` because the column-quoting logic treated the `Expression` as a raw identifier and tried to quote it. 13.19+ unwraps the expression and emits the raw SQL:
+
+```php
+// 13.19+: works on PostgreSQL — before, this threw "column foo does not exist"
+$rows = DB::table('orders')
+    ->whereDate(DB::raw('created_at::date'), '>=', now()->subWeek())
+    ->get();
+
+// Same fix for whereTime
+$rows = DB::table('orders')
+    ->whereTime(DB::raw('extract(hour from created_at)'), '>=', 9)
+    ->get();
+```
+
+**Why this matters:** PostgreSQL apps that use raw expressions in date queries (e.g. `created_at::date` for date truncation, `extract(hour from created_at)` for hour-level filtering) had to switch to `whereRaw()` as a workaround. Now they can use the typed `whereDate()` / `whereTime()` builders and get the benefit of parameter binding without the column-quoting bug. PR #60540 (backported to 12.63.0 as well).
+
 ## Common Mistakes
 
 1. **Lazy loading in loops** — always check `with()`

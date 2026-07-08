@@ -7,9 +7,9 @@
 [![MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Auto-updated](https://img.shields.io/badge/Auto--updated-6h-blue?style=flat-square)](#auto-updater)
 
-> **Latest tracked version:** Laravel **13.18.1** (July 2, 2026) — still head of 13.x, no new framework release in this cycle (29)
+> **Latest tracked version:** Laravel **13.19.0** + **12.63.0** (July 7, 2026) — both tagged same day. Cycle 31: Http::query(), Collection::reduceInto, Str::counted, query/queryJson test helpers, bulk SQS, assertSoftDeleted deletedAtColumn, DateRule past/future/nowOrPast/nowOrFuture, PG whereDate/whereTime Expression fix
 > **PHP baseline:** 8.3.32 / 8.4.23 / 8.5.8 (all security fixes as of 2026-07-01 batch)
-> **Skill version:** v1.22.16 (29 auto-update cycles since 2026-06-28)
+> **Skill version:** v1.22.17 (31 auto-update cycles since 2026-06-28)
 
 ---
 
@@ -74,8 +74,8 @@ php artisan --version
 
 | Version | Status | PHP | Key Features |
 |---|---|---|---|
-| **Laravel 13** | ✅ Latest (v13.18.0, June 30 2026) | 8.3+ | AI/Boost MCP, Reverb, new attributes, PHP 8.4/8.5; 13.18.0 ships the Number INF/NaN DoS guard (PR #60617 + #60625), HEAD cache-header fix (PR #60589), schedule:work signal handling (PR #60616), and soft-delete event gating (PR #60605) |
-| Laravel 12 | Stable | 8.2+ | Bootstrap 5, Vite, per-second rate limiting |
+| **Laravel 13** | ✅ Latest (v13.19.0, July 7 2026) | 8.3+ | AI/Boost MCP, Reverb, new attributes, PHP 8.4/8.5; 13.19.0 ships Collection::reduceInto (PR #60651), Str::counted (PR #60649), Http::query() (PR #60663), query/queryJson HTTP test helpers (PR #60662), bulk SQS via SendMessageBatch (PR #60645), assertSoftDeleted deletedAtColumn (PR #60657), DateRule past/future/nowOrPast/nowOrFuture (PR #60687), and PG whereDate/whereTime Expression fix (PR #60540) |
+| Laravel 12 | Stable (v12.63.0, July 7 2026) | 8.2+ | Bootstrap 5, Vite, per-second rate limiting; 12.63.0 backports PG whereDate/whereTime Expression fix (PR #60540), cache lock refresh (PR #58349), and lost-connection error messages (PR #60472). EOL bug fixes **Aug 13, 2026** |
 | Laravel 11 | Security fixes | 8.1+ | Cleaner bootstrap, health endpoint |
 
 ---

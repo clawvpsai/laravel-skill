@@ -611,6 +611,62 @@ SQS has a 256KB message size limit. For jobs with large payloads (serialized mod
 - Avoids SQS extended client library manual setup
 - Local disk is fast but ephemeral (use S3 for multi-worker production)
 
+## Bulk SQS via `SendMessageBatch` (Laravel 13.19+, PR #60645)
+
+The SQS queue driver historically sent jobs one-by-one (`SendMessage` per dispatch). 13.19 groups up to 10 dispatches into a single `SendMessageBatch` call, matching SQS's native batch endpoint. **No code change required** — this is a transparent driver-level optimization that activates when you use `Bus::bulk()`, `Queue::bulk()`, or any code that pushes multiple jobs in tight succession.
+
+```php
+// Before 13.19: each of these 10 dispatches = 1 SQS API call (SendMessage) = 10 calls total
+foreach ($items as $item) {
+    ProcessItem::dispatch($item);
+}
+
+// 13.19+: the SQS driver batches them into 1 SendMessageBatch call (10 items)
+Bus::bulk([
+    new ProcessItem($items[0]),
+    new ProcessItem($items[1]),
+    // ... up to 10 per batch ...
+]);
+// Subsequent bulk() calls also get batched if the queue worker is configured to drain them
+```
+
+**Performance impact:** SQS charges per API call. A 10x reduction on bulk dispatches cuts your SQS cost by ~90% on bulk-heavy apps (data imports, mass notifications, queue migrations). Latency-wise, `SendMessageBatch` is also faster than 10 sequential `SendMessage` calls — SQS processes batches server-side in a single round-trip.
+
+**SQS hard limit:** 10 messages per `SendMessageBatch` call (AWS-imposed). Laravel's driver handles this — if you pass more than 10 jobs in a single `Bus::bulk()`, it splits into multiple `SendMessageBatch` calls of up to 10 each.
+
+**When this helps vs doesn't:**
+- Helps: `Bus::bulk([...])`, `Queue::bulk([...])`, any loop dispatching 10+ jobs
+- Doesn't help: a single `ProcessItem::dispatch()` — that's still 1 `SendMessage` call
+- Doesn't help: `dispatch($job)->onQueue('other-queue')` per item — different queues = different batches
+
+**No configuration needed** — the driver picks up the new behavior automatically. Just upgrade and bulk-dispatch jobs to SQS, and watch your SQS API costs drop.
+
+## Cloud-Agent Queue Pop (Laravel 13.19+, PR #60659 / 12.63.0, PR #60660)
+
+Laravel Cloud's queue driver now reads jobs from the cloud agent's polling endpoint instead of SQS directly when running on Laravel Cloud infrastructure. This is a **deployment-context optimization** — there's nothing to configure in your application code:
+
+```php
+// config/queue.php
+'connections' => [
+    'cloud' => [
+        'driver' => 'cloud',  // Laravel Cloud queue driver
+        // Before 13.19: driver polled SQS directly
+        // 13.19+: driver polls the cloud agent, which polls SQS
+    ],
+],
+```
+
+**Why this matters:**
+- **Eliminates duplicate polling.** Each Laravel Cloud app instance was independently polling SQS for jobs. With multiple workers per app (and multiple apps per environment), this multiplied SQS API costs and added "are there jobs?" latency. The cloud agent centralizes the poll.
+- **Faster dispatch → execute.** Jobs land in the agent immediately when dispatched. The agent dispatches them to the appropriate worker pool, which can pick them up within milliseconds rather than waiting for the next poll cycle.
+- **No app-level changes required.** Pure infrastructure change — upgrade to 13.19+ (or 12.63.0+) on a Laravel Cloud deployment and the driver uses the agent endpoint automatically.
+
+**Detecting the new path in your deployment:**
+- Laravel Cloud dashboard will show "queue: agent" instead of "queue: sqs" in the worker metrics tab
+- SQS API cost in your AWS bill should drop noticeably for Cloud-hosted apps
+- If you self-host (not on Laravel Cloud), the driver falls back to direct SQS polling — unchanged behavior
+
+
 ## Cloud Queue Metrics (Laravel 13.9+)
 
 Laravel 13.9 introduces first-party cloud queue metric support for SQS and other cloud providers. Metrics (jobs received, processed, failed, latency) are exposed via the Queue facade for observability:

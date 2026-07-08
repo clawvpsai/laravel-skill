@@ -476,6 +476,76 @@ Http::assertSent(function ($request) {
 });
 ```
 
+## `Http::query()` and `assertQuery()` / `assertQueryJson()` HTTP Testing Helpers (Laravel 13.19+)
+
+Laravel 13.19 adds first-class query-string assertion helpers to `TestResponse` and the `Http::sent()` callback, plus a non-sending `Http::query()` method on the HTTP client that builds a `Request` object you can inspect without dispatching.
+
+```php
+// 13.19+: Http::query() — build a request, inspect it, do NOT send
+$request = Http::query('GET', 'https://api.github.com/users/octocat', ['per_page' => 50]);
+
+$request->url();             // https://api.github.com/users/octocat?per_page=50
+$request->method();          // GET
+$request->data();            // ['per_page' => 50]
+$request->header('Accept');  // application/json
+
+// Useful for unit-testing "did I construct this URL correctly?" without Http::fake()
+// Pairs with Http::baseUrl() / Http::withToken() / Http::withQueryParameters() chains
+```
+
+```php
+// 13.19+: query / queryJson assertion helpers
+$response = $this->getJson('/api/posts?page=2&sort=desc');
+
+// Assert the query string contains these params
+$response->assertQuery(['page' => 2, 'sort' => 'desc']);
+
+// Assert a single query param is missing
+$response->assertQueryMissing('debug');
+
+// Assert a JSON-encoded query param has a specific shape
+$response->assertQueryJson('filters.status', 'active');
+$response->assertQueryJson('filters.tags.0', 'urgent');
+```
+
+```php
+// 13.19+: assert on Http::sent() / Http::assertSent() callback
+Http::assertSent(function ($request) {
+    return $request->url() === 'https://api.stripe.com/v1/charges'
+        && $request->method() === 'POST'
+        && $request->data()['amount'] === 1000;
+});
+```
+
+**When to use `Http::query()` vs `Http::fake()`:**
+
+- `Http::query()` is for **URL/request construction** — you want to verify that a service method builds the right URL, params, and headers without actually dispatching.
+- `Http::fake()` is for **behavior testing** — you want to verify the response handling, retry logic, error paths.
+- Most integration tests need both: `Http::fake()` to stub the response, plus the `assertSent()` callback to verify the request shape.
+
+## `assertSoftDeleted()` / `assertNotSoftDeleted()` `deletedAtColumn` Param (Laravel 13.19+)
+
+The soft-delete test assertions now accept a `deletedAtColumn` parameter for models that override the default `deleted_at` column:
+
+```php
+// Default 'deleted_at' column — unchanged
+$this->assertSoftDeleted($post);
+$this->assertNotSoftDeleted($post);
+
+// 13.19+: custom column name
+class ArchivedPost extends Model
+{
+    use SoftDeletes;
+    public function getDeletedAtColumn(): string { return 'archived_at'; }
+}
+
+$this->assertSoftDeleted($archivedPost, deletedAtColumn: 'archived_at');
+$this->assertNotSoftDeleted($archivedPost, deletedAtColumn: 'archived_at');
+```
+
+**Why this matters:** Before 13.19, the assertion assumed `'deleted_at'`. Models that override `getDeletedAtColumn()` (multi-tenant apps, soft-delete-via-archive, custom naming) had their soft-delete assertions silently misbehave — the column being checked didn't match the model's actual column. This is the kind of bug that passes locally (default column) and fails in CI on apps with custom columns. 13.19 fixes it via PR #60657.
+
+
 ## Laravel 13 Testing Attributes
 
 Laravel 13 expands PHP attributes for testing:
@@ -626,6 +696,14 @@ class PostCreationTest extends DuskTestCase
 }
 ```
 
+## Updated from Research (2026-07-08, cycle 31)
+
+### Laravel 13.19.0 testing additions
+
+- **`Http::query()` non-sending HTTP client method (PR #60663)** — `Http::query('GET', $url, $params)` returns a `Request` you can inspect (`->url()`, `->method()`, `->data()`, `->header()`) without dispatching. Pairs with `Http::baseUrl()` / `withToken()` / `withQueryParameters()` chains. Use for unit-testing "did I build the right URL?" without `Http::fake()`. Full example in the `Http::query()` and `assertQuery()` section above.
+- **`assertQuery()` / `assertQueryMissing()` / `assertQueryJson()` test helpers (PR #60662)** — first-class query-string assertions on `TestResponse` and `Http::sent()` callbacks. `$response->assertQuery(['page' => 2, 'sort' => 'desc'])`, `$response->assertQueryJson('filters.status', 'active')`. Mirrors the existing `assertJson` API for query strings.
+- **`assertSoftDeleted()` / `assertNotSoftDeleted()` `deletedAtColumn` param (PR #60657)** — pass `deletedAtColumn: 'archived_at'` to soft-delete assertions on models that override `getDeletedAtColumn()`. Fixes a silent-misbehavior bug on apps with custom soft-delete column names.
+
 ## Common Mistakes
 
 1. **Not using `RefreshDatabase`** — tests see stale data from previous tests
@@ -704,7 +782,8 @@ Source: [PR #60489](https://github.com/laravel/framework/pull/60489) | [Laravel 
 
 - **Bulk JSON Path Assertions** — `assertJsonPaths()` for asserting multiple JSON paths in one call.
 
-### Laravel 13 Testing Attributes
+
+## Laravel 13 Testing Attributes
 
 - **#[Group], #[TestProperty], #[UnitTest]** — organize tests, attach metadata, skip app boot for pure unit tests.
 

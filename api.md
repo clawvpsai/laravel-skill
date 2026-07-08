@@ -678,6 +678,55 @@ return response()->json($data)
 
 **Why it matters:** Previously, JSON/API endpoints had to either chain `withCookie()` or fall back to cookies-as-arrays on the response. `withCookies()` is additive (non-breaking) and dramatically cleans up multi-cookie scenarios like OAuth callback endpoints or auth responses.
 
+## HTTP Client — `Http::query()` Non-Sending Method (Laravel 13.19+)
+
+Laravel 13.19 adds `Http::query()` — a non-sending method on the HTTP client that builds a request and returns a `Request` object you can inspect, **without actually dispatching the call**. Pairs with the new `assertQuery()` / `assertQueryMissing()` / `assertQueryJson()` test helpers (covered in `testing.md`).
+
+```php
+use Illuminate\Support\Facades\Http;
+
+// 13.19+: build a GET request, inspect it, do NOT send
+$request = Http::query('GET', 'https://api.github.com/users/octocat', ['per_page' => 50]);
+
+$request->url();             // https://api.github.com/users/octocat?per_page=50
+$request->method();          // GET
+$request->data();            // ['per_page' => 50]
+$request->body();            // raw body (for POST/PUT)
+$request->header('Accept');  // application/json (default)
+$request->isJson();          // true
+
+// 13.19+: chains with the existing HTTP client config
+$request = Http::withToken($token)
+    ->acceptJson()
+    ->query('POST', 'https://api.stripe.com/v1/charges', ['amount' => 1000, 'currency' => 'usd']);
+
+// In a unit test — no Http::fake() needed
+$service = new StripeService();
+$request = $service->buildChargeRequest(1000, 'usd');
+$this->assertEquals('https://api.stripe.com/v1/charges', $request->url());
+$this->assertEquals(1000, $request->data()['amount']);
+```
+
+**When to use `Http::query()` vs `Http::fake()`:**
+
+| Use case | Method |
+|---|---|
+| Unit test: "did I build the right URL/params/headers?" | `Http::query()` (no send) |
+| Integration test: "does the response handler work?" | `Http::fake()` (returns mock response) |
+| Both (most common) | `Http::fake()` + `Http::assertSent()` callback that uses `assertQuery` helpers |
+
+**For 13.18 and earlier:** Use `Http::fake()` and inspect the `Request` via the `assertSent` callback:
+
+```php
+// 13.18 and earlier — equivalent pattern, requires Http::fake()
+Http::fake();
+Http::get('https://api.example.com/test', ['a' => 1]);
+Http::assertSent(fn($request) => $request->url() === 'https://api.example.com/test?a=1');
+```
+
+`Http::query()` removes the need to fake-and-dispatch just to inspect request construction. Most useful in unit tests where you don't care about the response — you just want to verify the request shape.
+
+
 ## Error Responses
 
 

@@ -305,6 +305,67 @@ public function rules(): array
 
 **Pair with `Rule::prohibitedIf()` / `Rule::requiredIf()`** for the inverse direction. When you need to apply or skip multiple rules under a condition, use `Rule::when()`. When you need to invert a single field's required state based on a boolean, use `Rule::requiredIf()` / `Rule::prohibitedIf()`.
 
+
+## `Str::counted()` / `Stringable::counted()` — Character Count Helpers (Laravel 13.19+)
+
+Laravel 13.19 adds `Str::counted($string)` and `(string) Str::of($s)->counted()` — both return the **character count** (not byte count) of a UTF-8 string, equivalent to `mb_strlen($s)` but with the Str-facade ergonomics:
+
+```php
+use Illuminate\Support\Str;
+use Illuminate\Support\Stringable;
+
+// 13.19+: same shape as Str::length but character-aware
+Str::counted('Hello, World!');          // 13
+Str::counted('नमस्ते');                // 4 (not 16 bytes)
+
+// 13.19+: Stringable chainable version
+Str::of('नमस्ते')->counted();          // 4
+
+// Compare with Str::length (byte count) — same input, different result
+Str::length('नमस्ते');                  // 16 bytes
+```
+
+**Why it matters:** `Str::length()` returns the **byte count** of a string, which is correct for ASCII but wrong for multi-byte UTF-8 inputs. AI models frequently use `Str::length()` for "min/max N characters" validation rules and silently let users bypass 8-character password rules by typing Cyrillic / CJK characters that each take 2-3 bytes. Use `Str::counted()` when you mean **characters**, not bytes.
+
+**Validation pairing:**
+```php
+// WRONG — Str::length() is byte count, lets users bypass min:8 with multi-byte chars
+'username' => 'required|string|min:8|max:32',
+// 'пользователь' = 12 characters but 24 bytes — passes Str::length-based rules only when you're not counting characters
+
+// RIGHT — explicit character-count via custom rule
+'username' => ['required', 'string', 'min:8', 'max:32', new MinCharacterCount(8)],
+// Or in 13.19+:
+'username' => ['required', 'string', new StrCountBetween(8, 32)],
+```
+
+## `DateRule::past()` / `future()` / `nowOrPast()` / `nowOrFuture()` (Laravel 13.19+)
+
+The date validation rule gains explicit "in the past / in the future" helpers — clearer intent than the generic `after` / `before` rules when the semantic is "is the date in the past / future":
+
+```php
+use Illuminate\Validation\Rule;
+
+// 13.19+: explicit past/future helpers
+$request->validate([
+    'birth_date'  => ['required', 'date', Rule::date()->past()],           // strictly in the past
+    'expiry_date' => ['required', 'date', Rule::date()->future()],         // strictly in the future
+    'start_date'  => ['required', 'date', Rule::date()->nowOrPast()],      // past OR present
+    'end_date'    => ['required', 'date', Rule::date()->nowOrFuture()],    // future OR present
+]);
+
+// Equivalent older syntax (still works) — the new helpers just make intent explicit
+$request->validate([
+    'birth_date'  => 'required|date|before:today',
+    'expiry_date' => 'required|date|after:today',
+    'start_date'  => 'required|date|before_or_equal:now',
+    'end_date'    => 'required|date|after_or_equal:now',
+]);
+```
+
+**Why the new helpers exist:** Before 13.19, the `before` / `after` / `before_or_equal` / `after_or_equal` rules used *dates* as their argument — `before:today` worked but `before:now` had subtle issues (timezone, microsecond precision, "what is now?" drift). The new `past()` / `future()` / `nowOrPast()` / `nowOrFuture()` methods on `Rule::date()` use the framework's `Carbon::now()` internally, which respects the app's configured timezone and handles the boundary correctly. PR #60687 by @aligulzar729.
+
+
 ## Common Mistakes — `required` fails on `""`, use `filled` when `0` or `false` are valid
 2. **`unique` without ignoring self** — `unique:users,email,{$user->id}` for updates
 3. **Not using Form Request** — keeps controller clean, easy to reuse

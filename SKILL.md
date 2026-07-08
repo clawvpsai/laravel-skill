@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.16
+version: 1.22.17
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -78,6 +78,15 @@ metadata:
 | Laravel 13 class-level model attributes (`#[Table]` / `#[Fillable]` / `#[Hidden]` / `#[Visible]` / `#[Casts]`) | `eloquent.md` (Class-Level Model Attributes section) | Replace `$fillable` / `$hidden` / `$casts` / `$table` with class-level PHP attributes — Laravel 13's headline Eloquent shift |
 | `whereVectorSimilarTo()` + `pgvector` + AI SDK embeddings | `eloquent.md` (Vector Similarity Search section) + `ai.md` | First-party semantic search on PostgreSQL + `pgvector`; accepts a plain string, embeds via AI SDK, ranks by cosine similarity |
 | `Model::automaticallyEagerLoadRelationships()` (Laravel 12.8+) | `eloquent.md` (Automatic Eager Loading section) | Auto-fix N+1s at runtime — pairs with `preventLazyLoading()` (dev: throw, prod: auto-fix) |
+| `Collection::reduceInto()` (PR #60651) | `eloquent.md` (Collection Aggregation section) | 13.19.0+ drop-in faster `Collection::reduce()` when the reducer doesn't read the carry — ~10–20% faster, pairs with `reduceMany` (13.15) |
+| `Str::counted()` / `Stringable::counted()` (PR #60649) | `validation.md` (Sanitization Helpers section) | 13.19.0+ character-count helper — `mb_strlen(Str::of($s))` becomes `Str::counted($s)`. Cleaner min/max-N-character validation |
+| `Http::query()` (PR #60663) | `api.md` (HTTP Client section) | 13.19.0+ non-sending HTTP client method — build a request and inspect it (`->url()`, `->body()`, `->data()`) without dispatching. Pairs with `assertQuery()` for URL/query-string assertions |
+| `query` / `queryJson` HTTP testing helpers (PR #60662) | `testing.md` (HTTP Client Testing section) | 13.19.0+ `$response->assertQuery([...])`, `assertQueryMissing(...)`, `assertQueryJson('items.0.name', 'foo')` — same shape as `assertJson` for query strings |
+| `assertSoftDeleted()` / `assertNotSoftDeleted()` `deletedAtColumn` param (PR #60657) | `testing.md` (Soft-Delete Assertions section) | 13.19.0+ pass `deletedAtColumn: 'archived_at'` to soft-delete assertions on models with custom `getDeletedAtColumn()` |
+| Bulk SQS jobs via `SendMessageBatch` (PR #60645) | `queues.md` (SQS section) | 13.19.0+ SQS driver groups up to 10 dispatches per `SendMessageBatch` call. Free 10x API reduction for `Bus::bulk()` / `Queue::bulk()` on SQS — no code change |
+| Postgres `whereDate` / `whereTime` Expression fix (PR #60540) | `eloquent.md` (PostgreSQL Gotchas section) | 13.19.0+ (and 12.63.0) `whereDate('created_at', ...)` / `whereTime('created_at', ...)` no longer crash when the column is a `DB::raw()` / `Expression` |
+| `DateRule::past()` / `future()` / `nowOrPast()` / `nowOrFuture()` (PR #60687) | `validation.md` (Date Rules section) | 13.19.0+ explicit helpers on the date rule — clearer intent than the generic `after` / `before` rules when the semantic is "is the date in the past / future" |
+| Cloud-agent queue pop (PR #60659) | `queues.md` (Cloud Queue section) | 13.19.0+ Laravel Cloud queue driver polls the cloud agent endpoint instead of SQS directly — fewer duplicate polls, no SQS API cost in cloud deployments |
 | `whereAll()` / `whereAny()` / `orWhereAll()` / `orWhereAny()` (Laravel 10.47+) | `eloquent.md` (Query Builder section) | Multi-column WHERE with AND/OR semantics — cleaner alternative to nested closures for flat column lists |
 | `whereMorphRelation` (Laravel 12+) | `eloquent.md` (Query Builder section) | Relationship-scoped `whereHas` shortcut for polymorphic relations |
 | `#[Fillable]` / `#[Casts]` known bug [framework#59270](https://github.com/laravel/framework/issues/59270) | `eloquent.md` (Class-Level Model Attributes — Pitfalls) | `Model::query()->create()` misses the attribute registration on some 13.x point releases; `new Model()` + `->save()` is always fine |
