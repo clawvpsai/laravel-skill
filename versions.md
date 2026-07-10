@@ -888,3 +888,30 @@ The v13.19.0 release is small (5 new features, 4 bug fixes) and the topic-file s
 - **v13.19.1** — likely mid-to-late July 2026 once 5–10 post-13.19 PRs accumulate. Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
 - **v13.20.0** — first minor after 13.19, likely late July / early August 2026.
 - **Laravel 12 EOL** — bug fixes end **August 13, 2026** (35 days from cycle time). Plan migrations off 12.x accordingly.
+
+---
+
+**Cycle 32 (2026-07-10 18:00 UTC):**
+
+- **No new Laravel release** — `v13.19.0` (2026-07-07) remains head of `13.x`. GitHub `releases/latest` confirmed resolving to v13.19.0 (the only "Latest" tag). No new `12.x` patch either. PHP security batch from 2026-07-01 (`8.3.32` / `8.4.23` / `8.5.8`) still current.
+- **`performance.md` gap-fill (~146 lines added, 509 → 615 lines)** — targeted `performance.md` because it was the second-most-stale topic file (last modified 2026-07-01 — 9 days stale) and shipped-uncovered in cycle 4–24. Uncovered two genuine production gaps:
+  1. **Index Patterns — Composite Column Order Rules** — the four-step slow-query diagnostic via `EXPLAIN`/`EXPLAIN ANALYZE`, the `equality → range → ORDER BY` rule for composite indexes (the most-skipped rule in real codebases, silently violated in Spatie/Statamic/Filament schemas), MySQL-only red-flags (`type: ALL`, `Using filesort`, `key_len` mismatch, `filtered: 100` but `rows: 1000`), and PostgreSQL-specific patterns (`BRIN` for natural-order, `GIN` for full-text/`jsonb`, `gist` for geometric).
+  2. **Cache Stampede Prevention — Lock Patterns (Laravel 12+ SWaR)** — proper coverage of `Cache::flexible()` stale-while-revalidate and `Cache::lock()->block()` first-computers-wait patterns. Includes the four-scenario pattern-selection matrix (key-rebuild cheap vs expensive, stale-acceptable vs not), and a `## Don't do these` block calling out the stampede-prone `has()` + `get()` + `put()` pattern. Cross-references the PR #60626 tagged-key namespace fix (13.18.0+) which prevents user-supplied `lockName` from colliding with `_flex_lock:` / `_flex_defer:` internal keys.
+- **Common Mistakes list in `performance.md` grew 8 → 11 entries** — added "Wrong composite-column order", "Cache stampede (thundering herd)", and "Logging every DB::listen() query (no duration threshold)".
+- **`SKILL.md`** bumped `1.22.17 → 1.22.18`; added 1 new cross-reference row covering the cycle-32 performance gap-fill.
+- **`README.md`** — bumped version stamp + research-cycle marker to reflect cycle 32; the cycle-31 summary now also reads as historical context within the cycle-32 stamp.
+- **No version-stamp change to "Active Versions"** — `v13.19.0` / `v12.63.0` unchanged. No version section changes.
+
+**No changes to other files in cycle 32** — `eloquent.md` / `queues.md` / `testing.md` / `validation.md` / `api.md` / `artisan.md` / `controllers.md` / `migrations.md` / `auth.md` / `localization.md` / `ai.md` / `security.md` / `validation.md` were all touched in cycles 28–31 (most recent) and remain current. Only `performance.md` was a 9-day-old outlier.
+
+**Why not target `observers.md` (9 days stale) or `file-uploads.md` (9 days stale):**
+- `observers.md` was cycle-22 (2026-07-01 18:21) and explicitly covered `#[ObservedBy]`, `#[Boot]`/`#[Initialize]`, `ShouldBeDiscovered` opt-out (13.12+), and the 13.17+ `restored` semantics — the file is at 13.18.1 coverage and the 13.19.0 cycle doesn't touch it.
+- `file-uploads.md` (cycle 4, ~9 days stale) was the next candidate but `performance.md` had higher gap value (the index-pattern rule and stampede SWaR are documented nowhere else in this skill — neither in `eloquent.md` nor in `deployment.md`).
+
+**Watch list for cycle 33:**
+- **v13.19.1** — likely late July 2026 once 5–10 post-13.19 PRs accumulate. Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
+- **v13.20.0** — first minor after 13.19, likely late July / early August 2026.
+- **Laravel 12 EOL** — bug fixes end **August 13, 2026** (34 days from cycle time). Plan migrations off 12.x accordingly.
+- **`observers.md` / `file-uploads.md` gap-fill** — both still 9+ days stale. `observers.md` next; `file-uploads.md` if observers has nothing to update.
+
+SKILL.md bumped to **v1.22.18** (cycle-32 performance.md gap-fill — Index Patterns + Cache Stampede SWaR). 32 cycles in 10 days.

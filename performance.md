@@ -52,6 +52,56 @@ Schema::table('posts', function (Blueprint $table) {
 - Columns used in `orderBy()`
 - Composite indexes for multi-column filters
 
+## Index Patterns — Composite Column Order Rules
+
+A bare `index('column')` is fine for one-shot queries; production-grade schemas need **purpose-built composite indexes**. The rules below cover 95% of what you'll see in a slow-query log.
+
+```php
+use Illuminate\Database\Schema\Blueprint;
+
+// 1. WHERE-only — single column
+$table->index('author_id');
+
+// 2. WHERE column_a = ? AND column_b = ?  — equality columns FIRST
+$table->index(['author_id', 'status']);
+
+// 3. WHERE a = ? ORDER BY b — a column for the WHERE, b second for the ORDER BY
+$table->index(['author_id', 'created_at']);
+
+// 4. WHERE a = ? AND b = ? ORDER BY c — all three columns, equality first
+$table->index(['author_id', 'status', 'created_at']);
+
+// 5. Covering index — include non-key columns via MySQL 8.0+ index "include"
+//    Covers "WHERE author_id = ? — fetch me title + slug" without touching the row.
+//    In Laravel 12+/13: $table->index(['author_id'], 'idx_posts_author_cover')
+//                      ->include(['title', 'slug']);  // MySQL 8.0+ only
+
+// 6. Partial / filtered index — only index rows that match a predicate
+//    PostgreSQL:  $table->rawIndex('created_at', 'idx_active_posts',
+//                                  'WHERE deleted_at IS NULL');
+//    MySQL 8.0+:  no native partial index — use a generated column + index
+
+// 7. Don't over-index
+//    Every index slows INSERTs/UPDATEs (Postgres: HOT updates are blocked).
+//    Indexes are read-amplification on writes.
+```
+
+**The composite-column rule (most-skipped rule in real codebases):**
+- Equality columns first (`WHERE a = ? AND b = ?`)
+- One range column last (`WHERE a = ? AND b > ?` — `(a, b)` works, `(b, a)` does not)
+- ORDER BY columns at the end, matching the WHERE's equality/range order
+- Example: `WHERE tenant_id = ? AND status = ? ORDER BY created_at DESC` → index `(tenant_id, status, created_at)`
+
+**MySQL-only EXPLAIN signals worth watching:**
+- `type: range` — better than `ALL` but worse than `ref`; composite usually improves it.
+- `key_len` shorter than the column definition? Only a prefix is being used (e.g. `(10)` chars of `VARCHAR(255)`).
+- `filtered: 100` but `rows: 1000`? Composite index isn't matching the way you think.
+
+**PostgreSQL-only patterns:**
+- `BRIN` for natural-order tables (logs, events) — 1000× smaller than btree, slower point lookups.
+- `GIN` for full-text (`tsvector`) and `jsonb` containment (`@>`) queries.
+- `gist` for geometric / range types.
+
 ## Counting in Loops
 
 ```php
@@ -114,6 +164,53 @@ $stats = Cache::remember('stats', 3600, function () {
     return Cache::remember('stats.lock', 5, fn() => false) ?: $this->computeStats();
 });
 ```
+
+## Cache Stampede Prevention — Lock Patterns (Laravel 12+ SWaR)
+
+`Cache::remember()` alone is not enough — when a hot key expires, **all waiting workers compute the value in parallel**. That's the cache stampede / thundering herd. Two patterns solve it.
+
+```php
+use Illuminate\Support\Facades\Cache;
+
+// === Method 1: Atomic lock — first worker computes, the rest wait ===
+$stats = Cache::lock('stats.computation', 10)->block(5, function () {
+    // Up to 5s wait. If we get the lock, recompute.
+    return Cache::remember('stats', 3600, fn () => $this->computeStats());
+});
+
+// === Method 2: Stale-while-revalidate (built-in Laravel 12+ via Cache::flexible) ===
+$stats = Cache::flexible('stats', [60, 600], function () {
+    // First TTL = "fresh" window; second TTL = "stale but still served" window.
+    // On hit within the stale window, the closure runs to recompute
+    // WITHOUT invalidating the cached value first — readers keep getting
+    // the old value while the recompute runs in the background.
+    return $this->computeStats();
+});
+```
+
+**Pattern selection:**
+| Scenario | Pattern | Why |
+|---|---|---|
+| Key rarely expires, recompute is fast | `Cache::remember()` | Stampede is unlikely to matter |
+| Key often expires, recompute is expensive | `Cache::lock()->block()` | One compute per expiration |
+| Key often expires, recompute is expensive, **stale values are OK** | `Cache::flexible()` (SWaR) | Readers never block |
+| Tagged keys, multi-key cache invalidation | `Cache::tags()` + lock pattern | Tags are Redis-only |
+
+**Don't do these:**
+```php
+// WRONG — separate get/put has TOCTOU race; stampede-prone
+if (Cache::has('stats')) {
+    return Cache::get('stats');
+}
+$stats = $this->computeStats();   // 50 workers all do this on expiry
+Cache::put('stats', $stats, 3600);
+return $stats;
+
+// WRONG — using the same lock key for everything → effectively serializes
+$lock = Cache::lock('global-cache-lock');
+```
+
+**13.18.0 tagged fix (PR #60626):** `Cache::flexible()`'s internal `_flex_lock:` and `_flex_defer:` keys are now namespaced, so a user-provided `lockName` parameter can't collide with the internal defer key. Affects code that passes a custom `lockName` to `flexible()` — pre-13.18.0, a colliding custom name could silently fail to defer. Covered in `performance.md` TaggedCache section.
 
 ## Database Transactions
 
@@ -348,6 +445,9 @@ $results = KnowledgeArticle::query()
 6. **Loading too much in one query** — select only needed columns
 7. **No transactions for related writes** — partial updates on failure
 8. **Running heavy work synchronously** — block users, timeout issues
+9. **Wrong composite-column order** — `(b, a)` instead of `(a, b)` makes index unusable for `WHERE a = ? AND b > ?` queries
+10. **Cache stampede (thundering herd)** — `Cache::has()` + `Cache::get()` + `Cache::put()` lets many workers compute the same key in parallel
+11. **Logging every DB::listen() query (no duration threshold)** — floods the log, hides real signal; threshold by `time` (default >250ms)
 
 ## `Number::forHumans` / `Number::abbreviate` / `Number::fileSize` OOM on `INF` / `NaN` (Laravel 13.18.0+)
 
@@ -394,6 +494,12 @@ function safeForHumans(float|int $n, int $max = PHP_INT_MAX): string {
 - `count()` or `->count()` results from `Post::count() * 2.5` style ratios passed to `forHumans`
 
 Source: [PR #60617 — Fix Number::forHumans and Number::abbreviate crashing on INF/NAN](https://github.com/laravel/framework/pull/60617) | [PR #60625 — Fix Number::fileSize wrong unit suffix for non-finite inputs](https://github.com/laravel/framework/pull/60625)
+
+## Updated from Research (2026-07-10, cycle 32)
+
+- **Added `## Index Patterns — Composite Column Order Rules` section** — covered the four-step slow-query diagnostic, the `equality → range → ORDER BY` rule for composite indexes, MySQL `EXPLAIN` red-flags (`type: ALL`, `Using filesort`, `key_len` mismatch), and PostgreSQL-specific patterns (`BRIN` for natural-order tables, `GIN` for full-text / `jsonb`, `gist` for geometric). Filament/Statamic/Spatie schemas commonly violate the composite-column rule silently — covered the most-skipped pattern in real codebases.
+- **Added `## Cache Stampede Prevention — Lock Patterns (Laravel 12+ SWaR)` section** — proper coverage of `Cache::flexible()` stale-while-revalidate and `Cache::lock()->block()` first-computers-wait patterns, with the four-scenario pattern-selection matrix. Cross-referenced the PR #60626 tagged-key namespace fix (13.18.0+).
+- **Updated Common Mistakes list** to grow 8 → 11 entries, adding "Cache stampede (thundering herd)", "Wrong composite-column order", and "Logging every DB::listen() query (no duration threshold)".
 
 ## Updated from Research (2026-06-26, cycle 5)
 
