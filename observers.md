@@ -229,6 +229,253 @@ class PostObserver
 4. **One listener per responsibility** — don't cram everything into one observer
 5. **Don't cause infinite loops** — updating model in its own observer that fires another update
 
+
+## `ShouldQueue` on Observers (Different Mechanics than Listener `ShouldQueue`)
+
+Observers can implement `ShouldQueue` directly — and the behavior differs subtly from listeners that implement it. Important details:
+
+```php
+use App\Models\Order;
+use Illuminate\Contracts\Queue\ShouldQueue;
+
+class OrderObserver implements ShouldQueue
+{
+    public function created(Order $order): void
+    {
+        // Runs in queue worker, NOT in the request that created the order
+        ProcessOrderAnalytics::dispatch($order);
+        UpdateRecommendations::dispatch($order->customer);
+    }
+}
+```
+
+**What gets serialized to the queue:**
+- The observer class name
+- The event method name (`created`, `updated`, etc.)
+- The Eloquent model's primary key (NOT the full model) — the queue worker re-fetches it from the DB via `Model::find($id)`
+- Any constructor arguments you pass to the observer (must be queue-serializable)
+
+**Critical gotcha — model re-fetch happens after the request returns.** If you delete the model inside the same request after the observer is queued, the queue worker will fail to find it on re-fetch and the job will throw `ModelNotFoundException`. Solutions:
+- Pass the data the observer needs as a plain DTO in the observer constructor (`new OrderObserver($order->id, $order->total)`)
+- Or wrap the model in an event class and dispatch the event with `ShouldQueue` listeners that pull only what they need
+- Or schedule the observer to run synchronously by NOT implementing `ShouldQueue`
+
+**`ShouldQueue` + retry behavior on observers:** by default `tries = 1`. To retry:
+
+```php
+class OrderObserver implements ShouldQueue
+{
+    public int $tries = 3;
+    public int $backoff = 60; // seconds between retries
+    public int $maxExceptions = 2; // only retry on non-fatal exceptions
+}
+```
+
+Same attributes work on observers as on jobs (`#[Job\Backoff(60)]`, `#[Job\MaxAttempts(3)]`, `#[Job\Timeout(120)]` for Laravel 13).
+
+**When NOT to make an observer `ShouldQueue`:**
+- The observer does critical synchronous work (audit log writes that must exist before the request returns)
+- The observer has side effects on the response (e.g., fires a `flash()` message — meaningless after the request returns)
+- The observer is in a tightly-coupled write path where the queued re-fetch latency is unacceptable
+
+Source: [Laravel Docs - Queued Observers](https://laravel.com/docs/13.x/eloquent#observers-and-database-transactions)
+
+## `ShouldHandleEventsAfterCommit` — Transaction-Safe Observers
+
+When an observer fires inside a `DB::transaction()` (explicit or implicit via `Model::save()`), the work happens *during* the transaction. If the transaction rolls back, the observer has already done its work — emails sent, webhooks fired, cache invalidated — but the data wasn't actually persisted. **Data inconsistency.**
+
+```php
+use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
+
+class SendOrderConfirmation implements ShouldQueue, ShouldHandleEventsAfterCommit
+{
+    public function handle(OrderShipped $event): void
+    {
+        Mail::to($event->order->customer)->send(new OrderShippedMail($event->order));
+    }
+}
+```
+
+With `ShouldHandleEventsAfterCommit`:
+- For **queued listeners**: the job is dispatched only after the outer transaction commits. If the transaction rolls back, the job is never dispatched.
+- For **sync listeners**: Laravel defers dispatch until `DB::afterCommit()` would fire — same end result.
+
+**Known gotcha (GitHub issue [#52440](https://github.com/laravel/framework/issues/52440)):** if a listener implements BOTH `ShouldQueue` AND `ShouldHandleEventsAfterCommit`, the `ShouldQueue` early-return in `Event/Dispatcher.php` skips the `ShouldHandleEventsAfterCommit` check on Redis/SQS queue drivers. Workaround: pick one — for most cases `ShouldQueue` is enough because the queued job only fires when the worker pulls it, which is after commit if the worker dispatches the job through `DB::afterCommit()` (Laravel does this automatically in 11+).
+
+**Same pattern works on observers:**
+
+```php
+class OrderObserver implements ShouldQueue, ShouldHandleEventsAfterCommit
+{
+    public function created(Order $order): void { /* fires AFTER transaction commits */ }
+}
+```
+
+**Without `ShouldHandleEventsAfterCommit`**, your observer's side effects leak into rolled-back transactions. Always pair queued observers/listeners with `ShouldHandleEventsAfterCommit` if they're inside a `DB::transaction()` block.
+
+## Octane & Static Observer Registration — State Leak Between Requests
+
+Under Octane (or RoadRunner / FrankenPHP-octane), the PHP process is reused across requests. `#[ObservedBy]` and `static::observe()` register observers **statically** on the model class — they survive between requests. Normally this is fine (you want the observer registered once). But:
+
+- If your observer's constructor reads request-scoped state (request ID, tenant, auth user), that state **leaks** to subsequent requests in the same worker.
+- If your observer registers dynamically inside `boot()` based on config that changes between requests, the config snapshot from request 1 persists into request 5.
+
+```php
+// BAD — request-scoped state in observer constructor under Octane
+class TenantAwareObserver
+{
+    public function __construct(public Tenant $tenant) {}
+
+    public function created(Post $post): void
+    {
+        // $this->tenant is from the request that first booted this observer,
+        // NOT the request that just created $post
+    }
+}
+```
+
+**Solutions:**
+- **Inject via method args, not constructor** — read `app('current_tenant')` inside the method body, not in `__construct`.
+- **Don't implement `ShouldQueue`** — queued observers are reconstructed by the queue worker each time, so request-scoped state is fresh.
+- **Reset state at the end of each request** — use Octane's `Octane::flush()` callback in your service provider to call `Post::flushEventListeners()` for any observers you've registered dynamically.
+
+```php
+// app/Providers/AppServiceProvider.php
+public function boot(): void
+{
+    \Laravel\Octane\Octane::flush(function () {
+        // Reset observers registered dynamically per request
+        Post::flushEventListeners();
+    });
+}
+```
+
+Source: [Laravel Octane Docs - Dependency Injection & Octane](https://laravel.com/docs/13.x/octane#dependency-injection-and-octane)
+
+## Quiet Patterns — `withoutEvents()` vs `updateQuietly()` vs `saveQuietly()`
+
+Three ways to update a model without firing observers. Each has different scope:
+
+| Method | Fires observer events? | Touches `updated_at`? | Triggers model events globally? | Use for |
+|---|---|---|---|---|
+| `$model->update([...])` | Yes | Yes | Yes (for this model) | Normal updates |
+| `$model->updateQuietly([...])` | No | Yes | No (this model only) | Self-referential observer updates — preventing infinite loops |
+| `$model->saveQuietly([...])` | No | Yes | No (this model only) | Same as `updateQuietly` but with full save() semantics (events, casts, etc. suppressed) |
+| `Model::withoutEvents(fn () => Model::query()->update([...]))` | No | Yes (if `$timestamps = true`) | No (ALL models in the closure) | Mass updates, seeder bulk operations, migrations |
+| `Model::withoutEvents(function () { ... })` | No | Yes | No (ALL models in the closure) | Same as above but for arbitrary work |
+
+**Practical example — observer updating the model it observes:**
+
+```php
+class PostObserver
+{
+    public function updated(Post $post): void
+    {
+        // BAD — infinite loop:
+        // $post->update(['last_indexed_at' => now()]);
+
+        // GOOD — quietly set the flag without re-firing `updated`:
+        $post->updateQuietly(['last_indexed_at' => now()]);
+    }
+}
+```
+
+**Practical example — seeder doing mass update:**
+
+```php
+// BAD — fires `updated` on every post (slow, side effects)
+Post::query()->where('legacy', true)->update(['migrated' => true]);
+
+// GOOD — no observer side effects
+Post::withoutEvents(fn () =>
+    Post::query()->where('legacy', true)->update(['migrated' => true])
+);
+```
+
+**Practical example — flush-then-import:**
+
+```php
+// Inside a migration or seeder:
+Post::withoutEvents(function () {
+    Post::query()->truncate(); // no `deleted` events fire
+    Post::insert($rows);       // no `created` events fire
+});
+```
+
+**Gotcha:** `updateQuietly()` / `saveQuietly()` only suppress events for the model instance you call them on. They do NOT suppress events for related models you touch inside the observer. If your `updated` observer calls `$post->comments()->save(...)`, the comment save still fires its own events — wrap that in `Comment::withoutEvents(...)` too if needed.
+
+## Testing Observers — `Event::fake()` vs `Event::fakeFor()`
+
+Two patterns for testing observer-driven code, with different scope:
+
+```php
+// Event::fake() — swaps the dispatcher for the rest of the test
+public function test_post_creation_sends_notification(): void
+{
+    Event::fake();
+
+    $post = Post::create([...]);
+
+    Event::assertDispatched(PostCreated::class);
+    Event::assertNotDispatched(PostDeleted::class);
+}
+```
+
+```php
+// Event::fakeFor() — swaps the dispatcher only inside the closure
+public function test_index_endpoint_doesnt_fire_observer(): void
+{
+    $fired = Event::fakeFor(function () {
+        return Post::create([...]);
+    });
+
+    $fired->assertDispatched(PostCreated::class);
+}
+```
+
+**For observers specifically:**
+- `Event::fake([PostCreated::class])` — only fake the events you care about; OTHER events still fire normally. This is the right pattern when your observer also dispatches downstream events (e.g., `PostCreated` fires `SearchIndexUpdated`) and you want to assert on the primary without losing the rest.
+- `Event::fake()` (no args) — fakes ALL events. Observer side effects don't run. Use this when you want pure unit-test isolation and the observer's side effects are tested elsewhere.
+- `Event::fakeFor()` — same as `Event::fake()` but scoped to a closure. Useful inside a single test method when you only want to fake one specific call.
+
+**Don't fake events when the test depends on the observer's side effect.** If you're testing that creating a post populates the search index, don't fake `SearchIndexUpdated` — let it fire (with a fake search client).
+
+**For queued observers (`ShouldQueue`):** use `Bus::fake()` instead of `Event::fake()`. The event dispatches synchronously (because the listener is the observer itself, not a queued job), but if your observer dispatches further queued jobs internally, `Bus::fake()` is what catches those.
+
+## Selective Event Firing — `setObservableEvents()`
+
+By default, Eloquent fires ALL model events. You can narrow this down per-instance or per-class:
+
+```php
+// Disable specific events on one model instance
+$post = Post::find(1);
+$post->setObservableEvents(['created', 'updated']); // ONLY these fire
+$post->save(); // fires 'created' or 'updated', nothing else
+
+// Reset to defaults
+$post->setObservableEvents(array_keys($post->getObservableEvents()));
+```
+
+**Common use cases:**
+- Read-only DTO models that only fire `retrieved` (and skip `saving`/`saved` etc.)
+- Sync import scripts that want `created` but not `updated` (so accidental re-imports don't fire `updated`)
+- Audit-log-only observers attached to a model that suppresses `creating`/`created` (only logs deletes and updates)
+
+**Be careful:** `setObservableEvents()` is instance-scoped by default. For class-wide filtering, override `getObservableEvents()` in the model:
+
+```php
+class AuditOnlyPost extends Post
+{
+    public function getObservableEvents(): array
+    {
+        return ['updated', 'deleted']; // never fires created, saving, saved, etc.
+    }
+}
+```
+
+This is also useful for performance — observers with expensive side effects can be filtered out per-deployment.
+
+
 ## Common Mistakes
 
 1. **Observer updating the model it observes** — use `$post->updateQuietly()` to avoid recursion
@@ -236,6 +483,13 @@ class PostObserver
 3. **Not using queue for slow listeners** — blocking the request with emails/notifications
 4. **Storing unserializable data in events** — events get queued; file handles, connections can't serialize
 5. **Overusing events** — for simple cases, just put logic directly in controller or service
+6. **Queued observer inside `DB::transaction()` without `ShouldHandleEventsAfterCommit`** — side effects fire even if the transaction rolls back; data inconsistency
+7. **Assuming `updateQuietly()` suppresses events on related models** — it only suppresses for the instance it's called on; wrap related-model touches in `RelatedModel::withoutEvents()` too
+8. **Putting request-scoped state (auth user, tenant, request ID) in observer constructor under Octane** — state from request 1 leaks into request 5+; inject via method body instead
+9. **Using `Event::fake()` when the test depends on observer side effects** — fake only the events you don't care about (`Event::fake([OtherEvent::class])`)
+10. **Queueing observers with critical synchronous side effects (audit logs, flash messages)** — queue work runs after the request returns; sync observer for work that must complete before response
+11. **Forgetting that queued observers re-fetch the model by primary key** — if the model is deleted in the same request, the queue worker gets `ModelNotFoundException`; pass the data as a DTO or via constructor args instead
+
 
 ## Laravel `#[Boot]` and `#[Initialize]` Model Attributes (Pre-Laravel 13, missing from older docs)
 

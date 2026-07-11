@@ -7,9 +7,9 @@
 [![MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Auto-updated](https://img.shields.io/badge/Auto--updated-6h-blue?style=flat-square)](#auto-updater)
 
-> **Latest tracked version:** Laravel **13.19.0** + **12.63.0** (July 7, 2026) — both tagged same day. Cycle 32: performance.md gap-fill — EXPLAIN/index composite order rules + cache stampede SWaR + lock patterns (cycle 31: Http::query, Collection::reduceInto, Str::counted, query/queryJson helpers, bulk SQS, assertSoftDeleted deletedAtColumn, DateRule past/future helpers, PG whereDate/whereTime fix)
+> **Latest tracked version:** Laravel **13.19.0** + **12.63.0** (July 7, 2026) — both tagged same day. Cycle 33: observers.md gap-fill — ShouldQueue on observers (ModelNotFoundException gotcha) + ShouldHandleEventsAfterCommit (GitHub #52440) + Octane state leak + withoutEvents/updateQuietly/saveQuietly decision matrix + Event::fake patterns + setObservableEvents (cycle 32: performance.md gap-fill — EXPLAIN/index composite order rules + cache stampede SWaR + lock patterns; cycle 31: Http::query, Collection::reduceInto, Str::counted, query/queryJson helpers, bulk SQS, assertSoftDeleted deletedAtColumn, DateRule past/future helpers, PG whereDate/whereTime fix)
 > **PHP baseline:** 8.3.32 / 8.4.23 / 8.5.8 (all security fixes as of 2026-07-01 batch)
-> **Skill version:** v1.22.18 (32 auto-update cycles since 2026-06-28)
+> **Skill version:** v1.22.19 (33 auto-update cycles since 2026-06-28)
 
 ---
 

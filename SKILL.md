@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.18
+version: 1.22.19
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -143,3 +143,10 @@ metadata:
 - Use `php artisan make:model Post -mcr` to generate Model + Migration + Controller in one shot
 
 Start with `eloquent.md` for most common Laravel work.
+
+| `ShouldQueue` on observers + retry/backoff + `ModelNotFoundException` gotcha | `observers.md` (ShouldQueue on Observers section) | Observer re-fetches model by PK after the request returns — if you delete the model in the same request, pass data via DTO constructor args or wrap in an event with `ShouldQueue` listeners |
+| `ShouldHandleEventsAfterCommit` for queued observers/listeners (GitHub #52440 gotcha) | `observers.md` (ShouldHandleEventsAfterCommit section) | Side effects fire after transaction commits — without it, observer work runs even if the transaction rolls back (data inconsistency). Watch: `ShouldQueue` + `ShouldHandleEventsAfterCommit` early-returns on Redis/SQS — pick one |
+| Octane + static observer-registration state leak (`Post::flushEventListeners()` + `Octane::flush()`) | `observers.md` (Octane & Static Observer Registration section) | Constructor-injected request-scoped state (tenant, auth user) leaks across requests in the same worker — inject via method body or reset in `Octane::flush()` |
+| `withoutEvents()` vs `updateQuietly()` vs `saveQuietly()` decision matrix | `observers.md` (Quiet Patterns section) | Different scopes: instance-only vs closure-wide; only `withoutEvents()` blocks ALL models in the closure. `updateQuietly()`/`saveQuietly()` don't suppress related-model events |
+| `Event::fake([Class])` vs `Event::fake()` vs `Event::fakeFor()` for observer tests | `observers.md` (Testing Observers section) | Targeted faking (`Event::fake([PostCreated::class])`) preserves downstream events; `Bus::fake()` catches queued observers' internal job dispatches |
+| `setObservableEvents()` / `getObservableEvents()` for selective event firing | `observers.md` (Selective Event Firing section) | Per-instance or per-class narrowing of which model events fire — useful for read-only DTO models, audit-only observers, performance-constrained sync imports |
