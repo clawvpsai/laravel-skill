@@ -7,9 +7,9 @@
 [![MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Auto-updated](https://img.shields.io/badge/Auto--updated-6h-blue?style=flat-square)](#auto-updater)
 
-> **Latest tracked version:** Laravel **13.19.0** + **12.63.0** (July 7, 2026) — both tagged same day. Cycle 33: observers.md gap-fill — ShouldQueue on observers (ModelNotFoundException gotcha) + ShouldHandleEventsAfterCommit (GitHub #52440) + Octane state leak + withoutEvents/updateQuietly/saveQuietly decision matrix + Event::fake patterns + setObservableEvents (cycle 32: performance.md gap-fill — EXPLAIN/index composite order rules + cache stampede SWaR + lock patterns; cycle 31: Http::query, Collection::reduceInto, Str::counted, query/queryJson helpers, bulk SQS, assertSoftDeleted deletedAtColumn, DateRule past/future helpers, PG whereDate/whereTime fix) (cycle 34: file-uploads.md gap-fill — Storage::fake vs persistentFake decision matrix (bytes after the test) + putFile/putFileAs/writeStream vs storeAs decision matrix + S3 multipart >5 GB pattern + temporaryUploadUrl driver restrictions (s3 + local only) + finfo Octane hygiene; cycle 33 = observers above)
+> **Latest tracked version:** Laravel **13.19.0** + **12.63.0** (July 7, 2026) — both tagged same day. Cycle 33: observers.md gap-fill — ShouldQueue on observers (ModelNotFoundException gotcha) + ShouldHandleEventsAfterCommit (GitHub #52440) + Octane state leak + withoutEvents/updateQuietly/saveQuietly decision matrix + Event::fake patterns + setObservableEvents (cycle 32: performance.md gap-fill — EXPLAIN/index composite order rules + cache stampede SWaR + lock patterns; cycle 31: Http::query, Collection::reduceInto, Str::counted, query/queryJson helpers, bulk SQS, assertSoftDeleted deletedAtColumn, DateRule past/future helpers, PG whereDate/whereTime fix) (cycle 34: file-uploads.md gap-fill — Storage::fake vs persistentFake decision matrix (bytes after the test) + putFile/putFileAs/writeStream vs storeAs decision matrix + S3 multipart >5 GB pattern + temporaryUploadUrl driver restrictions (s3 + local only) + finfo Octane hygiene; cycle 33 = observers above) (cycle 35: ai.md JsonSchema anyOf + union types)
 > **PHP baseline:** 8.3.32 / 8.4.23 / 8.5.8 (all security fixes as of 2026-07-01 batch)
-> **Skill version:** v1.22.20 (34 auto-update cycles since 2026-06-28)
+> **Skill version:** v1.22.21 (35 auto-update cycles since 2026-06-28)
 
 ---
 
@@ -91,7 +91,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-07-05 18:11 UTC (cycle 26) — No new Laravel framework release (13.18.1 still head of 13.x, 3 days old). `ai.md` was the oldest untouched file (6 days stale) and was gap-filled with the two most important missing topics for production AI work: **(1) Conversation Memory** — `Conversational` attribute + `RemembersConversations` trait for zero-config auto-persisted multi-turn chat (backed by `agent_conversations` + `agent_conversation_messages` tables from the AI SDK migration), plus the manual `messages()` override path for custom storage (Redis, tenant-scoped tables) — including the critical docs warning that defining `messages()` AND using the trait makes the trait silently no-op. **(2) Per-class testing fakes** — `Agent::fake([...])` with FIFO canned responses, `Agent::fake(closure)` for dynamic responses, `->preventStrayPrompts()` to catch unmocked calls in CI, and `assertPrompted()` / `assertNeverPrompted()` for assertions. Plus per-resource fakes the skill was missing: `Image::fake(closure)`, `Transcription::fake([...])->preventStrayTranscriptions()`, `Embeddings::fake()` (auto-dim or explicit), `Reranking::fake([RankedDocument, ...])`, `Files::fake()`. Structured-output fakes now auto-generate schema-matching data when the agent implements `HasStructuredOutput`. Facade-level `AI::fake()` is now documented as the legacy path (still works, but per-class is preferred). SKILL.md bumped v1.22.12 → v1.22.13 — 4 new cross-reference entries for the new ai.md sections, 2 new Critical Rules (always-fake + messages() vs RemembersConversations conflict). 34 cycles in last 14 days (cycles 28–34 covered: performance.md, api.md, security.md, versions.md, queues.md, observers.md, file-uploads.md gap-fills — no major Laravel 13.x release between cycle 27 and cycle 34).
+**Last research cycle:** 2026-07-11 18:06 UTC (cycle 35)
 
 ---
 
@@ -115,7 +115,7 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
 - **~10,330 lines** of production-ready content
-- **Update cadence:** Every 6 hours via OpenClaw cron — 26 cycles in last 7 days (each targeting the oldest untouched files or new CVEs)
+- **Update cadence:** Every 6 hours via OpenClaw cron — 35 cycles in last 14 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 

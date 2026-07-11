@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.20
+version: 1.22.21
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -32,6 +32,8 @@ metadata:
 | Rules, Form Requests, custom validators | `validation.md` | Input validation |
 | Prohibited rule family + `Rule::when()` / `Rule::unless()` | `validation.md` (Prohibited Family + Rule::when sections) | Either-or fields, conditional rule chains, "missing/empty" enforcement |
 | `#[Boot]` / `#[Initialize]` model lifecycle attributes | `observers.md` (model attribute hooks section) | Per-instance defaults + class-level event listeners without `boot()` override |
+| `JsonSchema::anyOf()` discriminated unions (Laravel 13.17+, PR #60509) | `ai.md` (Advanced JSON Schema section) | Single `enum` collapses type-specific fields per variant; `anyOf()` keeps them so the LLM returns the full matching shape and your handler branches on the discriminator |
+| `JsonSchema::union(['string', 'number'])` multi-type unions (Laravel 13.17+, PR #60455) | `ai.md` (Advanced JSON Schema section) | Third-party MCP tool schemas routinely use `type: ['string', 'number', 'boolean']`; pre-13.17 `JsonSchema::fromArray()` threw on these — now round-trips cleanly. 12.x still throws; 13.17+ backport only |
 | `#[FailOnUnknownFields]` Form Request attribute | `validation.md` (Failing on Unknown Fields section) | Reject unknown fields at validation time (defense in depth) |
 | `Context` facade for log context | `logging.md` (Context facade section) | Request/job-scoped context that auto-attaches to logs and survives queue dispatch |
 | `Password::toPasswordRulesString()` | `validation.md` (Password rules section) | Derive JS `passwordrules` HTML hint from server-side `Password::` rule |
@@ -130,6 +132,8 @@ metadata:
 - **Don't pair `messages()` with `RemembersConversations`** — defining `messages()` manually makes the trait silently no-op. Pick ONE: trait = automatic DB-backed history, `messages()` = you own storage (Redis, custom scoped table, etc.).
 - **`schedule:work` now catches signals** (Laravel 13.17+, PR #60616) — `SIGINT`/`SIGTERM`/`SIGQUIT` stop new runs cleanly and let in-flight `schedule:run` finish; long-lived scheduler processes no longer need wrapper scripts
 - **HEAD request cache headers** (Laravel 13.18.0+, PR #60589) — `SetCacheHeaders` middleware now applies to `HEAD`. Before: CDN cache-warm scripts got no `Cache-Control`/`ETag`. Force cache headers explicitly if stuck on 13.16
+- **Discriminated unions: `anyOf()` not `enum()`** (Laravel 13.17+) — when an AI structured-output field has multiple shapes (article / video / podcast), never collapse to `$schema->string()->enum([...])`. Use `$schema->anyOf([...])` so each variant keeps its type-specific fields; branch on the discriminator in your response handler. See `ai.md` (Advanced JSON Schema section).
+- **Multi-type unions: `JsonSchema::union()` not `string|null`** (Laravel 13.17+) — when a JSON field can be `string` / `number` / `boolean`, don't fall back to a permissive `string` cast. `JsonSchema::union(['string', 'number'])->nullable()` preserves all three types in the structured-output contract; `'type' => ['string', 'number']` via `fromArray()` was broken before 13.17 (PR #60455).
 
 ## Version Defaults
 

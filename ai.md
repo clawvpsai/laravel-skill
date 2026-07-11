@@ -144,6 +144,96 @@ class TicketClassification
 ```
 
 ---
+## Advanced JSON Schema — `anyOf()` and `JsonSchema::union()` (Laravel 13.17+)
+
+The `Illuminate\JsonSchema` builder powers every agent `schema()` method. The two most common "this can't be expressed with primitive types" cases — **discriminated unions** (a field that's one of several distinct shapes) and **multi-type unions** (a field that accepts more than one JSON type) — added first-class support in Laravel 13.17. Both additions are exactly what AI assistants hallucinate: most reach for a single `enum` (loses per-shape fields) or a `string|null` (loses the union). The correct idioms are below.
+
+### `JsonSchema::anyOf()` — Discriminated Unions (PR #60509)
+
+Use `anyOf()` when a single field can resolve to one of several distinct shapes — e.g., a CMS that returns either an `article` (with `body`), a `video` (with `duration_seconds`), or a `podcast` (with `audio_url`). Modeling this as a single `enum` collapses the per-shape fields, and hand-rolling the JSON bypasses Laravel's built-in validation. `anyOf()` was always the right tool; Laravel 13.17+ promotes it to first-class on `Illuminate\JsonSchema` so the structured-output call doesn't have to drop the shape or hand-roll JSON.
+
+Both OpenAI and Gemini support `anyOf` in their structured output APIs, so this unlocks more expressive schemas when building AI-powered features with Laravel AI.
+
+```php
+use Illuminate\JsonSchema\JsonSchema;
+
+public function schema(JsonSchema $schema): array
+{
+    return [
+        'content' => $schema->anyOf([
+            // article variant
+            $schema->object(fn ($s) => [
+                'type'          => $s->string()->enum(['article'])->required(),
+                'title'         => $s->string()->required(),
+                'body'          => $s->string()->required(),
+                'word_count'    => $s->integer(),
+            ]),
+            // video variant
+            $schema->object(fn ($s) => [
+                'type'             => $s->string()->enum(['video'])->required(),
+                'title'            => $s->string()->required(),
+                'duration_seconds' => $s->integer()->required(),
+                'thumbnail_url'    => $s->string(),
+            ]),
+            // podcast variant
+            $schema->object(fn ($s) => [
+                'type'        => $s->string()->enum(['podcast'])->required(),
+                'title'       => $s->string()->required(),
+                'audio_url'   => $s->string()->required(),
+                'episode_num' => $s->integer(),
+            ]),
+        ])->required(),
+    ];
+}
+```
+
+The LLM picks the matching shape and returns its fields; you branch on the `type` discriminator in your response handler:
+
+```php
+$result = $agent->run($input);
+
+match ($result['content']['type']) {
+    'article' => renderArticle($result['content']),
+    'video'   => embedVideo($result['content']),
+    'podcast' => queueAudioTranscription($result['content']),
+};
+```
+
+OpenAI and Gemini both honor `anyOf` in structured-output mode. Anthropic has limited `anyOf` support — use `discriminator + oneOf` as a fallback there, or test with a small fixture.
+
+### `JsonSchema::union([...])` — Multi-Type Unions (PR #60455)
+
+Use `union()` when a field accepts more than one JSON type but stays in the same shape — e.g., a metadata value that can be a `string`, `number`, or `boolean`. This comes up constantly with third-party MCP tool schemas where mixed-type fields are common. Before 13.17, `JsonSchema::fromArray(['type' => ['string', 'number', 'boolean']])` **threw a deserialization exception** — now it round-trips cleanly. The same applies when you build the schema directly.
+
+```php
+use Illuminate\JsonSchema\JsonSchema;
+
+// Round-trip a third-party MCP tool schema that uses multi-type unions
+$schema = JsonSchema::fromArray([
+    'type'        => ['string', 'number', 'boolean'],
+    'description' => 'A flexible metadata value',
+]);
+
+// Or build one directly via the SDK
+$value = JsonSchema::union(['string', 'number'])->nullable();
+```
+
+Both `fromArray()` (deserialize-then-reserialize) and direct construction now work on 13.17+. The `union()` method also chains with `->nullable()`, `->description(...)`, and the rest of the builder API.
+
+### When to Use Which — Decision Matrix
+
+| Need                                                                              | Use                                          | Example                                          |
+|-----------------------------------------------------------------------------------|----------------------------------------------|--------------------------------------------------|
+| Field is one of several **distinct shapes** (each with its own fields)            | `$schema->anyOf([...])`                       | Content block: `article` / `video` / `podcast`   |
+| Field accepts more than one **JSON type** (same shape, type varies)               | `JsonSchema::union(['string', 'number'])`     | Metadata value: `string` OR `number` OR `boolean` |
+| Field has a fixed set of options of the **same shape**                            | `$schema->string()->enum(['a', 'b', 'c'])`    | Status: `pending` / `running` / `done`            |
+| Field is optional                                                                 | chain `->nullable()` (any of the above)       | Optional `description` field                     |
+
+**Why this matters:** When the schema is wrong, the LLM silently degrades. With `anyOf`, the model picks the right variant and returns its full shape; with `union`, it can return any of the listed types without losing data. Modeling discriminated unions as a single `enum` collapses the per-variant fields and forces the response handler to re-fetch them. Modeling type unions as `string|null` makes the LLM stringify every number and boolean.
+
+Source: [Laravel Changelog — Add `anyOf` Support to JSON Schema](https://laravel.com/docs/changelog#june-2026-add-anyof-support-to-json-schema) | [Laravel Changelog — Add Multi-Type Union Support to `Illuminate\JsonSchema`](https://laravel.com/docs/changelog#june-2026-add-multi-type-union-support-to-illuminatejsonschema) | PR [#60509](https://github.com/laravel/framework/pull/60509) + [#60455](https://github.com/laravel/framework/pull/60455)
+
+---
 
 ## Embeddings & Vector Search
 
@@ -838,8 +928,23 @@ Source: [Laravel AI issue #119 — Prompt caching](https://github.com/laravel/ai
 16. **Defining `messages()` AND using `RemembersConversations`** — they conflict. If `messages()` exists, the trait is bypassed silently. Pick one: trait = automatic DB-backed history, `messages()` = you own the storage layer (Redis, custom table with tenant scoping, etc.).
 17. **Real API calls in CI tests** — every `Agent::fake()` without `preventStrayPrompts()` will silently hit a real provider if you add a new agent call. Always use `Agent::fake()->preventStrayPrompts()` to catch unmocked agent interactions before they reach production CI.
 18. **No per-resource fakes for image/audio/embedding tests** — `AI::fake()` only fakes text completions. For image gen / transcription / embeddings / reranking / files, use the resource-specific fakes: `Image::fake()`, `Transcription::fake()`, `Embeddings::fake()`, `Reranking::fake()`, `Files::fake()` — each has its own assertions.
+19. **Modeling discriminated unions (article vs video vs podcast) as a single `enum`** — you lose type-specific fields. Use `$schema->anyOf([...])` (Laravel 13.17+, PR #60509) so each variant keeps its own shape, and branch on the discriminator in your response handler.
+20. **Assuming `JsonSchema::fromArray()` rejects multi-type unions** — it does NOT, as of Laravel 13.17 (PR #60455). `['type' => ['string', 'number', 'boolean']]` now round-trips correctly; previously it threw a deserialization exception. The fix only backported to 13.x — `JsonSchema::fromArray()` on 12.x with multi-type unions still throws.
+21. **`anyOf()` doesn't include `null` by default** — chain `->nullable()` on the `$schema->anyOf([...])` result if the field can be missing. `anyOf()` describes one of N shapes; making the field optional/nullable is a separate decision (`->required()` vs `->nullable()`).
+22. **Confusing `anyOf()` (shape union) with `JsonSchema::union(['string', 'number'])` (type union)** — they look similar but answer different questions. `anyOf` = which schema matches? `union` = which JSON types are valid? Mixing them up produces either over-permissive schemas (extra `null` accepted) or under-permissive schemas (multiple types expressed as one shape).
 
 ---
+
+## Updated from Research (2026-07-11, cycle 35)
+
+### Cycle 35 additions (2026-07-11)
+
+- **`Illuminate\JsonSchema::anyOf()` — Discriminated Unions (Laravel 13.17+, PR #60509)** — the only correct way to express "one field, several distinct shapes" (article / video / podcast, success / error envelope, polymorphic records). AI assistants overwhelmingly hallucinate this as a single `$schema->string()->enum([...])` — that collapses the per-shape fields. `anyOf()` accepts an array of `object()` schemas, each with its own `type` discriminator. Both OpenAI and Gemini honor `anyOf` in structured-output mode; Anthropic has limited support (fallback to `discriminator + oneOf`).
+- **`JsonSchema::union(['string', 'number'])` — Multi-Type Unions (Laravel 13.17+, PR #60455)** — fields that accept more than one JSON type (`'type' => ['string', 'number', 'boolean']`). Constantly used by third-party MCP tool schemas. Before 13.17, `JsonSchema::fromArray(['type' => [...]])` **threw a deserialization exception**. Now round-trips cleanly on 13.17+. 12.x still throws.
+- **Decision matrix** — 4-row table mapping common structural needs (discriminated shape vs multi-type union vs fixed enum vs optional field) to the correct schema-builder call.
+- **Worked discriminator-branch example** — `match ($result['content']['type']) { 'article' => ..., 'video' => ..., 'podcast' => ... }` so the response-handler pattern is concrete, not abstract.
+- **Anthropic compatibility note** — flagged up front because `anyOf` is OpenAI/Gemini-only by default. Documented the `discriminator + oneOf` fallback for Anthropic-only flows.
+- **Common Mistakes list grew 18 → 22** — added "Modeling discriminated unions as a single `enum`", "Assuming `JsonSchema::fromArray()` rejects multi-type unions" (12.x still throws; 13.17+ only), "`anyOf()` doesn't include `null` by default", and "Confusing `anyOf()` with `union()`" (shape union vs type union).
 
 ## Updated from Research (2026-07-05)
 
