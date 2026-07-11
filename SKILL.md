@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.19
+version: 1.22.20
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -103,6 +103,12 @@ metadata:
 | FrankenPHP thread-pool split (slow-endpoint isolation) | `deployment.md` (FrankenPHP section) | Mirror of FPM `pm` pool split — keep `/api/reports/*` and `/api/exports/*` on a dedicated thread pool so they can't starve the main request pool |
 | `LARAVEL_STORAGE_PATH` for embedded FrankenPHP binaries | `deployment.md` (FrankenPHP section) | Each new binary extraction lives in a different temp dir — set `LARAVEL_STORAGE_PATH=/var/lib/yourapp/storage` or call `Application::useStoragePath()` so uploads/logs/caches survive upgrades |
 
+
+| `Storage::fake()` vs `Storage::persistentFake()` decision matrix | `file-uploads.md` (Testing File Uploads section) | `persistentFake()` keeps files on disk after the test — required for byte-level content assertions (resized image width, watermarked PDF content, etc.). `fake()` deletes everything at end-of-test |
+| `putFile` / `putFileAs` / `writeStream` vs `store` / `storeAs` decision matrix | `file-uploads.md` (Streaming APIs section) | `putFileAs()` auto-UUIDs the filename and streams; `writeStream()` takes any PHP resource (`fopen('http://...', 'r')`, tmp file handle, S3 read stream) — both avoid loading full bytes into memory |
+| S3 multipart upload for files >5 GB (`CreateMultipartUpload` / `UploadPart` / `CompleteMultipartUpload`) | `file-uploads.md` (S3 Multipart Uploads section) | S3 PUT hard-limits at 5 GB. Pair with `tus.io` for browser-resumable or `uppy-aws-s3-multipart` for guided JS uploads. Laravel has no one-line API — use the SDK passthrough |
+| `temporaryUploadUrl()` driver restrictions (s3 + local only — R2/MinIO/Backblaze fall back to SDK) | `file-uploads.md` (Direct S3 Upload section) | R2/MinIO/Backblaze throw `RuntimeException("Driver ... does not support generating temporary upload URLs.")` — reach for `Storage::disk('r2')->getAdapter()->getClient()->createPresignedRequest(...)` directly |
+| `finfo` resource hygiene on Octane (`finfo_open()` once, `finfo_close()` on `Octane::flush()`) | `file-uploads.md` (Common Mistakes #13) + `security.md` (Anti-Extension-Spoofing section) | Opening `finfo` per-request under Octane leaks resource handles across workers; bind it in `AppServiceProvider::register()` and close on flush |
 
 ## Critical Rules (Never Forget)
 

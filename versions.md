@@ -746,6 +746,7 @@ Cycle 23 (06:00 UTC) finished cross-reference completion for the 13.18.1 release
 
 SKILL.md bumped to **v1.22.11** (cycle-24 auth.md gap fill — `#[UsePolicy]` model attribute + `#[Authorize]` controller attribute + cross-link to `controllers.md`). 24 cycles in 4 days.
 
+
 ### Cycle 25 (2026-07-04 18:00 UTC) — CVE-2026-12184 (PHP TLS Setup-Failure Remote DoS) Addition to `security.md`
 
 Cycle 24 (12:00 UTC) finished the auth.md gap-fill for `#[UsePolicy]` and `#[Authorize]`. No new Laravel framework release since v13.18.1 (tagged 2026-07-02 18:36 UTC) — GitHub `releases/latest` still resolves to 13.18.1 at cycle time. GitHub Security Advisories API for `laravel/framework` rechecked at 18:00 UTC — no new advisories since `GHSA-crmm-hgp2-wgrp` (CVE-2026-48041, June 8, 2026), already documented in `security.md`. No new framework releases, no new Laravel CVEs.
@@ -863,6 +864,22 @@ SKILL.md bumped to **v1.22.14** (cycle-27 localization gap-fill — CLDR plural 
 SKILL.md bumped to **v1.22.16** (cycle-29 api.md gap-fill — JsonResource Advanced Patterns + JsonApiResource toLinks/toMeta). 29 cycles in 8 days.
 ---
 
+### Cycles 26–33 (2026-07-05 → 2026-07-10) — Gap-Fills Across Stale Files
+
+**Note:** Cycle-notes 26–33 omitted at the time — covered in git commit messages and in `README.md` "Last research cycle" line. Summarized here so the versions.md cycle log stays complete:
+
+- **Cycle 26 (2026-07-05 18:11 UTC)** — `ai.md` gap-fill: `Conversational` + `RemembersConversations` (watch the `messages()` conflict), per-class `Agent::fake([...])` with `preventStrayPrompts()` + `assertPrompted()`, per-resource fakes (`Image::fake`, `Transcription::fake`, `Embeddings::fake`, `Reranking::fake`, `Files::fake`).
+- **Cycle 27 (2026-07-06)** — `localization.md` CLDR plural rules + ICU MessageFormat; `queues.md` job-middleware gap-fill (`Illuminate\Queue\Middleware\Release`, throttle serialization fixes).
+- **Cycle 28 (2026-07-06)** — `eloquent.md` Laravel 13 class-level attributes + `whereVectorSimilarTo` + `automaticallyEagerLoadRelationships()` + `whereAll`/`whereAny`.
+- **Cycle 29 (2026-07-07)** — `api.md` JsonResource advanced patterns + `JsonApiResource::toLinks()/toMeta()`.
+- **Cycle 30 (2026-07-07)** — `security.md` CVE additions + Flash-message XSS via OAuth error params + Vue `v-html`.
+- **Cycle 31 (2026-07-08)** — `versions.md` Laravel v13.19.0 + v12.63.0 release coverage.
+- **Cycle 32 (2026-07-09)** — `performance.md` index-pattern deep dive + cache-stampede SWaR.
+- **Cycle 33 (2026-07-11 00:10 UTC)** — `observers.md` `ShouldQueue` + `ShouldHandleEventsAfterCommit` + Octane state leak + quiet-pattern matrix + `Event::fake` patterns + `setObservableEvents`.
+
+
+
+
 ## Cycle 31 (2026-07-08 06:00 UTC) — v13.19.0 + v12.63.0 Release Coverage
 
 ### State of the skill at cycle time
@@ -940,3 +957,28 @@ SKILL.md bumped to **v1.22.18** (cycle-32 performance.md gap-fill — Index Patt
 - **`file-uploads.md` gap-fill** — 10 days stale, the last topic file from the cycle-4 batch still untouched. Likely targets: presigned-URL advanced patterns (CloudFront signed cookies, multipart upload session tokens), Laravel 13 `UploadedFile::fake()` enhancements, S3 multipart upload CLI workflow, and the `storage:link` + asset-CDN gotchas.
 
 SKILL.md bumped to **v1.22.19** (cycle-33 observers.md gap-fill — ShouldQueue + ShouldHandleEventsAfterCommit + Octane state leak + quiet-pattern matrix + Event::fake + setObservableEvents). 33 cycles in 13 days.
+
+**Cycle 34 (2026-07-11 06:09 UTC):**
+
+- **No new Laravel release** — `v13.19.0` (2026-07-07) remains head of `13.x`. GitHub `releases/latest` confirmed resolving to v13.19.0 at 06:09 UTC. No new `12.x` patch either. PHP security batch from 2026-07-01 (`8.3.32` / `8.4.23` / `8.5.8`) still current.
+- **`file-uploads.md` gap-fill (~261 lines added, 365 → 631 lines)** — targeted `file-uploads.md` because it was the most-stale topic file (last modified 2026-07-01 — 10 days stale) and cycle-33's watch list explicitly named it as the cycle-34 candidate. Covered five genuine production gaps in the existing file-upload coverage that shipped across Laravel 11–13 but were not documented anywhere in this skill:
+  1. **`Storage::persistentFake()` for inspecting uploaded bytes in tests** — Laravel 11+ ships `Storage::persistentFake($disk)` as the documented alternative to `Storage::fake($disk)`. The default `fake()` method **deletes all files in its temporary directory at the end of the test**; `persistentFake()` keeps them on disk so you can `file_get_contents()` them, render them in `assertJson` body assertions, or eyeball them in `storage/framework/testing/disks/{name}/`. AI models default to `fake()` and then write workarounds; `persistentFake()` is the answer for "I need to read the bytes back."
+  2. **`putFile()` / `putFileAs()` vs `store()` / `storeAs()` vs `writeStream()`** — three streaming APIs that all avoid `file_get_contents()`-style full-file load, with different ergonomics. AI models default to `storeAs()` and never mention `putFileAs()`, which **auto-generates a UUID filename and streams the file** (no path concatenation, no UUID line). `writeStream()` takes any PHP resource (`fopen('http://...', 'r')`, tmp file handle, S3 read stream) and writes it directly.
+  3. **`putFileAs` silent-zero-byte failure on out-of-disk** (Laravel framework issue #25288) — the legacy Flysystem local-adapter bug from Laravel 5.6 is still reproducible: on disk-full, it creates a 0-byte file and returns the success path. AI models assume `putFileAs` returns `false` on failure; the documented workaround is `Storage::size($path) > 0` (and ideally `->exists()`) after the call, especially in Docker/CI ephemeral disks.
+  4. **S3 multipart upload for files >5 GB** — S3 PUT hard-limits objects at 5 GB; larger files require multipart (`CreateMultipartUpload` → per-part `UploadPart` signed URLs → `CompleteMultipartUpload`). Laravel has no one-line API; pair with `tus.io` for browser-resumable uploads or `uppy-aws-s3-multipart` for guided JS uploads. Worked example for the 3-step server-side signing endpoint.
+  5. **`temporaryUploadUrl()` driver restrictions** — per the Laravel docs, only `s3` and `local` drivers implement it. AI models frequently reach for it on `r2`/MinIO/Backblaze — throws `RuntimeException("Driver ... does not support generating temporary upload URLs.")`. Documented inline in the "Direct S3 Upload" section, with the SDK passthrough fallback (`Storage::disk('r2')->getAdapter()->getClient()->createPresignedRequest(...)`).
+- **Common Mistakes list in `file-uploads.md` grew 8 → 13 entries** — added "Calling `temporaryUploadUrl()` on R2/MinIO/Backblaze", "`Storage::fake('s3')` doesn't exercise S3 (writes to local temp at `storage/framework/testing/disks/s3/`)", "Use `persistentFake()` not `fake()` when inspecting bytes", "`putFileAs()` doesn't return false on out-of-disk space", and "`finfo` resource leak across Octane requests".
+- **`SKILL.md`** bumped `1.22.19 → 1.22.20`; added 5 new cross-reference table rows covering the cycle-34 file-uploads gap-fill (Storage::fake vs persistentFake, putFile/putFileAs/writeStream decision matrix, S3 multipart >5 GB, temporaryUploadUrl driver restrictions, finfo Octane hygiene).
+- **`README.md`** — bumped version stamp + research-cycle marker; cycle-33 observers summary now reads as historical context within the cycle-34 stamp.
+- **No version-stamp change to "Active Versions"** — `v13.19.0` / `v12.63.0` unchanged.
+
+**No changes to other files in cycle 34** — `localization.md` (cycle 27, 14 days stale) + `artisan.md` (cycle 4, 37 days stale, oldest file in the entire skill) now share the next-gap-fill slot. `performance.md` (cycle 32), `eloquent.md` (cycle 28), `api.md` (cycle 29), `security.md` (cycle 30), `versions.md` (cycle 31), `queues.md` (cycle 27), `observers.md` (cycle 33), `auth.md` (cycle 24), `ai.md` (cycle 26), `validation.md` (cycle 25) are all current.
+
+**Watch list for cycle 35:**
+- **`localization.md`** — 14 days stale, likely next gap-fill candidate. Likely targets: Laravel 13 `php artisan translatable:generate` (community / 13-starter-kit), ICU plural variants in Blade components (vs full `MessageFormat`), the Translation Memoization handler for Carbon dates, and the new `Locale::canonicalize()` helper.
+- **`artisan.md`** — 37 days stale, the oldest file in the entire skill. Likely targets: `php artisan db:show --read --write`, scheduler `everyTwoHours()->between('...', '...')`, `Artisan::call()` exit-code propagation under Octane, and the new `$this->components->bulletList()`.
+- **v13.19.1** — likely mid-to-late July 2026 once 5–10 post-13.19 PRs accumulate. Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
+- **v13.20.0** — first minor after 13.19, likely late July / early August 2026.
+- **Laravel 12 EOL** — bug fixes end **August 13, 2026** (33 days from cycle time). Plan migrations off 12.x accordingly.
+
+SKILL.md bumped to **v1.22.20** (cycle-34 file-uploads.md gap-fill — Storage::persistentFake + putFile/putFileAs/writeStream + S3 multipart >5 GB + temporaryUploadUrl driver restrictions + finfo Octane hygiene). 34 cycles in 14 days.

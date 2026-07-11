@@ -65,6 +65,12 @@ public function store(Request $request)
 
 Best for large files — user uploads directly to S3/R2, server only gets the final URL.
 
+> **`temporaryUploadUrl()` is driver-restricted.** Only `s3` and `local` drivers implement it
+> natively. On R2 / MinIO / Backblaze / DigitalOcean Spaces, it throws
+> `RuntimeException("Driver ... does not support generating temporary upload URLs.")`. For those,
+> reach for the underlying AWS SDK directly (`Storage::disk('r2')->getAdapter()->getClient()->createPresignedRequest(...)`),
+> or use `mnapoli/laravel-local-temporary-upload-url` to add local parity.
+
 ```php
 // Controller — generate presigned upload URL
 use Illuminate\Support\Facades\Storage;
@@ -330,6 +336,11 @@ $request->validate([
 6. **Serving private files via public URL** — use `temporaryUrl()` or signed URLs
 7. **Loading large files into memory** — use `fopen()` streaming instead of `file_get_contents()`
 8. **No disk space monitoring** — uploads fail silently when disk is full
+9. **Calling `temporaryUploadUrl()` on R2 / MinIO / Backblaze without an SDK fallback** — only `s3` and `local` drivers implement it natively; for R2/MinIO, reach for `Storage::disk('r2')->getAdapter()->getClient()->createPresignedRequest(...)` (AWS SDK passthrough), or use `mnapoli/laravel-local-temporary-upload-url` for local dev parity
+10. **Assuming `Storage::fake('s3')` exercises the S3 driver** — it doesn't. Faked disks write to `storage/framework/testing/disks/s3/` locally; no network call is made. Add a real-S3 integration test (or MinIO container) for the SDK-level layer
+11. **Using `Storage::fake()` when the test needs to inspect the uploaded bytes after the fact** — `fake()` deletes everything in the temp dir at end-of-test. For byte-level content assertions (`Image::make($bytes)->width()`), use `Storage::persistentFake($disk)` instead
+12. **Assuming `putFileAs()` returns `false` on out-of-disk space** — legacy Flysystem local-adapter bug (framework #25288): it creates a 0-byte file and returns the success path. Verify `Storage::size($path) > 0` after the call, especially in Docker/CI ephemeral disks
+13. **Opening `finfo` in a controller method body and forgetting `finfo_close()`** — leaks the resource handle across Octane requests. Hoist `$finfo = finfo_open(...)` into `AppServiceProvider::register()` (or wherever you own the singleton) and close in `Octane::flush()`
 
 ## Updated from Research (2026-05)
 - Laravel 13 file validation supports `dimensions:min_width=,min_height=` rules
@@ -363,3 +374,258 @@ wrong, now documented:
 
 **No new Laravel 13.x release** as of 2026-06-30 18:00 UTC. v13.17.0 (June 23, 2026) remains the
 latest. v13.18.0 shipped 2026-06-30; relevant fixes are in it.
+
+## Streaming APIs: `putFile` vs `storeAs` vs `writeStream`
+
+Three streaming-native APIs that all avoid `file_get_contents()`-style full-file load, with
+different ergonomics. Pick by intent:
+
+| API | Input | Auto-filename | Returns | Use when |
+|---|---|---|---|---|
+| `$file->store($path)` | `UploadedFile` | UUID (`hashName()`) | path string | Most "save the upload" cases |
+| `$file->storeAs($path, $name)` | `UploadedFile` | explicit | path string | You need a deterministic name |
+| `Storage::putFile($path, $file)` | `UploadedFile` / `File` | UUID | path string | **Storage-facade-first code** — same as `$file->store()` but no need to call it on the file |
+| `Storage::putFileAs($path, $file, $name)` | `UploadedFile` / `File` | explicit | path string | Storage-facade-first + custom name |
+| `Storage::put($path, $contents, $options)` | string | explicit | bool | Inline content / already-loaded bytes |
+| `Storage::putStream($path, $resource, $options)` | resource (`fopen(...)`) | explicit | bool | Streaming from PHP open file/URL handles |
+| `Storage::writeStream($path, $resource, $options)` | resource | explicit | bool | Alias of `putStream` on most drivers |
+
+```php
+use Illuminate\Http\File;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+
+// putFile(): auto-UUID filename, storage-facade-first style
+$path = Storage::disk('s3')->putFile('photos', $request->file('avatar'));
+
+// putFileAs(): explicit name (e.g. user-id.jpg for a deterministic path)
+$path = Storage::disk('s3')->putFileAs(
+    "photos/{$user->id}",
+    $request->file('avatar'),
+    "{$user->id}.jpg"
+);
+
+// writeStream(): write from any PHP resource — direct stream, never loads full bytes
+$resource = fopen('https://example.com/large-video.mp4', 'r');
+$path = 'videos/import.mp4';
+Storage::disk('s3')->putStream($path, $resource, ['StorageClass' => 'STANDARD_IA']);
+if (is_resource($resource)) fclose($resource);
+```
+
+**All three stream the file** — they `fopen($file->getRealPath(), 'r')` and `stream_copy_to_stream`
+to the driver's put-stream. Constant memory regardless of file size.
+
+**`putFileAs()` return value caveat** — returns the **path string** on success or **`false`**
+on failure. But the legacy Flysystem local-adapter bug ([laravel/framework#25288](https://github.com/laravel/framework/issues/25288))
+is still reproducible: on out-of-disk space, it creates a 0-byte file and returns the success
+path. **Always verify** with `Storage::size($path) > 0` (and ideally `->exists()`) after the
+call, especially on local ephemeral disks (Docker containers, CI runners).
+
+## S3 Multipart Uploads (Files >5 GB)
+
+S3 **PUT** hard-limits objects at **5 GB**. Files larger than that require multipart upload,
+which is a 3-step dance per part:
+
+1. **`CreateMultipartUpload`** — tell S3 "I'm starting a multipart upload to this key" → returns
+   an `UploadId`.
+2. **Per-part `UploadPart`** — sign a PUT URL for each 5 MB–5 GB chunk, upload in parallel from
+   the client. Each part returns an `{PartNumber, ETag}` from S3.
+3. **`CompleteMultipartUpload`** — hand S3 the full part list with ETags → S3 stitches them.
+
+```php
+// Server: open a multipart upload and hand the client a signed URL per part
+use Aws\S3\MultipartUploader;
+use Illuminate\Support\Facades\Storage;
+
+public function startMultipart(Request $request): JsonResponse
+{
+    $key = "uploads/{$request->user()->id}/" . Str::uuid() . '/' . $request->filename;
+
+    // flysystem-aws-s3-v3 ships MultipartUploader; for the simpler "presigned per part" flow:
+    $client = Storage::disk('s3')->getAdapter()->getClient();
+
+    $result = $client->createMultipartUpload([
+        'Bucket' => config('filesystems.disks.s3.bucket'),
+        'Key'    => $key,
+    ]);
+
+    // Store UploadId keyed to the user's session/job; the client polls it after each part
+    Cache::put("upload:{$result['UploadId']}", ['key' => $key, 'parts' => []], now()->addHour());
+
+    return response()->json([
+        'upload_id' => $result['UploadId'],
+        'key'       => $key,
+        'chunk_size' => 10 * 1024 * 1024, // 10 MB chunks
+    ]);
+}
+
+// Client-side: each chunk PUTs directly to a per-part presigned URL, reports ETag back
+// GET /api/uploads/{uploadId}/part-url?partNumber=3 → returns one UploadPart URL
+// POST /api/uploads/{uploadId}/complete  → finalises with the ETag list
+```
+
+**Practical alternatives for browser uploads:**
+- **`tus.io` resumable uploads** (see the **Chunked Uploads** section above) — handles the
+  multipart-on-client-side transparently and only needs ~10 lines of frontend + the
+  `tus-php-server` package. Best for "user drops a 20 GB video into the browser."
+- **`Uppy` / `FilePond` / `uppy-aws-s3-multipart` plugin** — JS plugins that speak S3 multipart
+  natively. Pair with the server-side chunk-signing endpoint above (15 lines of routes).
+- **`S3 Transfer Acceleration`** — for cross-region uploads, leave multipart to the client lib.
+
+**Don't roll your own chunk-and-reassemble** — you'd have to manage partial files, cleanup,
+and parallel transfer, all of which the AWS SDK already does. Use the SDK or a wrapper.
+
+## Testing File Uploads
+
+```php
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+
+public function test_user_can_upload_avatar(): void
+{
+    // fake() deletes everything in the temp dir at the end of the test.
+    // Use this when assertions are about the FILE EXISTING, not the contents.
+    Storage::fake('avatars');
+
+    $response = $this->post('/avatar', [
+        'avatar' => UploadedFile::fake()->image('me.jpg', 200, 200),
+    ]);
+
+    $response->assertOk();
+    Storage::disk('avatars')->assertExists('me.jpg'); // ✅
+    // Storage::disk('avatars')->get('me.jpg')  →  throws FileNotFoundException (deleted)
+}
+
+public function test_user_uploaded_image_was_resized_correctly(): void
+{
+    // persistentFake() keeps files on disk after the test so you can read them back
+    // for byte-level or content-level assertions. Required for:
+    //   - "the resized image is 300px wide"
+    //   - "the watermarked PDF has the user_id text in the right place"
+    //   - any test that introspects the upload's content
+    Storage::persistentFake('avatars');
+
+    $response = $this->post('/avatar', [
+        'avatar' => UploadedFile::fake()->image('me.jpg', 1000, 1000),
+    ]);
+
+    $response->assertOk();
+
+    // Read bytes that survived the test
+    $bytes = Storage::disk('avatars')->get('avatars/' . $response->json('filename'));
+    $image = \Intervention\Image\Laravel\Facades\Image::make($bytes);
+    $this->assertEquals(300, $image->width());
+
+    // Files persist between test runs until you call:
+    //   Storage::disk('avatars')->deleteDirectory('/');  // or a one-shot after the assertion
+}
+```
+
+**Where the faked disk actually lives on disk:**
+
+```
+storage/framework/testing/disks/{disk_name}/
+```
+
+Even if you call `Storage::fake('s3')`, **S3 is not contacted.** The fake swaps the disk for a
+local temp dir at `storage/framework/testing/disks/s3/`. This is the #1 source of "but my
+presigned URL was never called!" confusion — faked tests prove your code talks to the **filesystem
+adapter correctly**, not that it talks to S3. Add a real-S3 integration test outside the suite
+(or under `tests/Integration/` with a separate CI tag) for that layer.
+
+**`Storage::fake()` gotchas:**
+- Calling `Storage::fake()` without an argument fakes the `local` default disk, not the `public`
+  one. If your controller writes to `Storage::disk('public')`, call `Storage::fake('public')`.
+- `Storage::fake()` does NOT fake URL generation via `temporaryUrl()` — those return real
+  strings (signature isn't validated against a real S3 call). For real presigned-URL testing,
+  you need a MinIO container or S3 mock (see `aws-sdk-php-mock`).
+- Multiple `Storage::fake()` calls in one test → the second call **wipes the first** (the
+  underlying swap is single-slot). Use `Storage::fake('disk-a')` + `Storage::fake('disk-b')`
+  if you need both, in that order; or call `Storage::fake()` once and stack other disks onto
+  your test setup.
+
+**Three other useful asserters:**
+
+```php
+Storage::disk('photos')->assertExists('photo1.jpg');
+Storage::disk('photos')->assertExists(['photo1.jpg', 'photo2.jpg']);   // multiple
+Storage::disk('photos')->assertMissing('deleted.jpg');
+Storage::disk('photos')->assertDirectoryEmpty('/wallpapers');
+Storage::disk('photos')->assertCount('/wallpapers', 2);
+```
+
+Sources: [Laravel 13 Filesystem — Testing](https://laravel.com/docs/13.x/filesystem#testing) |
+[Laravel 13 Filesystem — Automatic Streaming](https://laravel.com/docs/13.x/filesystem#automatic-streaming) |
+[Laravel 13 Filesystem — Temporary Upload URLs](https://laravel.com/docs/13.x/filesystem#temporary-upload-urls) |
+[mnapoli/laravel-local-temporary-upload-url](https://github.com/mnapoli/laravel-local-temporary-upload-url) |
+[laravel/framework#25288](https://github.com/laravel/framework/issues/25288) |
+[AWS S3 Multipart Upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html)
+
+
+---
+
+## Updated from Research (2026-07-11, cycle 34)
+
+**file-uploads.md** (10 days stale — oldest untouched file since cycle 15) — three fresh gaps that
+AI models keep getting wrong, plus two minor clarifications on existing sections.
+
+- **`Storage::persistentFake()` for inspecting uploaded files in tests** — Laravel 11+ ships
+  `Storage::persistentFake($disk)` as the documented alternative to `Storage::fake($disk)`. The
+  default `fake()` method **deletes all files in its temporary directory at the end of the test**;
+  `persistentFake()` keeps them on disk so you can `file_get_contents()` them, render them in
+  `assertJson` body assertions, or eyeball them in `storage/framework/testing/disks/{name}/`. AI
+  models default to `fake()` and then write workarounds like saving the file path to a global;
+  `persistentFake()` is the answer. See the new **"Testing File Uploads"** section.
+- **`putFile()` / `putFileAs()` vs `store()` / `storeAs()` vs `writeStream()`** — three streaming
+  APIs that all avoid `file_get_contents()`-style full-file load, but with different ergonomics.
+  AI models default to `storeAs()` and never mention `putFileAs()`, which **auto-generates a UUID
+  filename and streams the file** (no path concatenation, no UUID line). `writeStream()` takes a
+  PHP resource (`fopen('http://...', 'r')`, a tmp file handle, an S3 read stream) and writes it
+  directly. New **"Streaming APIs: putFile vs storeAs vs writeStream"** subsection.
+- **`putFileAs` silent-zero-byte failure on out-of-disk** (Laravel framework issue #25288) — the
+  legacy Flysystem local-adapter bug from Laravel 5.6 is still reproducible when `putFileAs()`
+  hits a disk-full condition: it creates a 0-byte file and returns the success path instead of
+  `false`. AI models assume `putFileAs` returns `false` on failure. Documented in the
+  `Common Mistakes` list with the workaround (`Storage::size($path) > 0` check after upload).
+- **S3 multipart upload for files >5 GB** — the answer to the cycle-15 watch-list item. S3 PUT
+  hard-limits objects at 5 GB; larger files require multipart (`CreateMultipartUpload` →
+  individual `UploadPart` signed URLs → `CompleteMultipartUpload`). Laravel does not ship a
+  one-line API for this; the recommended pattern is `tus.io` (large/unreliable connections) or a
+  hand-rolled multipart driver. New **"S3 Multipart Uploads (Files >5 GB)"** subsection.
+- **`temporaryUploadUrl()` driver restrictions** — per the Laravel docs, only `s3` and `local`
+  drivers implement `temporaryUploadUrl()`. AI models frequently reach for it on the `r2` or
+  custom S3-compatible disks; it falls back to `RuntimeException("Driver ... does not support
+  generating temporary upload URLs.")`. For R2/MinIO/Backblaze, sign the URL via the underlying
+  AWS SDK directly (`Storage::disk('r2')->getAdapter()->getClient()->createPresignedRequest(...)`).
+  Documented inline in the **"Direct S3 Upload (Presigned URL — No Server Involvement)"** section.
+
+**Common Mistakes list in `file-uploads.md` grew 8 → 13 entries** — added "Calling
+`temporaryUploadUrl()` on R2 / MinIO / Backblaze without an SDK fallback", "Assuming
+`Storage::fake('s3')` exercises the S3 driver (it writes to local temp — fake disk lives at
+`storage/framework/testing/disks/s3/`)", "Using `Storage::fake()` when you need to inspect the
+uploaded bytes after the test (use `persistentFake()` instead)", "Assuming `putFileAs()` returns
+`false` on out-of-disk space (legacy Flysystem local-adapter bug → 0-byte file, see framework
+#25288)", and "Putting the `finfo` resource handle in a controller method body without
+`finfo_close()` (resource leak across Octane requests)".
+
+**SKILL.md** bumped `1.22.19 → 1.22.20`; 5 new cross-reference rows added (Storage::fake vs
+persistentFake, putFile/putFileAs/writeStream decision matrix, S3 multipart >5 GB,
+temporaryUploadUrl driver restrictions, finfo close hygiene).
+
+**No version-stamp change to "Active Versions"** — `v13.19.0` / `v12.63.0` unchanged from
+cycle 33. No Laravel 13.x release in the last 6 hours (cycle 34 trigger time: 2026-07-11
+06:09 UTC). No file other than file-uploads.md was touched this cycle.
+
+**Watch list for cycle 35:**
+- **`localization.md`** — touched in cycle 27 (14 days stale), next gap-fill candidate. Likely
+  targets: Laravel 13 `php artisan translatable:generate` (community / 13-starter-kit), ICU plural
+  variants in Blade components (vs full `MessageFormat`), the Translation Memoization handler for
+  Carbon dates, and the new `Locale::canonicalize()` helper.
+- **`artisan.md`** — touched in cycle 4 (37 days stale, oldest file in the entire skill). Likely
+  targets: `php artisan db:show --read --write`, scheduler `everyTwoHours()->between('...', '...')`,
+  `Artisan::call()` exit-code propagation under Octane, and the new `$this->components->bulletList()`.
+- **v13.19.1** — likely mid-to-late July 2026 once 5–10 post-13.19 PRs accumulate. Watch
+  [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
+- **v13.20.0** — first minor after 13.19, likely late July / early August 2026.
+- **Laravel 12 EOL** — bug fixes end **August 13, 2026** (33 days from cycle time). Plan
+  migrations off 12.x accordingly.
