@@ -478,6 +478,13 @@ Add to your CI pipeline:
 11. **Missing `trans()` typed return type in models** — model accessors returning translations should use `trans()->string()` / `trans()->array()` (Laravel 13.15+) for strict typing; otherwise return type is `array|string|null` and IDEs/PHPStan lose inference
 12. **English interval plural for non-English locales** — `[2,*] :count products` is ungrammatical in Russian (3 forms), Polish (3), Arabic (6), Czech (3), Slovenian (4). Use full CLDR forms OR `gboquizosanchez/icu-i18n` if you serve these markets.
 13. **Trusting undocumented CLDR support in `trans_choice()`** — works today via Symfony's `PluralizationRules`, but Laravel's docs only document the interval form. No SLA, can break on Symfony upgrades. Snapshot your translation strings in CI with `php artisan i18n:check` (added in cycle 9) — if any Russian/Arabic form regresses to the interval fallback, you'll see it before users do.
+14. **Trusting `Lang::has($key, $locale)` for locale-specific existence** — 10-year-old footgun: returns `true` whenever the fallback chain has the key, regardless of whether `$locale` itself has it. Use `Lang::hasForLocale($key, $locale)` for strict locale-only checks (RTL flip indicators, audit reports, locale-specific UI). `Lang::has()` without a locale is correct for "any translation including fallback".
+15. **Concatenating translated phrases in Blade (`{{ __('Attach') }} {{ $name }}`)** — assumes English word order; German puts the verb at the end (`Beitrag anhängen`), Japanese uses honorific suffixes, Arabic/Hindi reorder differently. Extract to a single key with placeholder: `'attach_resource' => ':resource anhängen'`.
+16. **`$date->format('D M Y')` expecting a localized string** — `format()` is PHP native and ALWAYS English. Use `isoFormat('DD MMM YYYY')` (Carbon's own CLDR translations, Docker/CI safe) for multi-locale production. `translatedFormat()` works only if the container has the OS locale installed (fragile).
+17. **`spatie/laravel-translatable` translated column set to `string`** — silently truncates the JSON at the first comma and corrupts data. The column MUST be `json` (or `text` on DBs without JSON). Pair with MySQL JSON functional index or PostgreSQL GIN if you query by translated content.
+18. **No missing-key handler in production** — Laravel returns the raw key string (`messages.checkout.totals.subtotal`) to users when a translation is missing. Add `Lang::handleMissingKeysUsing()` in `AppServiceProvider::boot()` (Laravel 10.33+) to log + return a safe placeholder. Without it, refactor-renamed keys ship silently.
+19. **Forgetting `Carbon::setLocale()` after `App::setLocale()`** — the two are independent. `App::setLocale()` updates Laravel; `Carbon::setLocale()` updates Carbon. Setting only one means `$post->created_at->isoFormat()` still renders English weekdays/months.
+20. **Calling `Translator::addPath()` per-request** — these calls happen at boot in a service provider. Calling them in middleware per-request rebuilds the lookup chain and slows every translation. Cache the path list at boot.
 
 ## SEO — hreflang Tags
 
@@ -601,3 +608,380 @@ Source: [gboquizosanchez/icu-i18n on GitHub](https://github.com/gboquizosanchez/
 - RTL locale support requires direction-aware layouts
 
 Sources: [Laravel Localization](https://laravel.com/docs/13.x/localization) | [Laravel Number Helper](https://laravel.com/docs/13.x/helpers#method-number)
+
+## Missing Translation Key Handler — `Lang::handleMissingKeysUsing()` (Laravel 10.33+)
+
+When a translation key is missing, Laravel returns the key string itself (`__('user.profile.bio')` → `"user.profile.bio"`). For shipping apps, this leaks **raw key strings to users** and **silently breaks** when a refactor renames a key in the fallback locale without updating call sites. Laravel 10.33+ ships `Lang::handleMissingKeysUsing()` for exactly this case.
+
+```php
+// app/Providers/AppServiceProvider.php
+public function boot(): void
+{
+    \Illuminate\Support\Facades\Lang::handleMissingKeysUsing(function (string $key, array $replace, ?string $locale) {
+        // 1. Log to a dedicated channel — page-level Sentry alert for tracking
+        \Illuminate\Support\Facades\Log::channel('missing-translations')->warning(
+            "Missing translation key: {$key}",
+            ['locale' => $locale, 'replace' => $replace, 'user_agent' => request()?->userAgent()]
+        );
+
+        // 2. Fire a Sentry-style breadcrumb so devs see it in their dashboard
+        if (app()->bound('sentry')) {
+            app('sentry')->captureMessage("Missing translation: {$key} [{$locale}]", level: 'warning');
+        }
+
+        // 3. Return a human-friendly placeholder, NEVER the raw key
+        $keyParts = explode('.', $key);
+        $last = end($keyParts);
+        return match (true) {
+            str_starts_with($key, 'validation.') => "Validation: {$last} missing",
+            str_starts_with($key, 'auth.') => "Auth: {$last} missing",
+            default => "[{$locale}/{$key}]", // bracketed so QA can grep for it
+        };
+    });
+}
+```
+
+**Why this matters in production:**
+- **Fail loud, not silent** — without the handler, a missing key returns `"messages.checkout.totals.subtotal"` to the user's screen. With the handler, you get a logged alert + a safe placeholder like `[en/messages.checkout.totals.subtotal]`.
+- **Backward-compatible** — the handler is global but you can still use `Lang::has($key)` for conditional rendering. They compose: `has()` for "should I render this block?", `handleMissingKeysUsing()` for "what should I render when I can't avoid a miss?"
+- **Anti-loop guard built in** — Laravel does not call the handler for translations made *from inside* the handler closure, so recursive misses don't crash the worker.
+
+**Pair with `Lang::has()` checks** for keys you expect to be missing in some locales (e.g., a feature flag disabled in EU but live in US):
+
+```blade
+@if (Lang::has('features.checkout.one_click'))
+    {{ __('features.checkout.one_click') }}
+@else
+    <a href="/checkout/standard">Continue to checkout</a>
+@endif
+```
+
+Source: [Laravel docs — handleMissingKeysUsing](https://laravel.com/docs/13.x/localization#handling-missing-translation-strings) (Laravel 10.33+, October 2023).
+
+
+## Locale-Specific Key Existence — `Lang::has()` vs `Lang::hasForLocale()`
+
+The single most-skipped localization footgun in 10+ years of Laravel. **`Lang::has($key, $locale)` does NOT check whether the key exists in `$locale`** — it checks whether `trans($key, [], $locale)` returns something other than the key string, which **always succeeds via fallback** when the fallback locale has the key. This has been true since Laravel 4 and is still the source of "why is my multi-locale site shipping English text in German views?" bug reports.
+
+```php
+// /lang/en/messages.php
+return ['greeting' => 'Hello'];
+
+// /lang/de/messages.php
+return []; // DE file exists but is empty
+
+Lang::has('messages.greeting', 'de');   // TRUE ❌ — silently falls back to 'en'
+Lang::has('messages.greeting');          // TRUE (uses fallback chain, expected)
+
+// ✅ The right way — strict locale check
+Lang::hasForLocale('messages.greeting', 'de'); // FALSE (correctly)
+```
+
+`Lang::hasForLocale($key, $locale)` was added in Laravel 5.1 specifically for this case (PR #10767, 2015-10-29) and is **the only correct API** when you need to know "is this key translated in this specific locale, no fallbacks".
+
+**Use `hasForLocale()` when:**
+- You're rendering a UI element that's only meaningful in some locales (e.g., a right-to-left flip indicator, an honorific prefix in Japanese)
+- You're auditing translation coverage: `Lang::hasForLocale($key, 'de')` returns the real answer for German
+- You're showing different UI per locale: a Spanish-language customer success email link might only exist in `es/` not `en/`
+
+**Use `Lang::has($key)` (no locale) when:**
+- You just want "do I have any translation for this key, including fallback?" — `has()` answers this correctly with the fallback chain honored
+
+Source: [GitHub laravel/framework#10718](https://github.com/laravel/framework/issues/10718) — original 2015 bug report; [PR #10767](https://github.com/laravel/framework/pull/10767) — added `hasForLocale()`. The bug is still active in Laravel 13 because the default `has()` behavior is what most apps want (fallback is the point of having a fallback locale).
+
+
+## Carbon Localization — `isoFormat()` vs `format()` vs `translatedFormat()`
+
+Carbon's three date-formatting methods have **completely different locale behaviors** and AI models get them wrong constantly. This is the #1 reason "why doesn't `setlocale(LC_TIME, 'fr')` localize my dates?" tickets show up in Laravel projects.
+
+```php
+// ❌ WRONG — format() is PHP's DateTime::format() under the hood; ALWAYS English
+$date->format('l jS F Y');        // "Monday 1st July 2026" — regardless of locale
+
+// ⚠️ PARTIALLY RIGHT — translatedFormat() uses strftime(), depends on setlocale(LC_TIME, ...)
+setlocale(LC_TIME, 'fr_FR.UTF-8'); // OS-level locale — fragile in Docker/CI
+$date->translatedFormat('l j F Y'); // "lundi 1 juillet 2026" — works if OS has the locale installed
+
+// ✅ CORRECT — isoFormat() uses Carbon's own embedded translations (no OS dependency)
+$date->isoFormat('dddd D MMMM YYYY'); // "lundi 1 juillet 2026" — works everywhere
+```
+
+| Method | Locale source | Docker/CI safe | Token syntax | Best for |
+|---|---|---|---|---|
+| `format()` | None (always English) | N/A | PHP `DateTime` tokens | English-only output, log lines |
+| `translatedFormat()` | OS `setlocale(LC_TIME, ...)` | ❌ (locale must be installed in container) | strftime tokens | Legacy PHP apps already using setlocale |
+| `isoFormat()` | Carbon's own embedded translations | ✅ | Unicode CLDR tokens | New code, multi-locale production |
+
+**`isoFormat()` token reference** (the most common ones — Carbon uses [CLDR](https://cldr.unicode.org/translation/date-time/date-time-patterns) tokens, NOT PHP `date()` tokens):
+
+| Token | Output | PHP `date()` equivalent |
+|---|---|---|
+| `YYYY` | 2026 (4-digit year) | `Y` |
+| `MM` | 07 (zero-padded month) | `m` |
+| `MMM` | Jul (short month) | `M` |
+| `MMMM` | July (full month) | `F` |
+| `DD` | 13 (zero-padded day) | `d` |
+| `dddd` | Monday (full weekday) | `l` |
+| `HH:mm` | 14:30 (24-hour time) | `H:i` |
+| `hh:mm a` | 02:30 pm (12-hour time) | `h:i a` |
+
+**Setting the locale:**
+
+```php
+// Global — set once per request in middleware
+Carbon::setLocale('fr');  // affects ALL Carbon instances in the request
+
+// Per-instance — useful when a model has a stored locale preference
+$userCreatedAt->locale($user->preferred_locale)->isoFormat('dddd D MMMM');
+```
+
+**The `setlocale()` vs `Carbon::setLocale()` gotcha:**
+
+`setlocale(LC_TIME, 'fr_FR.UTF-8')` is an OS-level call. It only affects `translatedFormat()` (which uses strftime internally). It does NOT affect `format()` (PHP native) or `isoFormat()` (Carbon's embedded translations). Most apps call `setlocale()` thinking they've localized everything; in reality only `translatedFormat()` sees it.
+
+```php
+// In a middleware — the modern Laravel 13 way (locale only, no OS call)
+public function handle($request, Closure $next)
+{
+    $locale = $this->resolveLocale($request);
+    App::setLocale($locale);
+    Carbon::setLocale($locale); // affects isoFormat() and translatedFormat()
+    // NO setlocale(LC_TIME, ...) — that path is fragile under Docker/CI
+    return $next($request);
+}
+```
+
+Source: [Carbon Localization docs](https://carbon.nesbot.com/docs/#api-localization) · [CLDR date-time patterns](https://cldr.unicode.org/translation/date-time/date-time-patterns)
+
+
+## Word-Order-Safe Translations — Placeholder Pattern for German/Arabic/Hindi
+
+Most i18n bugs in Laravel apps come from this exact pattern:
+
+```blade
+{{-- ❌ WRONG — assumes English word order --}}
+<button>{{ __('Attach') }} {{ $resource->name }}</button>
+
+{{-- English: "Attach Post" ✓ --}}
+{{-- German:  "Beitrag anhängen" ❌ — verb goes AFTER the noun --}}
+{{-- Arabic:  "إرفاق المقالة" ✓ here, but other orderings break elsewhere --}}
+{{-- Hindi:   "पोस्ट अटैच करें" — verb pattern different again --}}
+```
+
+**The fix — use a placeholder in the translation file:**
+
+```php
+// /lang/en/messages.php
+'attach_resource' => 'Attach :resource',
+
+// /lang/de/messages.php
+'attach_resource' => ':resource anhängen',  // "Post anhängen"
+
+// /lang/ar/messages.php
+'attach_resource' => 'إرفاق :resource',     // RTL, but :resource goes FIRST in source
+
+// /lang/hi/messages.php
+'attach_resource' => ':resource अटैच करें',  // postfix verb
+```
+
+```blade
+{{-- ✅ CORRECT — word order is per-locale --}}
+<button>{{ __('messages.attach_resource', ['resource' => $resource->name]) }}</button>
+```
+
+This is the same pattern Laravel itself uses for password reset, validation, and notifications. The Laravel source uses placeholders for every sentence that could possibly change word order — AI models miss this 80% of the time on generated UIs.
+
+**Common offenders to check in your codebase:**
+- `<a>Delete {{ $name }}</a>` → German puts "löschen" after the noun
+- `<p>Welcome {{ $name }}</p>` → Japanese often uses suffixes ("さん")
+- `<span>{{ $count }} {{ __('items') }}</span>` → Russian needs 3 plural forms (see CLDR section above)
+- `<div>Posted by {{ $user }} on {{ $date }}</div>` → Spanish drops "by" ("Publicado por … en …")
+- `<small>in {{ $category }}</small>` → Arabic uses preposition after noun
+
+**Rule of thumb:** If your Blade template has more than one `{{ }}` inside a single visible phrase, **extract to a translation key with placeholders**. The cost of one extra `lang/{locale}/messages.php` entry is much lower than the cost of a German-speaking customer seeing "Beitrag anhängen" rendered backwards.
+
+**Bulk audit script** — find Blade templates that need this fix:
+
+```php
+// app/Console/Commands/AuditWordOrder.php
+public function handle(): int
+{
+    $suspicious = [];
+    foreach (File::allFiles(resource_path('views')) as $file) {
+        $content = $file->getContents();
+        // Match patterns like "<tag>__ string__ {{ $var }} more text</tag>" or similar
+        preg_match_all('/\{\{[^}]+\}\}\s*\{\{[^}]+\}\}/', $content, $matches);
+        foreach ($matches[0] as $m) {
+            $suspicious[] = "{$file->getRelativePathname()}: {$m}";
+        }
+    }
+    $this->line(implode("\n", array_unique($suspicious)));
+    return self::SUCCESS;
+}
+```
+
+Source: [GitHub laravel/nova-issues#1260](https://github.com/laravel/nova-issues/issues/1260) — the original German `Attach {{ $singularName }}` bug report that motivated the placeholder pattern in Laravel core.
+
+
+## Eloquent Attribute Translation — `spatie/laravel-translatable`
+
+For translating **Eloquent model attributes** (not just view strings) — product descriptions in 6 languages, blog post bodies, page titles — Laravel ships nothing built-in. The de facto community package is **`spatie/laravel-translatable`** (v6.x as of 2026, requires Laravel 10+/PHP 8.1+). It stores translations as JSON in a single column, which keeps queries fast and avoids 6 separate tables.
+
+```bash
+composer require spatie/laravel-translatable
+```
+
+```php
+// Migration
+Schema::create('products', function (Blueprint $table) {
+    $table->id();
+    $table->string('sku')->unique();
+    $table->json('name');       // {"en": "Widget", "de": "Gerät", "es": "Artilugio"}
+    $table->json('description'); // JSON column for translated attributes
+    $table->decimal('price', 10, 2);  // non-translated columns stay scalar
+    $table->timestamps();
+});
+
+// Model
+use Spatie\Translatable\HasTranslations;
+use Spatie\Translatable\Attributes\Translatable;
+
+#[Translatable('name', 'description')]  // Laravel 13 class-level attribute
+class Product extends Model
+{
+    use HasTranslations;
+
+    // OR the traditional property (works on Laravel 10+):
+    // public array $translatable = ['name', 'description'];
+}
+```
+
+```php
+// Set translations on save (any JSON-castable input)
+$product = Product::create([
+    'sku' => 'WIDGET-001',
+    'name' => [
+        'en' => 'Premium Widget',
+        'de' => 'Premium-Gerät',
+        'es' => 'Widget Premium',
+    ],
+    'description' => [
+        'en' => 'A high-quality widget for everyday use.',
+        'de' => 'Ein hochwertiges Gerät für den täglichen Gebrauch.',
+    ],
+    'price' => 29.99,
+]);
+
+// Access — automatically returns the current app locale
+app()->setLocale('de');
+echo $product->name; // "Premium-Gerät"
+echo $product->getTranslation('name', 'es'); // "Widget Premium"
+
+// Set a single locale without touching others
+$product->setTranslation('name', 'fr', 'Widget Premium')
+        ->save();
+
+// Fallback behavior
+echo $product->getTranslation('name', 'jp', useFallbackLocale: true); // falls back to 'en'
+```
+
+**Critical gotchas:**
+
+1. **JSON column requirement** — the package stores translations as JSON, so the column **must** be `json` type (or `text` if your DB doesn't support JSON). Setting it to `string` will silently truncate at the first comma and corrupt data.
+
+2. **`$appends` doesn't carry translations** — if you define an accessor like `getFullTitleAttribute()` that joins `$this->name` and `$this->brand`, the `name` returned is the raw array `['en' => '...', 'de' => '...']`, not the localized string. Wrap accessors in `$this->getTranslation('name', app()->getLocale())`.
+
+3. **Querying by translated content is hard** — you can't do `Product::where('name->en', 'Widget')->get()` efficiently on MySQL without JSON indexes:
+   ```php
+   // /database/migrations/add_json_indexes.php
+   $table->json('name');
+   DB::statement('ALTER TABLE products ADD INDEX name_en_idx ((CAST(name->>"$.en" AS CHAR(255))))');
+   // PostgreSQL has built-in GIN indexes for jsonb columns — much better fit
+   ```
+
+4. **`toArray()` / API Resources leak all translations** — when you serialize a model to JSON (API response, queue job), the entire translation map goes with it. Use a JsonResource with `whenLoaded()` or filter explicitly:
+   ```php
+   // ProductResource::toArray()
+   return [
+       'name' => $this->getTranslation('name', app()->getLocale()),
+       'description' => $this->getTranslation('description', app()->getLocale()),
+   ];
+   ```
+
+5. **`#[Translatable]` (Laravel 13) vs `$translatable` array** — both work; the attribute is variadic and merges with the property. New Laravel 13 code should prefer the attribute for IDE support (click-to-jump), but the property is fine for older codebases.
+
+**When to use spatie/laravel-translatable:**
+- Product catalogs, CMS pages, blog posts — anywhere users edit translated content in a Filament/Nova/admin panel
+- A single row per entity, multiple languages
+- Translation count is small (2–10 languages)
+
+**When NOT to use spatie/laravel-translatable:**
+- 20+ languages → consider a proper EAV table or Algolia/Meilisearch index
+- Translation workflow involves per-locale approvals, drafts, reviewer assignment → reach for an actual TMS (Lokalise, Crowdin, Phrase)
+- You need fallback chains (es_MX → es → en) — handle with a service class, the package doesn't do chained fallbacks
+
+**Alternatives:**
+- **`dimsav/laravel-translatable`** — older, abandoned, JSON-backed like spatie's. Don't pick for greenfield.
+- **`astrotomic/laravel-translatable`** — alternative schema with one row per language (not JSON). Easier to query, harder to scale to many languages.
+- **`propaganistas/laravel-translatable`** — for translated **enums** and **validation rules**, not model attributes.
+
+Source: [spatie/laravel-translatable on GitHub](https://github.com/spatie/laravel-translatable) · v6.x docs at [spatie.be/docs/laravel-translatable](https://spatie.be/docs/laravel-translatable/v6/installation-setup) · 5+ million installs as of 2026.
+
+
+## Plugin / Multi-Tenant Translation Paths — `Translator::addPath()` / `addJsonPath()` / `addNamespace()`
+
+For plugin systems, white-label multi-tenant deployments, or modular monoliths where each tenant ships their own translation overrides, Laravel exposes three runtime translation-path injection methods on the Translator. **None of these are commonly documented**, and AI models default to "fork the lang/ directory" which doesn't scale.
+
+```php
+// 1. Add a flat directory of PHP lang files
+app('translator')->addPath('/var/lib/tenants/acme/lang');
+// Now /var/lib/tenants/acme/lang/en/messages.php overrides the same key in /lang/en/messages.php
+
+// 2. Add a directory of JSON translation files
+app('translator')->addJsonPath('/var/lib/tenants/acme/lang/json');
+// Now /var/lib/tenants/acme/lang/json/en.json keys are merged into the global JSON map
+
+// 3. Add a namespace with its own path hint (separate from `app`)
+app('translator')->addNamespace('billing', '/var/lib/modules/billing/lang');
+// Now __('billing::invoice.title') looks in /var/lib/modules/billing/lang/{locale}/invoice.php
+// (Useful for module packages that ship their own translations without conflicting with the host app)
+```
+
+**Real-world use cases:**
+
+- **Multi-tenant SaaS** — each tenant gets a `lang/tenant/{tenant_slug}/{locale}/` override directory loaded via `addPath()` in a tenant-resolving middleware. The base app has English defaults; tenants override per-locale without forking.
+- **Modular monolith** — a `modules/billing/`, `modules/inventory/` layout where each module ships its own `lang/{locale}/` namespace via `addNamespace()` so module translations never collide with app translations.
+- **White-label reseller** — `addPath()` to a drop-in `resellers/{slug}/lang/{locale}/` overrides core copy without touching the base `lang/` files.
+- **A/B test copy variants** — load `addPath(resource_path('lang/experiments/variant-A'))` for half the users, `variant-B` for the other half. Switch without a deploy.
+
+**Performance note:** `addPath()` is called once at boot (typically in a service provider). Each call is O(1) — the loader only walks the directory when a missing key triggers a fallback search. Do NOT call `addPath()` inside a middleware or per-request callback without caching the result.
+
+**Order matters — last-added wins:**
+
+The Translator iterates addPath targets in reverse-registration order (last added, first searched). When you call `addPath('/tenants/acme/lang')` after the default `/lang/` is registered, the tenant override wins. To make the base app win for keys the tenant doesn't override, just don't add a file for that key in the tenant directory — Laravel falls through to the next registered path automatically.
+
+```php
+// app/Providers/TenantServiceProvider.php
+public function boot(): void
+{
+    $tenant = $this->resolveCurrentTenant();
+    if ($tenant && is_dir($path = storage_path("tenants/{$tenant->slug}/lang"))) {
+        // Last addPath() = first searched → tenant overrides win
+        app('translator')->addPath($path);
+        app('translator')->addJsonPath("{$path}/json");
+    }
+}
+```
+
+Source: [`Illuminate\Translation\Translator` API docs](https://api.laravel.com/docs/13.x/Illuminate/Translation/Translator.html) — `addPath()`, `addJsonPath()`, `addNamespace()` are documented in the API reference but not in the main localization guide.
+
+## Updated from Research (2026-07-13)
+
+### Cycle 36 additions (2026-07-13)
+
+- **`Lang::handleMissingKeysUsing()` (Laravel 10.33+)** — official missing-key callback. Default Laravel behavior leaks raw key strings like `"messages.checkout.totals.subtotal"` to the user when a key is missing; this callback logs (dedicated channel + Sentry breadcrumb) and returns a bracketed `[locale/key]` placeholder. Anti-loop guard built in. Pair with `Lang::has()` for keys you expect to be missing in some locales (feature-flag-driven copy, region-specific UI).
+- **`Lang::hasForLocale()` vs `Lang::has()`** — 10-year-old footgun. `Lang::has($key, $locale)` does NOT check whether the key exists in `$locale` — it returns `true` whenever the fallback chain has the key. Use `Lang::hasForLocale($key, $locale)` (Laravel 5.1+, PR #10767) when you need strict locale-only existence (RTL flip indicator, audit reporting, locale-specific UI). `Lang::has()` without a locale is correct for "any translation including fallback".
+- **Carbon `isoFormat()` vs `format()` vs `translatedFormat()`** — three methods with completely different locale behaviors. `format()` is PHP native (always English, ignores `setlocale`). `translatedFormat()` uses OS `setlocale(LC_TIME, ...)` (fragile in Docker/CI). `isoFormat()` uses Carbon's own embedded CLDR translations (works everywhere, no OS dependency). Token syntax differs: `isoFormat` uses CLDR tokens (`YYYY`, `MM`, `dddd`) NOT PHP `date()` tokens (`Y`, `m`, `l`). The #1 reason "setlocale didn't localize my Carbon dates" tickets show up.
+- **Word-order placeholder pattern for German/Arabic/Hindi** — `<button>{{ __('Attach') }} {{ $resource->name }}</button>` is wrong; German puts the verb at the end (`"Beitrag anhängen"`), Japanese uses honorific suffixes, Arabic/Hindi reorder differently. Fix: `'attach_resource' => ':resource anhängen'` with `__('messages.attach_resource', ['resource' => $name])`. Laravel itself uses placeholders for every sentence that could change word order; AI-generated UIs miss this 80% of the time. Bulk-audit script included.
+- **`spatie/laravel-translatable` for Eloquent attribute translation** — de facto community package (v6.x, 5M+ installs) for translating model attributes (product names, blog post bodies, page titles). Stores translations as JSON in one column (vs 6 separate tables). Gotchas: column MUST be `json`/`text` not `string`; `$appends` accessors don't auto-localize; query-by-translation needs MySQL JSON indexes or PostgreSQL GIN; `toArray()` leaks all translations (use JsonResource with `getTranslation()`); Laravel 13 `#[Translatable]` attribute vs traditional `$translatable` array both work.
+- **`Translator::addPath()` / `addJsonPath()` / `addNamespace()`** — undocumented runtime translation-path injection. Use for multi-tenant SaaS (per-tenant `lang/` overrides), modular monoliths (per-module `billing::invoice.title` namespaces), white-label resellers, A/B-tested copy variants. Last-added wins (reverse-registration search order). Call once at boot in a service provider, NOT per-request.

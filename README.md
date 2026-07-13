@@ -7,9 +7,9 @@
 [![MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Auto-updated](https://img.shields.io/badge/Auto--updated-6h-blue?style=flat-square)](#auto-updater)
 
-> **Latest tracked version:** Laravel **13.19.0** + **12.63.0** (July 7, 2026) — both tagged same day. Cycle 33: observers.md gap-fill — ShouldQueue on observers (ModelNotFoundException gotcha) + ShouldHandleEventsAfterCommit (GitHub #52440) + Octane state leak + withoutEvents/updateQuietly/saveQuietly decision matrix + Event::fake patterns + setObservableEvents (cycle 32: performance.md gap-fill — EXPLAIN/index composite order rules + cache stampede SWaR + lock patterns; cycle 31: Http::query, Collection::reduceInto, Str::counted, query/queryJson helpers, bulk SQS, assertSoftDeleted deletedAtColumn, DateRule past/future helpers, PG whereDate/whereTime fix) (cycle 34: file-uploads.md gap-fill — Storage::fake vs persistentFake decision matrix (bytes after the test) + putFile/putFileAs/writeStream vs storeAs decision matrix + S3 multipart >5 GB pattern + temporaryUploadUrl driver restrictions (s3 + local only) + finfo Octane hygiene; cycle 33 = observers above) (cycle 35: ai.md JsonSchema anyOf + union types)
+> **Latest tracked version:** Laravel **13.19.0** + **12.63.0** (July 7, 2026) — both tagged same day. Cycle 36: localization.md gap-fill — Lang::handleMissingKeysUsing (Laravel 10.33+) + Lang::hasForLocale vs Lang::has (10-yr footgun) + Carbon isoFormat vs format vs translatedFormat + word-order placeholder pattern (DE/AR/HI/JP) + spatie/laravel-translatable Eloquent attribute translation (v6.x) + Translator::addPath/addJsonPath/addNamespace for multi-tenant translation paths (cycle 35: ai.md JsonSchema anyOf + union types) (cycle 34: file-uploads.md gap-fill — Storage::fake vs persistentFake decision matrix + putFile/putFileAs/writeStream vs storeAs decision matrix + S3 multipart >5 GB pattern + temporaryUploadUrl driver restrictions (s3 + local only) + finfo Octane hygiene) (cycle 33: observers.md gap-fill — ShouldQueue on observers + ShouldHandleEventsAfterCommit + Octane state leak + withoutEvents/updateQuietly/saveQuietly decision matrix + Event::fake patterns + setObservableEvents)
 > **PHP baseline:** 8.3.32 / 8.4.23 / 8.5.8 (all security fixes as of 2026-07-01 batch)
-> **Skill version:** v1.22.21 (35 auto-update cycles since 2026-06-28)
+> **Skill version:** v1.22.22 (36 auto-update cycles since 2026-06-28)
 
 ---
 
@@ -91,7 +91,7 @@ The skill is **auto-updated every 6 hours** via a cron job. The agent decides wh
 4. Updates files with new patterns + source URLs
 5. Commits and pushes to `main` branch automatically
 
-**Last research cycle:** 2026-07-11 18:06 UTC (cycle 35)
+**Last research cycle:** 2026-07-13 00:32 UTC (cycle 36)
 
 ---
 
@@ -114,8 +114,8 @@ All skill files are `.md` — no code generation needed. Just update patterns, a
 
 - **19 topic files** covering full Laravel development lifecycle
 - **Version-aware** — Laravel 13, 12, 11 covered
-- **~10,330 lines** of production-ready content
-- **Update cadence:** Every 6 hours via OpenClaw cron — 35 cycles in last 14 days (each targeting the oldest untouched files or new CVEs)
+- **~10,715 lines** of production-ready content
+- **Update cadence:** Every 6 hours via OpenClaw cron — 36 cycles in last 14 days (each targeting the oldest untouched files or new CVEs)
 - **Auto-updated** via OpenClaw cron — never stale
 - **MIT licensed** — free for everyone
 

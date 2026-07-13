@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.21
+version: 1.22.22
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -112,6 +112,13 @@ metadata:
 | `temporaryUploadUrl()` driver restrictions (s3 + local only — R2/MinIO/Backblaze fall back to SDK) | `file-uploads.md` (Direct S3 Upload section) | R2/MinIO/Backblaze throw `RuntimeException("Driver ... does not support generating temporary upload URLs.")` — reach for `Storage::disk('r2')->getAdapter()->getClient()->createPresignedRequest(...)` directly |
 | `finfo` resource hygiene on Octane (`finfo_open()` once, `finfo_close()` on `Octane::flush()`) | `file-uploads.md` (Common Mistakes #13) + `security.md` (Anti-Extension-Spoofing section) | Opening `finfo` per-request under Octane leaks resource handles across workers; bind it in `AppServiceProvider::register()` and close on flush |
 
+| `Lang::handleMissingKeysUsing()` (Laravel 10.33+) — log + safe placeholder for missing keys | `localization.md` (Missing Translation Key Handler section) | Default behavior leaks raw key strings (`messages.checkout.totals.subtotal`) to the user; this callback logs to a dedicated channel + fires a Sentry breadcrumb and returns a bracketed `[locale/key]` placeholder. Anti-loop guard built in. Pair with `Lang::has()` for keys you expect to be missing in some locales |
+| `Lang::hasForLocale()` vs `Lang::has()` (PR #10767, Laravel 5.1+) | `localization.md` (Locale-Specific Key Existence section) | 10-year-old footgun — `Lang::has($key, $locale)` returns `true` whenever the fallback chain has the key. Use `Lang::hasForLocale()` for RTL flip indicators, audit reports, locale-specific UI; `Lang::has()` (no locale) is correct for "any translation including fallback" |
+| Carbon `isoFormat()` vs `format()` vs `translatedFormat()` | `localization.md` (Carbon Localization section) | `format()` is PHP native (always English); `translatedFormat()` needs `setlocale(LC_TIME, ...)` and breaks in Docker/CI; `isoFormat()` uses Carbon's embedded CLDR translations — works everywhere. CLDR token syntax (`YYYY`/`MM`/`dddd`) is NOT the same as PHP `date()` tokens |
+| Word-order-safe translations (placeholder pattern for German/Arabic/Hindi/Japanese) | `localization.md` (Word-Order-Safe Translations section) | `<button>{{ __('Attach') }} {{ $resource->name }}</button>` is wrong; German puts the verb at the end (`Beitrag anhängen`), Japanese uses honorific suffixes. Extract to one key with placeholder: `'attach_resource' => ':resource anhängen'`. AI-generated UIs miss this 80% of the time; bulk-audit script included |
+| `spatie/laravel-translatable` for Eloquent attribute translation (v6.x, 5M+ installs) | `localization.md` (Eloquent Attribute Translation section) | De facto community package for translating model attributes (product names, blog post bodies, page titles). Stores translations as JSON in one column. Column MUST be `json`/`text` not `string`; `$appends` accessors don't auto-localize; `toArray()` leaks all translations (use JsonResource with `getTranslation()`) |
+| `Translator::addPath()` / `addJsonPath()` / `addNamespace()` — undocumented runtime translation-path injection | `localization.md` (Plugin / Multi-Tenant Translation Paths section) | Use for multi-tenant SaaS (per-tenant `lang/` overrides), modular monoliths (per-module `billing::invoice.title` namespaces), white-label resellers, A/B-tested copy variants. Last-added wins (reverse-registration search order). Call once at boot in a service provider, NOT per-request |
+
 ## Critical Rules (Never Forget)
 
 - **`env()` only in config files** — returns null after `config:cache`
@@ -135,6 +142,9 @@ metadata:
 - **Discriminated unions: `anyOf()` not `enum()`** (Laravel 13.17+) — when an AI structured-output field has multiple shapes (article / video / podcast), never collapse to `$schema->string()->enum([...])`. Use `$schema->anyOf([...])` so each variant keeps its type-specific fields; branch on the discriminator in your response handler. See `ai.md` (Advanced JSON Schema section).
 - **Multi-type unions: `JsonSchema::union()` not `string|null`** (Laravel 13.17+) — when a JSON field can be `string` / `number` / `boolean`, don't fall back to a permissive `string` cast. `JsonSchema::union(['string', 'number'])->nullable()` preserves all three types in the structured-output contract; `'type' => ['string', 'number']` via `fromArray()` was broken before 13.17 (PR #60455).
 
+- **Missing translation keys leak raw strings** — `__('messages.checkout.totals.subtotal')` returns the literal `"messages.checkout.totals.subtotal"` to the user when the key is missing. Register `Lang::handleMissingKeysUsing(fn ($key, $replace, $locale) => ...)` in `AppServiceProvider::boot()` to log + return a safe placeholder. Without it, refactor-renamed keys ship silently. Laravel 10.33+.
+- **`Lang::has($key, $locale)` is fallback-aware, not locale-specific** — returns `true` whenever the fallback chain has the key, regardless of whether `$locale` itself has it. Use `Lang::hasForLocale($key, $locale)` for RTL flip indicators, audit reports, locale-specific UI. `Lang::has()` without a locale is correct for "any translation including fallback".
+- **`$date->format()` is always English** — `format()` is PHP `DateTime::format()` under the hood, ignores `setlocale()`. `translatedFormat()` needs the OS locale installed (fragile in Docker/CI). Use `$date->isoFormat('dddd D MMMM YYYY')` — Carbon's embedded CLDR translations work everywhere, no OS dependency.
 ## Version Defaults
 
 - **Laravel 13** (latest — requires PHP 8.3+)
