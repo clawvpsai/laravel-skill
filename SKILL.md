@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.22
+version: 1.22.23
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -119,6 +119,11 @@ metadata:
 | `spatie/laravel-translatable` for Eloquent attribute translation (v6.x, 5M+ installs) | `localization.md` (Eloquent Attribute Translation section) | De facto community package for translating model attributes (product names, blog post bodies, page titles). Stores translations as JSON in one column. Column MUST be `json`/`text` not `string`; `$appends` accessors don't auto-localize; `toArray()` leaks all translations (use JsonResource with `getTranslation()`) |
 | `Translator::addPath()` / `addJsonPath()` / `addNamespace()` — undocumented runtime translation-path injection | `localization.md` (Plugin / Multi-Tenant Translation Paths section) | Use for multi-tenant SaaS (per-tenant `lang/` overrides), modular monoliths (per-module `billing::invoice.title` namespaces), white-label resellers, A/B-tested copy variants. Last-added wins (reverse-registration search order). Call once at boot in a service provider, NOT per-request |
 
+| `$this->components->bulletList()` + the styled output factory (`bulletList` / `twoColumnDetail` / `info` / `warn` / `error` / `confirm` / `ask` / `choice` / `secret`) | `artisan.md` (Console Output Components section) | AI assistants default to manual `echo "things:\n"` loops; the factory is what Laravel itself uses for `migrate`, `schedule:list`, `queue:listen` — terminal-width-aware, ANSI-styled, consistent across all your commands |
+| `schedule:clear-cache` (NOT `schedule:clear`) — clears stuck `withoutOverlapping()` mutex locks | `artisan.md` (`schedule:clear-cache` section) | AI-default `schedule:clear` doesn't exist ("Command schedule:clear is not defined"); the correct command has `-cache` appended since PR #40135. Default TTL = 24 hours; pass `->withoutOverlapping(N)` to override. Clear all or target the cache key directly with `Cache::forget('framework/schedule-mutex-<signature>')` |
+| `Artisan::call()` exit codes + Octane trap (state leak + Kernel reuse + `BufferedOutput` capture) | `artisan.md` (`Artisan::call()` Exit Codes section) | Three real footguns the official docs gloss over: (1) constructor-injected request-scoped state leaks across Octane worker requests, (2) `Mail::fake()` / facade mocks / `config()` mutations persist into the next request, (3) output is silently captured into `BufferedOutput` unless you pass `null` or omit the 3rd arg. For admin actions that don't need synchronous completion, prefer `Artisan::queue()` (dispatches to a worker with a fresh kernel) |
+| `php artisan down` flag reference (`--retry=N` / `--refresh=N` alias / `--render=view` / `--redirect=/path` / `--secret=token`) | `artisan.md` (`php artisan down` / `php artisan up` section) | All five flags compose freely. `--render` views run BEFORE the app boots — no DB, no facades, embed CSS inline. 13.18.1+ returns JSON 503 for API/JSON routes when `--secret` bypass is active (PR #60595). See `deployment.md` Maintenance Mode section for the full workflow |
+
 ## Critical Rules (Never Forget)
 
 - **`env()` only in config files** — returns null after `config:cache`
@@ -145,6 +150,10 @@ metadata:
 - **Missing translation keys leak raw strings** — `__('messages.checkout.totals.subtotal')` returns the literal `"messages.checkout.totals.subtotal"` to the user when the key is missing. Register `Lang::handleMissingKeysUsing(fn ($key, $replace, $locale) => ...)` in `AppServiceProvider::boot()` to log + return a safe placeholder. Without it, refactor-renamed keys ship silently. Laravel 10.33+.
 - **`Lang::has($key, $locale)` is fallback-aware, not locale-specific** — returns `true` whenever the fallback chain has the key, regardless of whether `$locale` itself has it. Use `Lang::hasForLocale($key, $locale)` for RTL flip indicators, audit reports, locale-specific UI. `Lang::has()` without a locale is correct for "any translation including fallback".
 - **`$date->format()` is always English** — `format()` is PHP `DateTime::format()` under the hood, ignores `setlocale()`. `translatedFormat()` needs the OS locale installed (fragile in Docker/CI). Use `$date->isoFormat('dddd D MMMM YYYY')` — Carbon's embedded CLDR translations work everywhere, no OS dependency.
+- **`schedule:clear-cache` is the command, NOT `schedule:clear`** — AI assistants hallucinate the bare form and Laravel replies "Command schedule:clear is not defined." If a `withoutOverlapping()` task appears to skip after a worker crash, deploy, or cache flush, run `php artisan schedule:clear-cache` — default mutex TTL is 24 hours; pass `->withoutOverlapping(N)` to override.
+- **`Artisan::call()` and Octane workers don't mix** — the called command reuses the current Kernel, so constructor-injected request-scoped state (tenant, auth user, request ID), facade mocks, and `config()` mutations leak across requests in the same Swoole/RoadRunner/FrankenPHP worker. Inject per-invocation state inside `handle()` (not the constructor) and prefer `Artisan::queue()` for any HTTP-triggered admin work — it dispatches to a worker with a clean kernel.
+- **`$this->components->bulletList()` and friends, not raw `echo`** — every command output beyond a single line should go through the `components` factory (`bulletList`, `twoColumnDetail`, `info`, `warn`, `error`, `confirm`, `ask`, `choice`, `secret`). Same API Laravel itself uses for `migrate`, `schedule:list`, `queue:listen` — terminal-width-aware, ANSI-styled, consistent across all your commands.
+
 ## Version Defaults
 
 - **Laravel 13** (latest — requires PHP 8.3+)
