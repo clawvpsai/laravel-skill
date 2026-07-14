@@ -309,7 +309,7 @@ $request->validate([
 9. **Use presigned URLs for large uploads** — don't proxy through your server
 10. **Store files outside webroot** — only serve via Storage URLs or signed URLs
 
-> **Third-party packages need separate hardening.** `spatie/laravel-medialibrary` < 11.23.0 has two high-severity issues — CVE-2026-48555 (SSRF via `addMediaFromUrl()`) and CVE-2026-48557 (upload restriction bypass via `defaultSanitizer()`). See `security.md` § "Critical: spatie/laravel-medialibrary SSRF + Upload Bypass" for affected versions and the upgrade command. Same for `plank/laravel-mediable` (CVE-2026-4809, CVSS 9.3, no upstream patch).
+> **Third-party packages need separate hardening.** `spatie/laravel-medialibrary` < 11.23.0 has two high-severity issues — CVE-2026-48555 (SSRF via `addMediaFromUrl()`) and CVE-2026-48557 (upload restriction bypass via `defaultSanitizer()`). See `security.md` § "Critical: spatie/laravel-medialibrary SSRF + Upload Bypass" for affected versions and the upgrade command. Same for `plank/laravel-mediable` — three CVEs now, all addressed in 7.0.0 (2026-07-12/13): CVE-2026-4809 (CVSS 9.3 Critical — client-MIME trust, partial 7.0.0 fix), CVE-2026-49969 (CVSS 7.4 High — SSRF via `RemoteUrlAdapter`), CVE-2026-49970 (CVSS 5.4 Medium — path traversal via `File::sanitizePath()`). See `security.md` § plank/laravel-mediable for upgrade command and SSRF defense-in-depth.
 >
 > **Common third-party upload gotchas:**
 > - `spatie/laravel-medialibrary` `addMediaFromUrl()` — validate the URL host against an allowlist before fetching. Never trust user-supplied URLs (SSRF → cloud metadata `169.254.169.254`, internal services, `file://` schemes).

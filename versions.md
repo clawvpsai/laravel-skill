@@ -1055,3 +1055,44 @@ SKILL.md bumped to **v1.22.21** (cycle-35 ai.md gap-fill — JsonSchema::anyOf d
 SKILL.md bumped to **v1.22.23** (cycle-37 artisan.md gap-fill — `$this->components->bulletList()` + the components output factory + `schedule:clear-cache` (NOT `schedule:clear`) for stuck withoutOverlapping() mutexes + `Artisan::call()` exit-code propagation under Octane (state leak + Kernel reuse + BufferedOutput capture) + `php artisan down` flag reference cross-link to deployment.md). 37 cycles in 14 days.
 
 SKILL.md bumped to **v1.22.22** (cycle-36 localization.md gap-fill — Lang::handleMissingKeysUsing (10.33+) + Lang::hasForLocale vs Lang::has + Carbon isoFormat vs format vs translatedFormat + word-order placeholder pattern + spatie/laravel-translatable + Translator::addPath/addJsonPath/addNamespace + 7 new Common Gotchas + 6 cross-ref rows + 3 new Critical Rules). 36 cycles in 14 days.
+
+
+---
+
+## Cycle 38 (2026-07-14 00:00 UTC) — security.md CVE Update: plank/laravel-mediable 7.0.0 Shipped
+
+### State of the skill at cycle time
+
+- **Latest Laravel framework release:** **v13.19.0** (tagged 2026-07-07 14:14 UTC) — still head of 13.x. No v13.19.1 or v13.20.0 has landed in the ~7 days since the cycle-31 release coverage. GitHub `releases/latest` rechecked and confirmed v13.19.0.
+- **No new Laravel-framework security advisories** since `GHSA-crmm-hgp2-wgrp` (CVE-2026-48041, June 8, 2026).
+- **PHP security batch** from 2026-07-01 (`8.3.32` / `8.4.23` / `8.5.8`) still current.
+
+### New Laravel-ecosystem CVEs since cycle 37 (2026-07-13)
+
+Both published 2026-07-13 (today):
+
+- **CVE-2026-49969** — `plank/laravel-mediable` **< 7.0.0** — **SSRF via `RemoteUrlAdapter` URL handling** (`MediaUploader::fromSource()`). Passes user-supplied URLs straight to Guzzle with no SSRF guard → cloud metadata theft (AWS IAM), RFC-1918/loopback service access, `file://` URI local file read. CVSS 7.4 High. Fixed in **plank/laravel-mediable 7.0.0** (commit `7e9e3000`). Patched.
+- **CVE-2026-49970** — `plank/laravel-mediable` **< 7.0.0** — **Path traversal via `File::sanitizePath()`**. URL-source downloads don't fully neutralize `../` segments or null bytes → uploaded file lands at attacker-chosen webroot path → RCE on next request. CVSS 5.4 Medium. Fixed in **plank/laravel-mediable 7.0.0** (same commit). Patched.
+
+Both CVEs were disclosed via [VulnCheck](https://www.vulncheck.com/advisories/laravel-mediable-ssrf-via-remoteurladapter-url-handling) and the standard CVE channels — also picked up by [CISA's SB26-194 bulletin](https://www.cisa.gov/news-events/bulletins/sb26-194) (week of July 6, 2026).
+
+### What cycle 38 changed
+
+- **`security.md`** — replaced the `plank/laravel-mediable — CVE-2026-4809 (**No Patch**)` section with `plank/laravel-mediable — CVE-2026-4809 + CVE-2026-49969 + CVE-2026-49970 — **All three CVEs fixed in 7.0.0 (2026-07-12/13)**`. The previous "no patch" line was stale — the package DID ship a patch in 7.0.0, and the two new CVEs that came out today are the formal disclosure records. Section now:
+  - Adds a clear CVE table (one row per CVE, type, CVSS, fixed-in-version)
+  - Has dedicated subsections for each of CVE-2026-49969 (SSRF) and CVE-2026-49970 (path traversal) with attack primitives
+  - Updates "How to fix" with step #1 = upgrade to `^7.0.0`, step #2 = server-side MIME validation (still required for the original CVE-2026-4809 trust pattern), step #4 = defense-in-depth SSRF wrapper PHP pattern with domain allowlist + private-range blocking
+  - Updates the source line to include the VulnCheck advisory, CVE.org records, 7.0.0 release tag, and the fix-commit hash `7e9e3000`
+- **`SKILL.md`** — bumped skill version `1.22.23 → 1.22.24` (cycle 38 CVE update).
+- **`README.md`** — research-cycle marker bumped to **Cycle 38** (security.md CVE update + 7.0.0 patch acknowledgment).
+- **No changes to other skill files in cycle 38.** The frame core files (eloquent.md, queues.md, security.md, performance.md, etc.) are all at v13.19.0 coverage and well-maintained within the last 11 days. The next gap-fill candidate by staleness is `blade.md` (11 days stale, last touched 2026-07-02 cycle 19) — but cycle 19 already brought it to current v13.18.1 coverage and there's no v13.19.0 Blade-specific change worth a fresh gap-fill.
+
+### Watch list for cycle 39
+
+- **v13.19.1** — likely late July 2026 once 5–10 post-13.19 PRs accumulate. Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
+- **v13.20.0** — first minor after 13.19, likely late July / early August 2026.
+- **Laravel 12 EOL** — bug fixes end **August 13, 2026** (~30 days from cycle time). Plan migrations off 12.x accordingly.
+- **Reverb ecosystem updates** — `laravel/reverb` 1.10.2 (May 13, 2026) is current; watch for a 1.10.3 or 1.11.0 release addressing any post-CVE-23524 hardening. The current CVE-23524 (RCE via unserialize under `REVERB_SCALING_ENABLED=true`) is patched in 1.7.0+ and is already documented in `security.md`.
+- **`blade.md` gap-fill** — 12 days stale by cycle-39 time. May yield a small cycle if there's a new Blade feature in the upcoming Laravel 13.19.x or 13.20.0 release.
+
+SKILL.md bumped to **v1.22.24** (cycle-38 security.md CVE update — plank/laravel-mediable CVE-2026-49969 + CVE-2026-49970 + 7.0.0 fix acknowledgment). 38 cycles in 16 days.

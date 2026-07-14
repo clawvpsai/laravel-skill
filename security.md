@@ -636,22 +636,69 @@ The malicious commits make a two-file change:
 Source: [StepSecurity writeup](https://www.stepsecurity.io/blog/laravel-lang-supply-chain-attack) | [SecurityWeek](https://www.securityweek.com/laravel-lang-packages-poisoned-for-malware-delivery/) | [Mend.io analysis](https://www.mend.io/blog/laravel-lang-composer-tag-rewrite-supply-chain-attack/) | [Snyk advisory](https://snyk.io/blog/laravel-lang-supply-chain-advisory/)
 
 
-## Critical: plank/laravel-mediable Arbitrary File Upload — CVE-2026-4809 (CVSS 9.3 — Critical, **No Patch**)
+## Critical: plank/laravel-mediable — CVE-2026-4809 (client-MIME-trust, RCE via upload) + CVE-2026-49969 (SSRF) + CVE-2026-49970 (path traversal) — **All three CVEs fixed in 7.0.0 (2026-07-12/13)**
 
-### Who is affected
+> **Update 2026-07-13 (cycle 38):** The previously documented "no patch" status for `plank/laravel-mediable` is **stale**. The package shipped **7.0.0** on 2026-07-12/13 ([commit `7e9e3000`](https://github.com/plank/laravel-mediable/commit/7e9e3000fa05fe16e678f15bfb51a091e60c2cb8)) closing **CVE-2026-49969 (SSRF via `RemoteUrlAdapter`)** and **CVE-2026-49970 (path traversal via `File::sanitizePath()`)**. The original CVE-2026-4809 client-MIME-trust issue is **not fully addressed by 7.0.0** — that one needs server-side validation regardless of package version (see "How to fix" below). Anyone using this package should: (1) **upgrade to `^7.0.0` immediately** for the SSRF + path-traversal fixes, and (2) **still apply server-side MIME validation** for the original CVE-2026-4809 issue and defense-in-depth.
 
-Any Laravel app using `plank/laravel-mediable` through **version 6.4.0** that accepts (or prefers) a **client-supplied MIME type** during file upload handling. The package itself does not enforce a server-side MIME check; the application code decides whether to trust the client's `Content-Type` / `$_FILES[...]['type']`. Apps that rely on the client-supplied MIME for "image" uploads are vulnerable.
+### Three CVEs in this package
 
-### Why it's dangerous
+| CVE | Type | CVSS | Fixed in |
+|---|---|---|---|
+| CVE-2026-4809 (original, Mar 2026) | Server trusts client-supplied MIME → upload RCE | 9.3 Critical | **Not fully patched** — requires server-side validation; 7.0.0 added partial guard rails but no longer prevents the underlying trust pattern. Apply the "How to fix" guidance regardless of version. |
+| CVE-2026-49969 (disclosed Jul 13, 2026) | SSRF via `RemoteUrlAdapter` URL handling (`file://` + private ranges) | 7.4 High | **7.0.0** |
+| CVE-2026-49970 (disclosed Jul 13, 2026) | Path traversal via `File::sanitizePath()` (write uploaded file to arbitrary path) | 5.4 Medium | **7.0.0** |
 
-A remote attacker can submit a file containing **executable PHP code** while declaring a benign image MIME type (e.g. `image/jpeg`). If the file is stored in a **web-accessible and executable** location (which is the common `public/uploads` pattern), this leads directly to **remote code execution**. CVSS 9.3.
+### CVE-2026-49969 — SSRF via `MediaUploader::fromSource()`
+
+`MediaUploader::fromSource($url)` accepts a URL and resolves it through `RemoteUrlAdapter`. Before 7.0.0, the URL was passed straight to Guzzle with **no SSRF guard** — no private-range blocking, no `file://` block, no metadata-endpoint block. An attacker who can influence the URL can:
+
+- Hit **cloud metadata endpoints** (`http://169.254.169.254/latest/meta-data/iam/security-credentials/`) → IAM credential theft → RCE
+- Hit **RFC-1918 / loopback** services (Redis on `127.0.0.1:6379`, Elasticsearch on `10.0.0.5:9200`, internal admin UIs)
+- Hit **`file://` URIs** to read local files (`file:///etc/passwd`, `file:///var/www/.env`)
+- Bypass any WAF / reverse-proxy in front of the Laravel app (request originates from PHP, not the browser)
+
+```php
+// VULNERABLE — pre-7.0.0 — passes user-supplied URL straight through
+$model->addMediaFromUrl($request->input('image_url'));
+```
+
+### CVE-2026-49970 — Path Traversal via `File::sanitizePath()`
+
+`File::sanitizePath()` is the package's path-normalization helper used to write uploaded files into target directories. Before 7.0.0, the sanitization did not fully neutralize `..` segments or null bytes when the source path came from a user-supplied URL or filename. An attacker can land a downloaded file at an arbitrary webroot path:
+
+```
+https://attacker.tld/shell.php/../../storage/app/evil.php
+```
+
+...when the package writes the response body using only `sanitizePath()` on the URL-derived filename, the file ends up where the attacker wants.
+
+### CVE-2026-4809 (original, still partially unpatched)
+
+A remote attacker submits a file containing **executable PHP code** while declaring a benign image MIME type (e.g. `image/jpeg`). If the file is stored in a **web-accessible and executable** location (which is the common `public/uploads` pattern), this leads directly to **remote code execution**. CVSS 9.3. This is mostly an application-level problem (don't trust `$_FILES[...]['type']`) — see the "How to fix" block below for the server-side check pattern that closes it on any plank/laravel-mediable version.
 
 ### How to fix
 
-- **Do not rely on client-supplied MIME.** Re-validate using a server-side check (file extension allowlist + `Symfony\Component\HttpFoundation\File\UploadedFile::getMimeType()` or `guessExtension()` via `symfony/mime`).
-- Move uploads **out of the public web root** if possible; serve them through a controller that enforces auth + content-type.
-- Pin a patched version once `plank/laravel-mediable` ships one (none available at time of writing — vendor had not responded to coordinated disclosure attempts).
-- Consider replacing `plank/laravel-mediable` with `spatie/laravel-medialibrary` (proactive MIME validation + VirusTotal integration in recent versions) until upstream patches.
+1. **Upgrade first, always:** `composer require plank/laravel-mediable:^7.0.0` (or `composer update plank/laravel-mediable`). 7.0.0 closes CVE-2026-49969 (SSRF) and CVE-2026-49970 (path traversal) — both `file://` and `../` protections added.
+2. **Server-side MIME validation (still required, defends CVE-2026-4809):** don't trust client-supplied MIME. Re-validate with a server-side check — file extension allowlist + `Symfony\Component\HttpFoundation\File\UploadedFile::getMimeType()` or `guessExtension()` via `symfony/mime`. Example pattern below.
+3. **Move uploads out of the public web root** where possible; serve through an auth-enforcing controller that sets `Content-Disposition: attachment`.
+4. **Defense-in-depth SSRF wrapper** (still required even on 7.0.0+ for any URL-supplied upload — `addMediaFromUrl()` semantics):
+
+```php
+// Only allow specific known-safe hosts
+$allowed = ['cdn.yourapp.com', 'avatar.yourapp.com'];
+$host = parse_url($url, PHP_URL_HOST);
+abort_unless(in_array($host, $allowed, true), 422, 'Invalid media source');
+
+// Block private ranges and metadata endpoints yourself
+abort_if(
+    in_array($host, ['169.254.169.254', 'localhost', '127.0.0.1'], true) ||
+    preg_match('/^(10|172\.(1[6-9]|2\d|3[01])|192\.168)\./', $host),
+    422,
+    'Private network sources not allowed'
+);
+```
+
+5. **For permanent peace of mind, switch to spatie/laravel-medialibrary** — proactive MIME validation + VirusTotal integration in recent versions, larger user base, faster patch turnaround on coordinated-disclosure reports.
 
 ### Mitigation if you cannot upgrade / replace immediately
 
@@ -669,7 +716,7 @@ public function rules(): array
 // and validates the authenticated user has access.
 ```
 
-Source: [Feedly CVE feed for Laravel](https://feedly.com/cve/vendors/laravel) | [Snyk advisory DB](https://snyk.io/vuln/CVE-2026-4809)
+Source: [Feedly CVE feed for Laravel](https://feedly.com/cve/vendors/laravel) | [Snyk advisory DB](https://snyk.io/vuln/CVE-2026-4809) | [VulnCheck — CVE-2026-49969](https://www.vulncheck.com/advisories/laravel-mediable-ssrf-via-remoteurladapter-url-handling) | [CVE-2026-49970 detail](https://www.cve.org/CVERecord?id=CVE-2026-49970) | [plank/laravel-mediable 7.0.0 release](https://github.com/plank/laravel-mediable/releases/tag/7.0.0) | [Fix commit `7e9e3000`](https://github.com/plank/laravel-mediable/commit/7e9e3000fa05fe16e678f15bfb51a091e60c2cb8)
 
 ## Critical: spatie/laravel-medialibrary SSRF + Upload Bypass — CVE-2026-48555 & CVE-2026-48557 (May 29, 2026)
 
