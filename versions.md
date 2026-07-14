@@ -1131,7 +1131,7 @@ SKILL.md bumped to **v1.22.24** (cycle-38 security.md CVE update — plank/larav
 
 ### Watch list for cycle 40
 
-- **`controllers.md`** (last touched cycle 29, 2026-07-04 — 10 days stale) — likely the next gap-fill candidate. Possible targets: `#[Scope]` attribute on Eloquent query scopes (12.x+), `#[Fillable]`-with-validation Form Request pattern, `Request::enum()` shorthand vs `Rule::enum()`, `Request::integer()` / `Request::string()` typed accessors (Laravel 12+), and the new `Route::redirect()` / `Route::view()` shortcut improvements.
+- **`controllers.md`** (last touched cycle 29, 2026-07-04 — 10 days stale) — likely the cycle-41 gap-fill candidate. Possible targets: `#[Scope]` attribute on Eloquent query scopes (12.x+), `#[Fillable]`-with-validation Form Request pattern, `Request::enum()` shorthand vs `Rule::enum()`, `Request::integer()` / `Request::string()` typed accessors (Laravel 12+), and the new `Route::redirect()` / `Route::view()` shortcut improvements.
 - **`auth.md`** (last touched cycle 24, 2026-07-04 — 10 days stale) — alternative candidate. Possible targets: Fortify 1.x passkey API updates, Laravel 13 starter-kit integration patterns, `Auth::attempt()` with closure for 2FA challenge, `Password::sendResetLink()` rate-limit headers.
 - **`logging.md`** (last touched cycle 4, 2026-07-04 — 10 days stale) — the smallest file in the skill (8,986 bytes). Possible targets: `Context::push()` / `pop()` cleanup gotchas under Octane, the `Log::withoutContext()` Octane hygiene pattern, the new `Logger` driver for OpenTelemetry export, and the missing coverage of the `monolog` channel-level filter chain.
 - **v13.19.1** — likely mid-to-late July 2026 once 5–10 post-13.19 PRs accumulate. Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
@@ -1139,4 +1139,66 @@ SKILL.md bumped to **v1.22.24** (cycle-38 security.md CVE update — plank/larav
 - **Laravel 12 EOL** — bug fixes end **August 13, 2026** (~30 days from cycle time). Plan migrations off 12.x accordingly.
 - **Reverb ecosystem updates** — `laravel/reverb` 1.10.2 (May 13, 2026) is current; watch for a 1.10.3 or 1.11.0 release addressing any post-CVE-23524 hardening.
 
-SKILL.md bumped to **v1.22.25** (cycle-39 blade.md gap-fill — `@class` / `@style` (9.18+) + `<x-slot:foo>` (9+) + `@aware` (9+) + `<x-dynamic-component>` + `view:cache` / Octane stale view cache + 8 new Common Mistakes + 3 new Critical Rules). 39 cycles in 16 days.
+---
+
+## Cycle 40 (2026-07-14 18:10 UTC) — security.md + file-uploads.md CVE Update: plank/laravel-mediable CVE-2026-49972 (RCE via double extension)
+
+### State of the skill at cycle time
+
+- **Latest Laravel framework release:** **v13.19.0** (tagged 2026-07-07 14:14 UTC) — still head of 13.x. **No v13.19.1** since the cycle-39 release check. The 6 merged 13.x PRs since v13.19.0 remain bug fixes only.
+- **No new Laravel-framework security advisories** since `GHSA-crmm-hgp2-wgrp` (CVE-2026-48041, June 8, 2026).
+- **PHP security batch** from 2026-07-01 (`8.3.32` / `8.4.23` / `8.5.8`) still current.
+
+### Why a CVE-patch cycle instead of the planned gap-fill
+
+Cycle 39's watch-list named `controllers.md` (10 days stale) as the cycle-40 gap-fill candidate. Before starting, the standard pre-cycle CVE sweep surfaced **CVE-2026-49972** (published 2026-07-13, same day as CVE-2026-49969 / -49970 covered in cycle 38) — a 8.8-High RCE in `plank/laravel-mediable` with the same root cause pattern already discussed in the skill, but its formal CVE row was missed in cycle 38 because all three 2026-07-13 advisories were disclosed within the same 24-hour window and the cycle-38 write-up captured two of three. CVE-coverage > gap-fill was the right priority call. `controllers.md` is now the cycle-41 candidate.
+
+### New CVE (Laravel ecosystem)
+
+- **CVE-2026-49972** — `plank/laravel-mediable` **< 7.0.0** — **Double-extension RCE via `pathinfo(PATHINFO_FILENAME)`**. When a user uploads a file named `shell.php.jpg`, the package's filename extraction uses `pathinfo(..., PATHINFO_FILENAME)` which returns `shell.php` (the **inner** extension-preserved stem). The package-level sanitizer and Laravel's `mimes:jpg,jpeg,png` rule both inspect only the **outer** `.jpg` extension, so the upload passes every validation check. On misconfigured Apache (legacy `AddHandler application/x-httpd-php .php`) or nginx where any filename containing `.php` is interpreted as PHP, the stored file executes as PHP on the next request. CVSS 8.8 (AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H). Fixed in **plank/laravel-mediable 7.0.0** ([commit `49e3583b`](https://github.com/plank/laravel-mediable/commit/49e3583bed13423611b3391f89e6b002571eed73) — same release that closed CVE-2026-49969 / -49970 in commit `7e9e3000`). Disclosed via [VulnCheck PT-2026-57850](https://www.vulncheck.com/advisories/laravel-mediable-file-upload-rce-via-extension-bypass) and [NVD CVE-2026-49972](https://nvd.nist.gov/vuln/detail/CVE-2026-49972).
+
+**Aggregate plank/laravel-mediable CVE tally (now 4):**
+| CVE | Type | CVSS | Fixed in |
+|---|---|---|---|
+| CVE-2026-4809 (Mar 2026) | Client-MIME trust → upload RCE | 9.3 Critical | Requires server-side validation (7.0.0 added partial guard rails) |
+| CVE-2026-49969 (Jul 13) | SSRF via `RemoteUrlAdapter` | 7.4 High | 7.0.0 (commit `7e9e3000`) |
+| CVE-2026-49970 (Jul 13) | Path traversal via `File::sanitizePath()` | 5.4 Medium | 7.0.0 (commit `7e9e3000`) |
+| **CVE-2026-49972 (Jul 13, NEW)** | **Double-extension RCE via `pathinfo()`** | **8.8 High** | **7.0.0** (commit `49e3583`) |
+
+### What cycle 40 changed
+
+- **`security.md`** — `plank/laravel-mediable` section expanded from "three CVEs" to "four CVEs":
+  - **H2 header** (`## Critical: plank/laravel-mediable — ...`) updated to enumerate all four CVEs ("+ CVE-2026-49972 (double-extension RCE) — All **four** CVEs fixed in 7.0.0").
+  - **Blockquote at top of section** gets a `> Update 2026-07-14 (cycle 40)` note prepended, plus the existing cycle-38 note is rewritten to mention all three 2026-07-13 fixes and link both fix commits (`7e9e3000` + `49e3583b`).
+  - **CVE table** gains a 4th row (CVE-2026-49972, CVSS 8.8, fixed in 7.0.0).
+  - **New `### CVE-2026-49972 — Double-Extension RCE via pathinfo(PATHINFO_FILENAME) (CVSS 8.8 High)` subsection** added between the existing path-traversal section and the original CVE-2026-4809 section. Includes: who is affected, why it's dangerous, why the primitive is universal (AI assistants default to this wrong code shape with `pathinfo()` + `Str::before()`), and a 5-step defense-in-depth "How to fix":
+    1. Upgrade to `plank/laravel-mediable:^7.0.0`
+    2. Use `UploadedFile::hashName()` / `Str::uuid()` for storage filenames (single defense that closes every pathinfo-based bypass)
+    3. Strip extra dots from storage filenames (belt-and-suspenders)
+    4. Disable PHP execution in the upload directory at the web server level (only airtight fix)
+    5. Defense-in-depth `image` + `mimes` rule (pair, not just one — the rule pair blocks `evil.php.jpg` whose actual content is PHP)
+  - **Source line** at the bottom of the plank section updated with CVE-2026-49972 NVD link + fix-commit `49e3583` link + rename of fix-commit `7e9e3000` link to "SSRF + path-traversal fix commit" for clarity.
+  - **Cross-reference in `spatie/laravel-medialibrary` section** (CVE-2026-48557 "double-extension bypass" bullet) now mentions **plank CVE-2026-49972** as the same root cause across media packages, with timestamps for each fix (spatie 11.23.0 in May 2026, plank 7.0.0 in Jul 2026).
+- **`file-uploads.md`** — added a CVE-2026-49972 cross-reference blockquote at the end of the "Anti-Extension-Spoofing & Content Validation" section (immediately after the "Rule of thumb" paragraph). Blockquote names the 3 defense layers: (1) `hashName()`/`Str::uuid()` over `pathinfo()`, (2) server-level PHP execution block (nginx/Apache/FrankenPHP snippets cross-referenced), (3) `image` + `mimes` rule pair. Updated the package-warning Quick Reference index row to list **four CVEs** for `plank/laravel-mediable` instead of three.
+- **`SKILL.md`** — bumped `1.22.25 → 1.22.26` (cycle-40 CVE update).
+- **`README.md`** — research-cycle marker bumped to **Cycle 40**, version stamp `v1.22.25 → v1.22.26`.
+- **No version-stamp change to "Active Versions"** — `v13.19.0` / `v12.63.0` unchanged (Laravel framework itself shipped nothing new since cycle 31).
+
+### Watch list for cycle 41
+
+- **`controllers.md`** (last touched cycle 29, 2026-07-04 — 10 days stale) — now the front-of-queue gap-fill candidate. Promising targets carried over from cycle 39:
+  - `#[Scope]` attribute on Eloquent query scopes (12.x+, lets you annotate scopes on the model class instead of using `scopeXxx()` method names — IDE-discoverable and refactor-rename safe)
+  - `#[Fillable]`-with-validation Form Request pattern (replaces manual `$fillable` arrays + separate `rules()` methods)
+  - `Request::enum()` shorthand vs `Rule::enum()` (single-arg vs constraint-form, when each is the right call)
+  - `Request::integer()` / `Request::string()` / `Request::boolean()` typed accessors (Laravel 12+) — auto-cast + 422 on type mismatch
+  - New `Route::redirect()` / `Route::view()` shortcut improvements
+- **`auth.md`** (last touched cycle 24, 2026-07-04 — 10 days stale) — still a viable alternative. Promising targets: Fortify 1.x passkey API updates, Laravel 13 starter-kit integration patterns, `Auth::attempt()` with closure for 2FA challenge, `Password::sendResetLink()` rate-limit headers.
+- **`logging.md`** (last touched cycle 4, 2026-07-04 — 10 days stale) — smallest file (8,986 bytes pre-cycle-40). Promising targets: `Context::push()` / `pop()` cleanup gotchas under Octane, the `Log::withoutContext()` Octane hygiene pattern, the new `Logger` driver for OpenTelemetry export, and the missing coverage of the monolog channel-level filter chain.
+- **`security.md`** is now `134 KB` (4-cycle-deep with extensive coverage of the plank/laravel-mediable CVE series). If the next plank-related CVE ships, cycle 41 may need to be another CVE cycle; the more likely outcome is controllers.md.
+- **v13.19.1** — likely mid-to-late July 2026 once 5–10 post-13.19 PRs accumulate. Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
+- **v13.20.0** — first minor after 13.19, likely late July / early August 2026.
+- **Laravel 12 EOL** — bug fixes end **August 13, 2026** (~30 days from cycle time). Plan migrations off 12.x accordingly.
+- **Reverb ecosystem updates** — `laravel/reverb` 1.10.2 (May 13, 2026) is current; watch for a 1.10.3 or 1.11.0 release.
+
+SKILL.md bumped to **v1.22.26** (cycle-40 security.md + file-uploads.md CVE update — plank/laravel-mediable CVE-2026-49972 (double-extension RCE) added to the four-CVE table + new dedicated section + cross-references). 40 cycles in 16 days.
+

@@ -636,17 +636,20 @@ The malicious commits make a two-file change:
 Source: [StepSecurity writeup](https://www.stepsecurity.io/blog/laravel-lang-supply-chain-attack) | [SecurityWeek](https://www.securityweek.com/laravel-lang-packages-poisoned-for-malware-delivery/) | [Mend.io analysis](https://www.mend.io/blog/laravel-lang-composer-tag-rewrite-supply-chain-attack/) | [Snyk advisory](https://snyk.io/blog/laravel-lang-supply-chain-advisory/)
 
 
-## Critical: plank/laravel-mediable — CVE-2026-4809 (client-MIME-trust, RCE via upload) + CVE-2026-49969 (SSRF) + CVE-2026-49970 (path traversal) — **All three CVEs fixed in 7.0.0 (2026-07-12/13)**
+## Critical: plank/laravel-mediable — CVE-2026-4809 (client-MIME-trust, RCE via upload) + CVE-2026-49969 (SSRF) + CVE-2026-49970 (path traversal) + CVE-2026-49972 (double-extension RCE) — **All four CVEs fixed in 7.0.0 (2026-07-12/13)**
 
-> **Update 2026-07-13 (cycle 38):** The previously documented "no patch" status for `plank/laravel-mediable` is **stale**. The package shipped **7.0.0** on 2026-07-12/13 ([commit `7e9e3000`](https://github.com/plank/laravel-mediable/commit/7e9e3000fa05fe16e678f15bfb51a091e60c2cb8)) closing **CVE-2026-49969 (SSRF via `RemoteUrlAdapter`)** and **CVE-2026-49970 (path traversal via `File::sanitizePath()`)**. The original CVE-2026-4809 client-MIME-trust issue is **not fully addressed by 7.0.0** — that one needs server-side validation regardless of package version (see "How to fix" below). Anyone using this package should: (1) **upgrade to `^7.0.0` immediately** for the SSRF + path-traversal fixes, and (2) **still apply server-side MIME validation** for the original CVE-2026-4809 issue and defense-in-depth.
+> **Update 2026-07-14 (cycle 40):** Added **CVE-2026-49972** (double-extension RCE, CVSS 8.8) to the table below — disclosed the same day as CVE-2026-49969/49970 but missed in the cycle-38 write-up. All four plank/laravel-mediable CVEs now enumerated.
+>
+> **Update 2026-07-13 (cycle 38):** The previously documented "no patch" status for `plank/laravel-mediable` is **stale**. The package shipped **7.0.0** on 2026-07-12/13 ([commit `7e9e3000`](https://github.com/plank/laravel-mediable/commit/7e9e3000fa05fe16e678f15bfb51a091e60c2cb8) + [`49e3583b`](https://github.com/plank/laravel-mediable/commit/49e3583bed13423611b3391f89e6b002571eed73)) closing **CVE-2026-49969 (SSRF via `RemoteUrlAdapter`)**, **CVE-2026-49970 (path traversal via `File::sanitizePath()`)**, and **CVE-2026-49972 (double-extension RCE via `pathinfo()`)**. The original CVE-2026-4809 client-MIME-trust issue is **not fully addressed by 7.0.0** — that one needs server-side validation regardless of package version (see "How to fix" below). Anyone using this package should: (1) **upgrade to `^7.0.0` immediately** for all three 2026-07-13 CVE fixes, and (2) **still apply server-side MIME validation** for the original CVE-2026-4809 issue and defense-in-depth.
 
-### Three CVEs in this package
+### Four CVEs in this package
 
 | CVE | Type | CVSS | Fixed in |
 |---|---|---|---|
 | CVE-2026-4809 (original, Mar 2026) | Server trusts client-supplied MIME → upload RCE | 9.3 Critical | **Not fully patched** — requires server-side validation; 7.0.0 added partial guard rails but no longer prevents the underlying trust pattern. Apply the "How to fix" guidance regardless of version. |
 | CVE-2026-49969 (disclosed Jul 13, 2026) | SSRF via `RemoteUrlAdapter` URL handling (`file://` + private ranges) | 7.4 High | **7.0.0** |
 | CVE-2026-49970 (disclosed Jul 13, 2026) | Path traversal via `File::sanitizePath()` (write uploaded file to arbitrary path) | 5.4 Medium | **7.0.0** |
+| CVE-2026-49972 (disclosed Jul 13, 2026) | Double-extension RCE — `pathinfo(PATHINFO_FILENAME)` preserves inner `.php`, bypasses sanitizer + mimes rule on misconfigured Apache/nginx | 8.8 High | **7.0.0** (commit `49e3583`) |
 
 ### CVE-2026-49969 — SSRF via `MediaUploader::fromSource()`
 
@@ -672,13 +675,37 @@ https://attacker.tld/shell.php/../../storage/app/evil.php
 
 ...when the package writes the response body using only `sanitizePath()` on the URL-derived filename, the file ends up where the attacker wants.
 
+### CVE-2026-49972 — Double-Extension RCE via `pathinfo(PATHINFO_FILENAME)` (CVSS 8.8 High)
+
+**Who is affected:** Every `plank/laravel-mediable` **< 7.0.0** app that accepts user-uploaded (or URL-fetched) files and stores them under a webroot the web server can interpret — even with strict MIME validation enabled.
+
+**Why it's dangerous:** The package's filename extraction used `pathinfo($filename, PATHINFO_FILENAME)` to derive the stored base name. `pathinfo()` on `shell.php.jpg` returns `shell.php` (the **inner** extension-preserved stem), but package-level sanitization and Laravel's `mimes:jpg,jpeg,png` rule both look at the **outer** `.jpg` extension. The result: the file lands on disk named with an embedded `.php`, and on misconfigured Apache (legacy `AddHandler application/x-httpd-php .php`) or nginx (`\.php$` matching any filename containing `.php` anywhere), the file is interpreted as PHP on the next request and executes. CVSS 8.8 (AV:N/AC:L/PR:L).
+
+**The primitive is universal — same trap exists in homegrown upload code that uses `pathinfo()`:** `$stored = pathinfo($upload->getClientOriginalName(), PATHINFO_FILENAME);` then `$stored .= '.' . $upload->guessExtension();` produces a name that bypasses the rightmost-extension sanitizer. The "rightmost vs leftmost" extension rule varies by web server, hence CVSS 8.8 across the ecosystem. AI assistants default to this wrong code shape — any snippet that does `Str::before($filename, '.')` or `pathinfo(..., PATHINFO_FILENAME)` to derive a storage name is the same bug.
+
+### How to fix (defense-in-depth, even on 7.0.0+)
+
+1. **Upgrade first, always:** `composer require plank/laravel-mediable:^7.0.0` — 7.0.0 commit `49e3583` rewrites the filename-derivation logic to use the **outermost** extension on every code path (i.e., what the sanitizer already validated).
+2. **Use `hashName()` / `Str::uuid()` for storage filenames, never the client-supplied name.** This is the single defense that closes every pathinfo-based bypass — `UploadedFile::hashName()` returns `bin2hex(random_bytes(20)).'.'.$extension` since Laravel 9 (was `uniqid()` in earlier versions). The extension comes from `guessExtension()` (server-side finfo), not the client.
+3. **Strip extra dots from the storage filename** — belt-and-suspenders against any third-party package leaking a user-controlled name through:
+   ```php
+   // Reject any filename containing more than one dot in the stem
+   $stem = pathinfo($hashed, PATHINFO_FILENAME);
+   abort_if(substr_count($stem, '.') > 0, 422, 'Invalid filename');
+   ```
+4. **Disable PHP execution in the upload directory at the web server level** — the only airtight fix. See `file-uploads.md` § "Anti-Extension-Spoofing & Content Validation" step #4 for nginx and Apache snippets. CVE-2026-49972 is fundamentally a web-server-misconfiguration problem made worse by an over-trusting package — the package fix removes one trigger, but the web server config has to be the boundary.
+5. **Defense-in-depth:** enforce the `mimes:jpg,jpeg,png,webp` rule via Laravel's `image` rule (which runs `symfony/mime` against file content) — and pair with `mimes`, not `mimetypes` (the validation also confirms the extension matches the server-detected type, blocking `evil.php.jpg` whose actual content is PHP):
+   ```php
+   'upload' => ['required', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+   ```
+
 ### CVE-2026-4809 (original, still partially unpatched)
 
 A remote attacker submits a file containing **executable PHP code** while declaring a benign image MIME type (e.g. `image/jpeg`). If the file is stored in a **web-accessible and executable** location (which is the common `public/uploads` pattern), this leads directly to **remote code execution**. CVSS 9.3. This is mostly an application-level problem (don't trust `$_FILES[...]['type']`) — see the "How to fix" block below for the server-side check pattern that closes it on any plank/laravel-mediable version.
 
 ### How to fix
 
-1. **Upgrade first, always:** `composer require plank/laravel-mediable:^7.0.0` (or `composer update plank/laravel-mediable`). 7.0.0 closes CVE-2026-49969 (SSRF) and CVE-2026-49970 (path traversal) — both `file://` and `../` protections added.
+1. **Upgrade first, always:** `composer require plank/laravel-mediable:^7.0.0` (or `composer update plank/laravel-mediable`). 7.0.0 closes CVE-2026-49969 (SSRF), CVE-2026-49970 (path traversal), and CVE-2026-49972 (double-extension RCE — `pathinfo(PATHINFO_FILENAME)` fix in commit `49e3583`). All three 2026-07-13 advisories fixed in the same release.
 2. **Server-side MIME validation (still required, defends CVE-2026-4809):** don't trust client-supplied MIME. Re-validate with a server-side check — file extension allowlist + `Symfony\Component\HttpFoundation\File\UploadedFile::getMimeType()` or `guessExtension()` via `symfony/mime`. Example pattern below.
 3. **Move uploads out of the public web root** where possible; serve through an auth-enforcing controller that sets `Content-Disposition: attachment`.
 4. **Defense-in-depth SSRF wrapper** (still required even on 7.0.0+ for any URL-supplied upload — `addMediaFromUrl()` semantics):
@@ -716,7 +743,7 @@ public function rules(): array
 // and validates the authenticated user has access.
 ```
 
-Source: [Feedly CVE feed for Laravel](https://feedly.com/cve/vendors/laravel) | [Snyk advisory DB](https://snyk.io/vuln/CVE-2026-4809) | [VulnCheck — CVE-2026-49969](https://www.vulncheck.com/advisories/laravel-mediable-ssrf-via-remoteurladapter-url-handling) | [CVE-2026-49970 detail](https://www.cve.org/CVERecord?id=CVE-2026-49970) | [plank/laravel-mediable 7.0.0 release](https://github.com/plank/laravel-mediable/releases/tag/7.0.0) | [Fix commit `7e9e3000`](https://github.com/plank/laravel-mediable/commit/7e9e3000fa05fe16e678f15bfb51a091e60c2cb8)
+Source: [Feedly CVE feed for Laravel](https://feedly.com/cve/vendors/laravel) | [Snyk advisory DB](https://snyk.io/vuln/CVE-2026-4809) | [VulnCheck — CVE-2026-49969](https://www.vulncheck.com/advisories/laravel-mediable-ssrf-via-remoteurladapter-url-handling) | [CVE-2026-49970 detail](https://www.cve.org/CVERecord?id=CVE-2026-49970) | [CVE-2026-49972 detail](https://nvd.nist.gov/vuln/detail/CVE-2026-49972) | [plank/laravel-mediable 7.0.0 release](https://github.com/plank/laravel-mediable/releases/tag/7.0.0) | [SSRF + path-traversal fix commit `7e9e3000`](https://github.com/plank/laravel-mediable/commit/7e9e3000fa05fe16e678f15bfb51a091e60c2cb8) | [Double-extension fix commit `49e3583`](https://github.com/plank/laravel-mediable/commit/49e3583bed13423611b3391f89e6b002571eed73)
 
 ## Critical: spatie/laravel-medialibrary SSRF + Upload Bypass — CVE-2026-48555 & CVE-2026-48557 (May 29, 2026)
 
@@ -741,7 +768,7 @@ $model->addMediaFromUrl($request->input('image_url'));
 **Who is affected:** Same scope — `spatie/laravel-medialibrary` **< 11.23.0** apps that rely on the package's built-in sanitizer to block executable extensions.
 
 **Why it's dangerous:** The sanitizer only checks the **last** extension in the filename. Two bypasses:
-- **Double-extension bypass:** `shell.php.jpg` is accepted by the sanitizer (looks like `.jpg`), but `pathinfo()` preserves the inner `.php` stem when the file is saved. On legacy Apache configs with `AddHandler` for `.php`, this can lead to PHP execution.
+- **Double-extension bypass:** `shell.php.jpg` is accepted by the sanitizer (looks like `.jpg`), but `pathinfo()` preserves the inner `.php` stem when the file is saved. On legacy Apache configs with `AddHandler` for `.php`, this can lead to PHP execution. (Same root cause as **`plank/laravel-mediable` CVE-2026-49972** — the rightmost-extension sanitizer + pathinfo-based storage name is a universal anti-pattern across media packages. The spatie fix landed in **11.23.0** (May 2026); the plank fix landed in **7.0.0** (Jul 2026). See the plank section above.)
 - **Incomplete blocklist:** Executable extensions `.php6`, `.shtml`, and `.htaccess` are missing from the default sanitizer blocklist (CWE-184).
 
 ### How to fix

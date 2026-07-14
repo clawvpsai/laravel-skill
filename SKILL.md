@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.25
+version: 1.22.26
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -156,6 +156,7 @@ metadata:
 - **`Lang::has($key, $locale)` is fallback-aware, not locale-specific** — returns `true` whenever the fallback chain has the key, regardless of whether `$locale` itself has it. Use `Lang::hasForLocale($key, $locale)` for RTL flip indicators, audit reports, locale-specific UI. `Lang::has()` without a locale is correct for "any translation including fallback".
 - **`$date->format()` is always English** — `format()` is PHP `DateTime::format()` under the hood, ignores `setlocale()`. `translatedFormat()` needs the OS locale installed (fragile in Docker/CI). Use `$date->isoFormat('dddd D MMMM YYYY')` — Carbon's embedded CLDR translations work everywhere, no OS dependency.
 - **`schedule:clear-cache` is the command, NOT `schedule:clear`** — AI assistants hallucinate the bare form and Laravel replies "Command schedule:clear is not defined." If a `withoutOverlapping()` task appears to skip after a worker crash, deploy, or cache flush, run `php artisan schedule:clear-cache` — default mutex TTL is 24 hours; pass `->withoutOverlapping(N)` to override.
+- **`UploadedFile::hashName()` / `Str::uuid()` for storage names, never `pathinfo(PATHINFO_FILENAME)`** — the pathinfo-based "strip everything after the last dot" pattern is the root cause of `plank/laravel-mediable` CVE-2026-49972 (CVSS 8.8, RCE via `shell.php.jpg` on misconfigured Apache/nginx) and is what AI assistants default to. Always store uploads with `hashName()` (server-rendered hex + server-detected extension) and disable PHP execution in the upload directory at the web server level — see `security.md` § "Critical: plank/laravel-mediable" CVE-2026-49972 for the full defense-in-depth pattern.
 - **`Artisan::call()` and Octane workers don't mix** — the called command reuses the current Kernel, so constructor-injected request-scoped state (tenant, auth user, request ID), facade mocks, and `config()` mutations leak across requests in the same Swoole/RoadRunner/FrankenPHP worker. Inject per-invocation state inside `handle()` (not the constructor) and prefer `Artisan::queue()` for any HTTP-triggered admin work — it dispatches to a worker with a clean kernel.
 - **`$this->components->bulletList()` and friends, not raw `echo`** — every command output beyond a single line should go through the `components` factory (`bulletList`, `twoColumnDetail`, `info`, `warn`, `error`, `confirm`, `ask`, `choice`, `secret`). Same API Laravel itself uses for `migrate`, `schedule:list`, `queue:listen` — terminal-width-aware, ANSI-styled, consistent across all your commands.
 - **`@class` / `@style` directives, not ternary class lists** — `class="{{ $isActive ? 'active' : '' }}"` is XSS-prone if `$isActive` is ever non-string, harder to grep, and harder to lint. Use `@class(['nav-link', 'nav-link--active' => $isActive])` — only array keys become classes, not the values. Laravel 9.18+.
