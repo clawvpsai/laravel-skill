@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.24
+version: 1.22.25
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -98,6 +98,11 @@ metadata:
 | `@verbatim` directive (Vue/Alpine/JS) | `blade.md` (`@verbatim` section) | Wrap a chunk of frontend-framework template syntax so Blade doesn't try to parse `{{ }}` and `@click`; can't be nested |
 | `Blade::render()` inline string rendering | `blade.md` (Rendering Inline Blade Strings section) | AI-generated output, CMS user templates, DB-stored email templates; **NOT sandboxed** — user-supplied templates can RCE via `@php` or arbitrary method calls; pass `deleteCachedView: true` and ideally whitelist directives or use Twig/Mustache for user-facing templates |
 | Inline component views via `<<<'blade'` heredoc | `blade.md` (Inline Component Views section) | Class-based components return the Blade template directly from `render()`; best for small components, >20 lines still want external view files for cache + IDE highlighting |
+| `@class` and `@style` directives (Laravel 9.18+) | `blade.md` (`@class` and `@style` Directives section) | The most-missed Blade directive for CSS class lists — collapses `class="{{ $isActive ? 'active' : '' }}"` ternaries into a single array-based declaration, and is XSS-safe (only array keys become classes, not the values). Use for any class list with 2+ conditions; pairs cleanly with Tailwind |
+| `<x-slot:foo>` short-form slot syntax (Laravel 9+) | `blade.md` (`<x-slot:foo>` Short-Form Slot Syntax section) | Drop the `name=` attribute for static slot names — IDEs and `grep` treat `<x-slot:header>` as a single token, fixing a real refactor-rename problem. Long form only needed when the slot name is dynamic |
+| `@aware` directive for parent-to-child data flow (Laravel 9+) | `blade.md` (`@aware` Directive section) | Child components pull parent data without explicit prop threading — mirrors Vue's `provide/inject`. Watch: the parent MUST have the prop defined (child silently gets `null` otherwise), no type safety, and past 1 level of nesting prefer explicit props for visibility |
+| `<x-dynamic-component>` for runtime-resolved component names | `blade.md` (`<x-dynamic-component>` section) | The right answer for CMS widget systems, A/B-tested components, and plugin architectures. AI models default to `@include($component->name, [...])` for this pattern, which bypasses the entire component system. Always validate the view exists with `View::exists()` first |
+| `view:cache` / `view:clear` + Octane stale view cache | `blade.md` (View Cache section) | `view:cache` is NOT part of `php artisan optimize` — add it explicitly to CI/CD deploy scripts. Octane workers keep compiled views in process memory; after a deploy that touches `resources/views/`, run `octane:reload` (or rely on `octane.warm` config). Most AI-generated deploy scripts miss both |
 | FrankenPHP + Octane (Caddy single-binary runtime) | `deployment.md` (FrankenPHP section) | Laravel Cloud's underlying runtime; HTTP/3 + auto HTTPS + Mercure + Brotli out of the box; preferred over Swoole/RoadRunner for new Octane deploys on PHP 8.3+ |
 | OPcache preload + tracing JIT (PHP 8.3+) | `deployment.md` (OPcache + JIT section) | Single biggest free performance win
 | `EXPLAIN` / index-pattern deep dive + cache stampede SWaR | `performance.md` (Index Patterns section + Cache Stampede section) | Pre-optimize slow queries with the equality→range→ORDER BY composite rule; prevent thundering herd with `Cache::lock()->block()` or `Cache::flexible()` |
@@ -153,6 +158,9 @@ metadata:
 - **`schedule:clear-cache` is the command, NOT `schedule:clear`** — AI assistants hallucinate the bare form and Laravel replies "Command schedule:clear is not defined." If a `withoutOverlapping()` task appears to skip after a worker crash, deploy, or cache flush, run `php artisan schedule:clear-cache` — default mutex TTL is 24 hours; pass `->withoutOverlapping(N)` to override.
 - **`Artisan::call()` and Octane workers don't mix** — the called command reuses the current Kernel, so constructor-injected request-scoped state (tenant, auth user, request ID), facade mocks, and `config()` mutations leak across requests in the same Swoole/RoadRunner/FrankenPHP worker. Inject per-invocation state inside `handle()` (not the constructor) and prefer `Artisan::queue()` for any HTTP-triggered admin work — it dispatches to a worker with a clean kernel.
 - **`$this->components->bulletList()` and friends, not raw `echo`** — every command output beyond a single line should go through the `components` factory (`bulletList`, `twoColumnDetail`, `info`, `warn`, `error`, `confirm`, `ask`, `choice`, `secret`). Same API Laravel itself uses for `migrate`, `schedule:list`, `queue:listen` — terminal-width-aware, ANSI-styled, consistent across all your commands.
+- **`@class` / `@style` directives, not ternary class lists** — `class="{{ $isActive ? 'active' : '' }}"` is XSS-prone if `$isActive` is ever non-string, harder to grep, and harder to lint. Use `@class(['nav-link', 'nav-link--active' => $isActive])` — only array keys become classes, not the values. Laravel 9.18+.
+- **Always run `php artisan view:cache` in production deploys** — `view:cache` is NOT part of `php artisan optimize` (which only handles `config:cache`, `route:cache`, `event:cache`). Add it explicitly to your CI/CD script AFTER `composer install` and BEFORE the worker pool accepts traffic. Symptom of missing it: first requests after deploy get `ErrorException: include(): Filename cannot be empty`.
+- **Octane workers keep compiled views in process memory** — after a deploy that changes a `.blade.php`, in-flight Swoole/RoadRunner/FrankenPHP workers still render the OLD template. Run `php artisan octane:reload` after every deploy that touches `resources/views/`, or pre-load views via the `octane.warm` config list. Without it, `view:clear` clears disk but the workers still serve stale views.
 
 ## Version Defaults
 

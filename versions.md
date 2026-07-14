@@ -1096,3 +1096,47 @@ Both CVEs were disclosed via [VulnCheck](https://www.vulncheck.com/advisories/la
 - **`blade.md` gap-fill** — 12 days stale by cycle-39 time. May yield a small cycle if there's a new Blade feature in the upcoming Laravel 13.19.x or 13.20.0 release.
 
 SKILL.md bumped to **v1.22.24** (cycle-38 security.md CVE update — plank/laravel-mediable CVE-2026-49969 + CVE-2026-49970 + 7.0.0 fix acknowledgment). 38 cycles in 16 days.
+
+
+---
+
+## Cycle 39 (2026-07-14 12:09 UTC) — blade.md Gap-Fill: Mature Directives That AI Models Still Miss
+
+### State of the skill at cycle time
+
+- **Latest Laravel framework release:** **v13.19.0** (tagged 2026-07-07 14:14 UTC) — still head of 13.x. **No v13.19.1 or v13.20.0** has landed in the ~7 days since the cycle-31 release coverage. GitHub `releases/latest` rechecked and confirmed v13.19.0 is still the only "Latest" tag. The 6 merged 13.x PRs since v13.19.0 (PRs #60708, #60736, #60740, #60742, #60744, #60746, #60748, #60753) are all bug fixes, no new public API surface.
+- **No new Laravel-framework security advisories** since `GHSA-crmm-hgp2-wgrp` (CVE-2026-48041, June 8, 2026).
+- **PHP security batch** from 2026-07-01 (`8.3.32` / `8.4.23` / `8.5.8`) still current.
+
+### Why blade.md and not a topic file with a higher gap value
+
+- `blade.md` was last touched in **cycle 19 (2026-07-02)** — 12 days stale by cycle-39 time. It was the explicit watch-list candidate named at the end of cycle 38, with the qualifier: "May yield a small cycle if there's a new Blade feature in the upcoming Laravel 13.19.x or 13.20.0 release." There is no new Blade feature in any merged 13.x PR since v13.19.0 — but a fresh read of the file surfaced **five mature, widely-used directives that were completely undocumented in the skill** (`@class`, `@style`, `<x-slot:foo>`, `@aware`, `<x-dynamic-component>`) plus a major production gotcha (`view:cache` is not part of `php artisan optimize`). All five directives have been in Laravel since 9.x — they're not "new" but they're the ones AI models hallucinate or skip in favor of verbose alternatives, exactly the gap this skill is built to close.
+- The alternative candidates (`controllers.md` cycle 29, `auth.md` cycle 24) are mid-stale but the cycle-38 gap value per file was lower — `controllers.md` and `auth.md` got 200+ lines of additions in cycle 29 (`JsonResource` patterns) and cycle 24 (Sanctum passkey + `#[UsePolicy]` + `#[Authorize]`), respectively. They'd both be valid cycle-40 or -41 candidates.
+
+### What cycle 39 changed
+
+- **`blade.md`** — added 5 new full sections (~179 lines added, 438 → 617 lines total) and grew the Common Mistakes list 6 → 14 entries:
+  1. **`@class` and `@style` directives (Laravel 9.18+)** — the most-missed Blade directive for CSS class lists. Collapses `class="{{ $isActive ? 'active' : '' }}"` ternaries into a single array-based declaration. **XSS-safe by construction** (only array keys become classes, not the values). Works with Tailwind. Pairs cleanly with `@checked` / `@selected` for mixed dynamic lists.
+  2. **`<x-slot:foo>` short-form slot syntax (Laravel 9+)** — drop the `name=` attribute for static slot names. IDEs (PhpStorm, VSCode + intelephense) and `grep` treat `<x-slot:header>` as a single token, fixing a real refactor-rename problem the long form has. Long form only needed when the slot name is dynamic (e.g. config-driven A/B-tested layouts).
+  3. **`@aware` directive (Laravel 9+)** — child components pull parent data without explicit prop threading. Mirrors Vue's `provide/inject` and React's `Context`. Great for menu nesting (`<x-menu>` → `<x-menu.item>`) and theme propagation. Documented the three real footguns: (a) parent MUST have the prop defined (child silently gets `null` otherwise), (b) no compile-time type safety, (c) anti-pattern past 1 level of nesting (invisible data flow).
+  4. **`<x-dynamic-component>` for runtime-resolved component names** — the right answer for CMS widget systems, A/B-tested components, and plugin architectures. Documented why AI models default to the wrong pattern (`@include($component->name, [...])`) and the gotchas (no compile-time validation, anonymous-vs-class resolution order, `@once` / `@pushOnce` identity fix from 13.16+).
+  5. **View cache: `view:cache` / `view:clear` + Octane staleness** — `view:cache` is **NOT** part of `php artisan optimize` (which only handles `config:cache`, `route:cache`, `event:cache`). You must add it explicitly to CI/CD deploy scripts. AI-generated `github actions` / `forge` / `envoy` recipes miss this 90% of the time. Octane workers keep compiled views in process memory across requests, so after a deploy that touches `resources/views/`, in-flight workers render the OLD template until they're recycled. Two fixes documented: `php artisan octane:reload` after every deploy that touches views, or rely on the `octane.warm` config list to pre-load. Plus cache-file ownership gotcha (PHP-FPM / Octane user changes) and `View::exists()` runtime check for dynamic views.
+- **Common Mistakes list in `blade.md` grew 6 → 14 entries** — added: `@class` vs ternary, `<x-slot>` short form, `@aware` 3-level anti-pattern, `dynamic-component` without `View::exists`, missing `view:cache` in deploy, Octane stale view cache, unquoted attribute injection (`data-foo={{ $value }}` lets attackers break out with a space), N+1 in `@foreach`.
+- **`SKILL.md`** — bumped skill version `1.22.24 → 1.22.25`; added **5 new cross-reference table rows** (one per new blade.md section); added **3 new Critical Rules** at the top-of-mind layer:
+  - "`@class` / `@style` directives, not ternary class lists" (XSS-safer + Tailwind-friendly)
+  - "Always run `php artisan view:cache` in production deploys" (it's NOT part of `php artisan optimize`)
+  - "Octane workers keep compiled views in process memory" (run `octane:reload` after view changes)
+- **`README.md`** — bumped version stamp (`v1.22.24 → v1.22.25`), cycle counter (39), research-cycle marker to 2026-07-14 12:09 UTC (cycle 39), line count (`~10,960 → ~11,140`).
+- **No version-stamp change to "Active Versions"** — `v13.19.0` / `v12.63.0` unchanged. No new version sections.
+
+### Watch list for cycle 40
+
+- **`controllers.md`** (last touched cycle 29, 2026-07-04 — 10 days stale) — likely the next gap-fill candidate. Possible targets: `#[Scope]` attribute on Eloquent query scopes (12.x+), `#[Fillable]`-with-validation Form Request pattern, `Request::enum()` shorthand vs `Rule::enum()`, `Request::integer()` / `Request::string()` typed accessors (Laravel 12+), and the new `Route::redirect()` / `Route::view()` shortcut improvements.
+- **`auth.md`** (last touched cycle 24, 2026-07-04 — 10 days stale) — alternative candidate. Possible targets: Fortify 1.x passkey API updates, Laravel 13 starter-kit integration patterns, `Auth::attempt()` with closure for 2FA challenge, `Password::sendResetLink()` rate-limit headers.
+- **`logging.md`** (last touched cycle 4, 2026-07-04 — 10 days stale) — the smallest file in the skill (8,986 bytes). Possible targets: `Context::push()` / `pop()` cleanup gotchas under Octane, the `Log::withoutContext()` Octane hygiene pattern, the new `Logger` driver for OpenTelemetry export, and the missing coverage of the `monolog` channel-level filter chain.
+- **v13.19.1** — likely mid-to-late July 2026 once 5–10 post-13.19 PRs accumulate. Watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases).
+- **v13.20.0** — first minor after 13.19, likely late July / early August 2026.
+- **Laravel 12 EOL** — bug fixes end **August 13, 2026** (~30 days from cycle time). Plan migrations off 12.x accordingly.
+- **Reverb ecosystem updates** — `laravel/reverb` 1.10.2 (May 13, 2026) is current; watch for a 1.10.3 or 1.11.0 release addressing any post-CVE-23524 hardening.
+
+SKILL.md bumped to **v1.22.25** (cycle-39 blade.md gap-fill — `@class` / `@style` (9.18+) + `<x-slot:foo>` (9+) + `@aware` (9+) + `<x-dynamic-component>` + `view:cache` / Octane stale view cache + 8 new Common Mistakes + 3 new Critical Rules). 39 cycles in 16 days.
