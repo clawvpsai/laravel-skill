@@ -631,3 +631,172 @@ cycle 33. No Laravel 13.x release in the last 6 hours (cycle 34 trigger time: 20
 - **v13.20.0** — first minor after 13.19, likely late July / early August 2026.
 - **Laravel 12 EOL** — bug fixes end **August 13, 2026** (33 days from cycle time). Plan
   migrations off 12.x accordingly.
+
+---
+
+## First-Party Image Processing (Laravel 13.20+, `Illuminate\Image`)
+
+Laravel 13.20 ships a first-class `Image` facade backed by **Intervention Image v4** (GD and Imagick drivers). It handles resizing, cropping, format conversion, and storage without needing a third-party wrapper.
+
+**Install the driver:**
+```bash
+composer require intervention/image
+```
+
+**Configure driver (optional — GD is default):**
+```php
+// .env
+IMGIX_DRIVER=imagick
+```
+
+Or create `config/image.php`:
+```php
+<?php
+return [
+    'driver' => env('IMAGE_DRIVER', 'gd'),
+];
+```
+
+### API Reference
+
+The `Image` facade is **immutable** — every transformation returns a new `Image` instance.
+
+```php
+use Illuminate\Support\Facades\Image;
+
+// ── Input sources ──────────────────────────────────────────
+Image::read('photos/hero.jpg');                        // local file path
+Image::read($request->file('photo'));                 // UploadedFile
+Image::read(Storage::disk('s3')->path('uploads/x.png')); // from storage
+Image::read('https://example.com/remote.jpg');         // remote URL
+Image::read($bytes);                                   // raw binary string
+Image::read(fopen('photo.jpg', 'r'));                 // PHP resource
+
+// ── Resize ────────────────────────────────────────────────
+// Constrain to max width (proportional height)
+Image::read($file)->resize(maxWidth: 800)->save();
+
+// Constrain to max height (proportional width)
+Image::read($file)->resize(maxHeight: 600)->save();
+
+// Exact dimensions (center-crop to fit)
+Image::read($file)->resize(width: 400, height: 400)->save();
+
+// Resize only if larger (don't upscale)
+Image::read($file)->resize(maxWidth: 1200, height: 1200, keepAspectRatio: true)->save();
+
+// ── Crop ──────────────────────────────────────────────────
+Image::read($file)->crop(width: 200, height: 200)->save();
+
+// Crop from specific coordinates (x, y, width, height)
+Image::read($file)->crop(x: 50, y: 50, width: 300, height: 300)->save();
+
+// ── Format conversion ─────────────────────────────────────
+Image::read('photo.jpg')->toJpeg(quality: 85)->save('photo.jpg');
+Image::read('photo.jpg')->toWebp(quality: 80)->save('photo.webp');
+Image::read('photo.png')->toPng()->save('photo.png');
+Image::read('photo.jpg')->toGif()->save('photo.gif');
+
+// ── Effects ───────────────────────────────────────────────
+Image::read($file)->blur(amount: 5)->save();          // 1–100
+Image::read($file)->sharpen(amount: 80)->save();       // 1–100
+Image::read($file)->brightness(20)->save();           // -100 to 100
+Image::read($file)->contrast(20)->save();             // -100 to 100
+Image::read($file)->flip('h')->save();                // 'h' or 'v'
+Image::read($file)->rotate(90)->save();
+
+// ── Save options ───────────────────────────────────────────
+Image::read($file)->resize(800)->save();                     // overwrite source
+Image::read($file)->resize(800)->save('output.jpg');          // new path
+Image::read($file)->resize(800)->toJpeg(quality: 85)->save(); // convert + save
+
+// ── Inline manipulation (modify in memory, no file I/O) ───
+$img = Image::read($file)->resize(400)->blur(2);
+$img2 = $img->sharpen(80);  // $img is unchanged (immutable)
+
+// ── Stream directly to storage (no local temp file) ─────────
+Image::read($request->file('banner'))
+    ->resize(maxHeight: 300)
+    ->toJpeg(quality: 85)
+    ->store(path: 'banners/' . Str::uuid() . '.jpg', disk: 's3');
+
+// Or store to local disk
+Image::read($file)->resize(200)->store(path: 'thumbs/x.jpg');
+```
+
+### Driver Capabilities
+
+| Operation      | GD  | Imagick |
+|----------------|-----|---------|
+| `resize`       | ✅  | ✅      |
+| `crop`         | ✅  | ✅      |
+| `toJpeg`       | ✅  | ✅      |
+| `toWebp`       | ✅  | ✅      |
+| `toPng`        | ✅  | ✅      |
+| `toGif`        | ✅  | ✅      |
+| `blur`         | ✅  | ✅      |
+| `sharpen`      | ✅  | ✅      |
+| `brightness`   | ✅  | ✅      |
+| `contrast`     | ✅  | ✅      |
+| `flip`         | ✅  | ✅      |
+| `rotate`       | ✅  | ✅      |
+| `toGreyscale`  | ✅  | ✅      |
+
+### Common Patterns
+
+**Avatar resize (square, center-crop):**
+```php
+$avatar = Image::read($request->file('avatar'))
+    ->resize(width: 256, height: 256)
+    ->crop(width: 256, height: 256)
+    ->toJpeg(quality: 90)
+    ->store(path: 'avatars/' . $user->id . '.jpg', disk: 'public');
+```
+
+**Blog hero image (max width, strip EXIF):**
+```php
+$path = Image::read($request->file('hero'))
+    ->resize(maxWidth: 1200)
+    ->toWebp(quality: 85)
+    ->store(path: 'blog/heroes/' . Str::uuid() . '.webp');
+```
+
+**Thumbnail generation (batch):**
+```php
+foreach ($request->file('gallery') as $photo) {
+    $uuid = Str::uuid();
+    Image::read($photo)
+        ->resize(maxWidth: 400)
+        ->toJpeg(quality: 80)
+        ->store(path: "thumbs/{$uuid}.jpg");
+    Image::read($photo)
+        ->resize(maxWidth: 800)
+        ->toJpeg(quality: 85)
+        ->store(path: "medium/{$uuid}.jpg");
+}
+```
+
+### Testing
+
+```php
+use Illuminate\Support\Facades\Image;
+
+// Fake for testing (avoids actual image processing in tests)
+Image::fake($imageResource);
+$image->assertWidth(800);
+$image->assertHeight(600);
+
+// Fake a specific image size
+Image::fake(1024, 768);
+// Then:
+Image::read(...)
+```
+
+### Common Mistakes
+
+- **`->save()` without args overwrites the source file** — always pass a path or use `->store()` when you don't want to modify the original
+- **Intervention Image v4 required, not v3** — the facade interface targets v4 API. `composer require intervention/image:^4.0`
+- **Memory limits on large images** — GD driver is single-threaded and memory-intensive. For server-side image processing at scale (batch resize thousands of photos), prefer Imagick and set `memory_limit: -1` in PHP or use a queue job
+- **Format conversion drops EXIF orientation** — if you need to preserve EXIF data (camera orientation, GPS), use Imagick and preserve metadata explicitly
+
+> **Sources:** [Laravel 13.20.0 release notes](https://github.com/laravel/framework/releases/tag/v13.20.0) | [Laravel News: First-Party Image Processing](https://laravel-news.com/laravel-13-20-0) | [Intervention Image v4 docs](https://image.intervention.io/v4/)

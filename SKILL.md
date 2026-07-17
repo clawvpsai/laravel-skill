@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.26
+version: 1.22.27
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -15,6 +15,11 @@ metadata:
 | Routing, validation, request lifecycle | `controllers.md` | Building endpoints |
 | Sanctum, policies, gates, CSRF | `auth.md` | User auth & permissions |
 | Jobs, workers, retries, failed jobs | `queues.md` | Background processing |
+| `incrementEachQuietly` / `decrementEachQuietly` Eloquent bulk helpers (Laravel 13.20+) | `eloquent.md` (Bulk Operations section) | Batch counter updates without firing per-model events |
+| `QueueFake::beforePushing()` / `afterPushing()` lifecycle hooks (Laravel 13.20+) | `queues.md` (QueueFake Lifecycle Hooks section) | Inspect jobs entering/exiting the fake queue in tests |
+| First-party `Illuminate\Image` facade — resize, crop, convert, store (Laravel 13.20+) | `file-uploads.md` (First-Party Image Processing section) | Replace third-party image packages for basic transforms |
+| `#[WithoutMiddleware]` controller attribute (Laravel 13.20+) | `controllers.md` (WithoutMiddleware section) | Exclude specific middleware from individual controller actions |
+| `Storage::assertEmpty()` (Laravel 13.20+) | `file-uploads.md` (Testing File Uploads section) | Assert a storage path has no files — inverse of `assertExists` |
 | Templates, components, XSS, slots | `blade.md` | Blade/frontend work |
 | CLI commands, scheduling, tinker | `artisan.md` | DevOps & maintenance |
 | REST APIs, JSON, rate limiting | `api.md` | API development |

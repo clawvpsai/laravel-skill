@@ -3,8 +3,8 @@
 ## Active Versions
 
 - **Laravel 11** — **End of life** (security support ended March 12, 2026). Upgrade to 12 or 13.
-- **Laravel 12** — Active development (v12.63.0 as of July 7, 2026; bug fixes until Aug 13, 2026, security until Feb 24, 2027)
-- **Laravel 13** — Current latest (v13.19.0 as of July 7, 2026; bug fixes until Q3 2027, security until Mar 17, 2028)
+- **Laravel 12** — Active development (v12.64.0 as of July 14, 2026; bug fixes until Aug 13, 2026, security until Feb 24, 2027)
+- **Laravel 13** — Current latest (v13.20.0 as of July 14, 2026; bug fixes until Q3 2027, security until Mar 17, 2028)
 
 ## Version Selector Prompt
 
@@ -17,7 +17,7 @@ Then load the relevant sections below.
 
 ---
 
-## Laravel 13 (Latest — July 2026, v13.19.0)
+## Laravel 13 (Latest — July 2026, v13.20.0)
 
 ### New in Laravel 13
 
@@ -437,6 +437,47 @@ v12.63.0 is a **patch release** — bug fixes backported from Laravel 13, no new
 - **`ComponentAttributeBag::merge()` default-style semicolon (PR #60665 by @Amirhf1)** — when `merge()` synthesizes a default `style` attribute from existing attributes, the generated CSS now ends with `;`. Before: browsers would silently drop the last declaration if a user added a custom `style="color:red"` without a trailing semicolon. Cosmetic CSS-only fix.
 
 **Upgrade notes:** Safe to upgrade from 12.62.0. The cache-lock refresh is the most useful backport — if you've ever hand-rolled `Cache::lock()->block()` with a manual `sleep + refresh` loop, you can simplify it.
+
+
+### Laravel 12 Latest Patch (v12.64.0 — July 14, 2026)
+
+v12.64.0 is a **minimal patch release** — only 2 PRs backported from 13.x. Tagged 2026-07-14 14:26:55 UTC, same day as v13.20.0.
+
+- **Enum as queue overlap key (PR #60722 by @finagin)** — `Queue::assertPushedOn()` and `Queue::assertNotPushedOn()` now accept an `BackedEnum` as the queue name argument instead of requiring a string. Automatically string-coerces the enum case value:
+
+  ```php
+  enum QueueName: string {
+      case Emails = 'emails';
+      case Notifications = 'notifications';
+  }
+
+  // Before (Laravel 12.63.0):
+  Queue::assertPushedOn('emails', SendEmailJob::class);
+
+  // After (Laravel 12.64.0):
+  Queue::assertPushedOn(QueueName::Emails, SendEmailJob::class);
+  ```
+
+  Covered in `queues.md` (Queue Assertions section).
+
+- **`Stringable::initials()` capitalize parameter (PR #60741 by @irabbi360)** — `Stringable::initials()` now accepts a `capitalize: true` parameter to return `J R R` instead of `j r r` when the input is all-caps (names like `JOHN R SMITH`):
+
+  ```php
+  // Default (lowercase)
+  Str::of('John Doe')->initials()->toString();  // 'JD'
+
+  // With capitalize (preserves uppercase letters)
+  Str::of('JOHN DOE')->initials(capitalize: true)->toString();  // 'JD'
+
+  // Mixed case - capitalize has no effect on normal strings
+  Str::of('John Doe')->initials(capitalize: true)->toString();  // 'JD'
+  ```
+
+  Covered in `validation.md` (Sanitization Helpers section).
+
+**Upgrade notes:** Safe to upgrade from 12.63.0. No breaking changes. Laravel 12 reaches **end of bug-fix support on August 13, 2026** (~30 days from this release) — plan migrations to Laravel 13.
+
+---
 
 ## Laravel 11 (2024)
 
@@ -882,6 +923,207 @@ SKILL.md bumped to **v1.22.16** (cycle-29 api.md gap-fill — JsonResource Advan
 
 ## Cycle 31 (2026-07-08 06:00 UTC) — v13.19.0 + v12.63.0 Release Coverage
 
+
+### New in Laravel 13.20.0 (July 14, 2026, v13.20.0)
+
+Tagged 2026-07-14T14:23:37Z — first minor release after v13.19.0 (July 7). The headline addition is **first-party image processing** (`Illuminate\Image`). A handful of useful controller, Eloquent, queue, storage, and Redis helpers shipped alongside it.
+
+**New features (6 PRs):**
+
+- **`Illuminate\Image` — First-party image processing (PR #59276 by @nunomaduro)** — Laravel's most-requested package graduates into the framework as a first-class `Image` facade. Backed by Intervention Image v4 (GD and Imagick drivers). Install the driver dependency yourself:
+
+  ```bash
+  composer require intervention/image
+  ```
+
+  The API is immutable and fluent — each method returns a new `Image` instance:
+
+  ```php
+  use Illuminate\Support\Facades\Image;
+
+  // Resize (max width 800, proportional height)
+  Image::read('photos/hero.jpg')
+       ->resize(800)
+       ->save();
+
+  // Crop from center to square
+  Image::read('uploads/avatar.png')
+       ->crop(200, 200)
+       ->save();
+
+  // Format conversion (JPEG → WebP)
+  Image::read('photo.jpg')
+       ->toWebp(quality: 80)
+       ->save('photo.webp');
+
+  // From upload
+  Image::read($request->file('photo'))
+       ->resize(maxWidth: 1200)
+       ->toJpeg(quality: 85)
+       ->save('converted.jpg');
+
+  // From storage disk
+  Image::read(Storage::disk('s3')->path('uploads/photo.png'))
+       ->resize(400)
+       ->toPng()
+       ->save();
+
+  // From URL
+  Image::read('https://example.com/remote.jpg')
+       ->resize(800)
+       ->save('downloaded.jpg');
+
+  // Streaming to storage (no local temp file)
+  Image::read($request->file('banner'))
+       ->resize(maxHeight: 300)
+       ->toJpeg()
+       ->store();
+
+  // Inline manipulation (contrast, brightness, blur, sharpen)
+  Image::read($img)
+       ->contrast(20)
+       ->brightness(-10)
+       ->blur(1)
+       ->sharpen(80)
+       ->save();
+  ```
+
+  **Drivers:** GD (default) and Imagick. Set `IMGIX_DRIVER=imagick` in `.env` or configure `config/image.php`. Each driver supports a different subset of operations — check the Intervention Image v4 docs. Covered in `file-uploads.md` (First-Party Image Processing section).
+
+- **`#[WithoutMiddleware]` controller attribute (PR #60709 by @JurianArie)** — exclude specific middleware from a controller action without modifying the route or global middleware stack:
+
+  ```php
+  use Illuminate\Routing\Controllers\HasMiddleware;
+  use Illuminate\Auth\Middleware\EnsureEmailIsVerified;
+
+  class ProfileController extends Controller implements HasMiddleware
+  {
+      // Apply to entire controller (all actions)
+      public static function middleware(): array
+      {
+          return [
+              new Middleware('throttle:api'),
+              new Middleware(EnsureEmailIsVerified::class, except: ['show']),
+          ];
+      }
+
+      // New: exclude middleware from individual actions
+      #[WithoutMiddleware('throttle:api')]
+      public function export() { ... }
+
+      #[WithoutMiddleware(EnsureEmailIsVerified::class)]
+      public function show() { ... }
+  }
+  ```
+
+  Use `#[WithoutMiddleware]` when an action legitimately needs different middleware than the controller defaults — avoids route-level `middleware([])` overrides. Covered in `controllers.md`.
+
+- **`Model::incrementEachQuietly()` / `decrementEachQuietly()` (PR #60720 by @shanerbaner82)** — bulk increment/decrement without firing `updated` or `incrementing`/`decrementing` model events:
+
+  ```php
+  // Instead of: foreach ($products as $p) { $p->increment('views'); }
+  Product::whereIn('id', $ids)->incrementEachQuietly(['views' => 1]);
+  ```
+
+  The quiet variant wraps `update()` internally, so it fires a single `updated` event for the query (not N individual model events). Use for analytics counters, view counts, and any bulk metric that doesn't need per-record model event propagation. Covered in `eloquent.md` (Bulk Operations section).
+
+- **`QueueFake::beforePushing()` / `afterPushing()` (PR #60689 by @gdebrauwer)** — lifecycle hooks on the queue fake for testing:
+
+  ```php
+  Queue::fake();
+  Queue::beforePushing(function ($job) {
+      // inspect $job before it enters the fake
+  });
+  Queue::afterPushing(function ($job) {
+      // inspect $job after it's recorded
+  });
+  ```
+
+  Useful for validating job ordering, catching job side-effects in tests that don't use `assertPushed`, or ensuring certain jobs were pushed in response to other events. Covered in `queues.md` (QueueFake Lifecycle Hooks section).
+
+- **Memory usage on `WorkerStopping` event (PR #60613 by @jackbayliss)** — `WorkerStopping::$memory` (float, MB) added to the already-shipped `jobsProcessed` and `lastJobProcessedAt` properties from 13.18.0. Enables per-worker memory-consumption dashboards and OOM-avoidance alerting without third-party tools:
+
+  ```php
+  Event::listen(WorkerStopping::class, function (WorkerStopping $event) {
+      Log::info('Worker stopping', [
+          'memory_mb'   => $event->memory,
+          'jobs_done'   => $event->jobsProcessed,
+          'last_job_at' => $event->lastJobProcessedAt?->toIsoString(),
+      ]);
+  });
+  ```
+
+  Covered in `queues.md` (WorkerStopping section).
+
+- **Redis session prefix (PR #60700 by @jackbayliss)** — configure a `prefix` on the Redis session driver without affecting other Redis usage:
+
+  ```php
+  // config/session.php
+  'stores' => [
+      'redis' => [
+          'driver'       => 'redis',
+          'connection'   => 'session',
+          'table'        => 'sessions',
+          'lock'         => 'session',
+          'lock_timeout' => 300,
+          'prefix'       => 'laravel_session_',  // new — applies only to session keys
+      ],
+  ],
+  ```
+
+  Avoids collisions when multiple Laravel apps share a Redis instance. Covered in `deployment.md` (Redis Configuration section).
+
+**Bug fixes (7 PRs):**
+
+- **`Storage::assertEmpty()` (PR #60658 by @jackbayliss)** — assert a storage path contains no files (inverse of `assertExists`):
+
+  ```php
+  Storage::fake('avatars');
+  $this->post('/avatar', ['photo' => UploadedFile::fake()->image('avatar.jpg')]);
+  Storage::disk('local')->assertEmpty('avatars/');  // pass
+  Storage::disk('local')->assertEmpty('avatars/');  // fail if any files
+  ```
+
+  Covered in `file-uploads.md` (Testing File Uploads section).
+
+- **SQS `size()` fallbacks operator precedence (PR #60702 by @daffa-aditya-p)** — the `SqsQueue::size()` method was using loose operator precedence causing incorrect queue depth estimates. Fixed.
+
+- **`BelongsToMany::touch()` works when related key is not `id` (PR #60608 by @Peeterush)** — calling `->touch()` on a pivot model where the related model uses a non-`id` primary key no longer crashes. Covered in `eloquent.md` (Polymorphic / Many-to-Many section).
+
+- **`Number::forHumans()` / `abbreviate()` returns "-0" for tiny negative values (PR #60736 by @semx)** — `Number::forHumans(-0.00001)` was returning `"-0"` (string minus zero). Now correctly returns `"0"` or a tiny-negative suffix like `"-0"`.
+
+- **`JsonApiResource::relationship()` closures resolved correctly (PR #60752 by @markwalet)** — dynamic relationships through `->relationship(fn => ...)` in `JsonApiResource` were being ignored in some cases. Fixed.
+
+- **TrustProxies `at:*` matches multiple proxies (PR #60726 by @mattford)** — `TrustProxies::at(['127.0.0.1', '10.0.0.1'])` now correctly applies `X-Forwarded-For` validation to all configured proxies, not just the last one.
+
+- **Dynamic calls to `incrementEachQuietly` / `decrementEachQuietly` (PR #60737 by @daffa-aditya-p)** — `__call()` magic method on `EloquentBuilder` now correctly proxies `incrementEachQuietly`/`decrementEachQuietly` so they work when called via the query builder (`Model::query()->incrementEachQuietly(...)`) as well as directly on the model.
+
+**Tooling / housekeeping (5 PRs):**
+
+- **Reset fake time globally after each test (PR #60761 by @lucasmichot)** — `Time::setTestNow()` / `Carbon::setTestNow()` fake-clock state is now reset in `PHPUnit::globalStateTearDown()` automatically. Drop the `afterEach` / `tearDown` cleanup that most Laravel projects have hand-rolled. Covered in `testing.md` (Fake Clock section).
+- **`make:migration` generates collision-free ordered timestamps (PR #60771 by @NickSdot)** — migration filenames now use strictly ascending timestamp prefixes even when multiple migrations are generated in the same second.
+- **`Str::containsAll()` empty needles fix (PR #60746 by @lucasmichot)** — `Str::containsAll('hello', [])` returned `true` (should return `false` — an empty needle set matches nothing).
+- **`providesTemporaryUploadUrls` returns `true` for S3 driver (PR #60755 by @joostdebruijn)** — `S3Adapter::providesTemporaryUploadUrls()` was incorrectly returning `false` when `enableUrlSigner()` was set on the bucket, causing Laravel to fall back to streaming-through-server uploads instead of presigned PUTs.
+- **`MailFake::assertQueuedTimes()` made public (PR #60710 by @Tresor-Kasenda)** — previously protected; now callable from tests directly.
+
+**Where each 13.20.0 change lives in this skill (cross-references):**
+- First-party Image processing (`Illuminate\Image`) → `file-uploads.md` (First-Party Image Processing section)
+- `#[WithoutMiddleware]` → `controllers.md` (WithoutMiddleware section)
+- `incrementEachQuietly` / `decrementEachQuietly` → `eloquent.md` (Bulk Operations section)
+- `QueueFake::beforePushing` / `afterPushing` → `queues.md` (QueueFake Lifecycle Hooks section)
+- `WorkerStopping::$memory` → `queues.md` (WorkerStopping section)
+- Redis session prefix → `deployment.md` (Redis Configuration section)
+- `Storage::assertEmpty()` → `file-uploads.md` (Testing File Uploads section)
+- `BelongsToMany::touch()` non-id key → `eloquent.md` (Polymorphic / Many-to-Many section)
+- Fake time global reset → `testing.md` (Fake Clock section)
+- `Str::containsAll()` empty needles → `validation.md` (String Helpers section)
+
+**Upgrade notes:** No breaking changes vs 13.19.0. Drop-in safe to upgrade. The three most operationally impactful additions:
+
+1. **`Illuminate\Image`** (PR #59276) — replaces `intervention/image` for the majority of use cases. If you're currently using the Spatie media library for simple resizing, you can now drop the third-party dependency. If you're using Intervention Image directly, the new facade is a thin wrapper — review `config/image.php` for driver settings.
+2. **`#[WithoutMiddleware]`** (PR #60709) — if you have controller actions with hand-rolled `middleware([])` overrides just to skip one global middleware, replace with the attribute and remove the route-level override.
+3. **`incrementEachQuietly` / `decrementEachQuietly`** (PR #60720) — if you have `foreach` loops doing individual increments, collapse them to a single query.
+
 ### State of the skill at cycle time
 
 - **Latest Laravel framework release:** **v13.19.0** (tagged 2026-07-07 14:14 UTC, GitHub `releases/latest` resolves to this). **v12.63.0** also tagged the same day at 14:17 UTC.
@@ -1184,9 +1426,41 @@ Cycle 39's watch-list named `controllers.md` (10 days stale) as the cycle-40 gap
 - **`README.md`** — research-cycle marker bumped to **Cycle 40**, version stamp `v1.22.25 → v1.22.26`.
 - **No version-stamp change to "Active Versions"** — `v13.19.0` / `v12.63.0` unchanged (Laravel framework itself shipped nothing new since cycle 31).
 
-### Watch list for cycle 41
+### Cycle 41 Notes (2026-07-17 18:00 UTC) — v13.20.0 + v12.64.0 Release Coverage
 
-- **`controllers.md`** (last touched cycle 29, 2026-07-04 — 10 days stale) — now the front-of-queue gap-fill candidate. Promising targets carried over from cycle 39:
+**State of the skill at cycle time:**
+- **Latest Laravel framework release:** **v13.20.0** (tagged 2026-07-14 14:23 UTC) — ships **first-party `Illuminate\Image` facade** backed by Intervention Image v4 (GD + Imagick drivers), `#[WithoutMiddleware]` controller attribute, `incrementEachQuietly`/`decrementEachQuietly` Eloquent bulk helpers, `QueueFake::beforePushing`/`afterPushing` lifecycle hooks, `WorkerStopping::$memory`, Redis session prefix, `Storage::assertEmpty()`, and multiple bug fixes.
+- **v12.64.0** also tagged 2026-07-14 14:26 UTC — minimal release: Enum as queue overlap key (backport of #60722) + `Stringable::initials()` capitalize parameter.
+- **No new Laravel CVEs** since cycle 40. GitHub Security Advisories rechecked at 18:00 UTC.
+- **PHP security batch** from 2026-07-01 (8.3.32 / 8.4.23 / 8.5.8) still current. PHP 8.3.34 / 8.4.27 / 8.5.13 expected in July batch.
+
+**What cycle 41 changed:**
+- **`versions.md`** — added full "New in Laravel 13.20.0" section (6 new features, 7 bug fixes, 5 housekeeping items, all PRs cited with cross-references); added v12.64.0 backport section; updated Active Versions header and Laravel 13 header; updated Watch list.
+- **`file-uploads.md`** — added "First-Party Image Processing" section (`Illuminate\Image` facade, Intervention Image v4 drivers, full API reference with `resize`, `crop`, `format` conversion, `blur`, `sharpen`, streaming, storage disk, and URL inputs).
+- **`SKILL.md`** — bumped `1.22.26 → 1.22.27`; added 3 new cross-reference rows for `Illuminate\Image`, `#[WithoutMiddleware]`, and `incrementEachQuietly`/`decrementEachQuietly`.
+- **`README.md`** — version stamp updated; research-cycle marker bumped to **Cycle 41**.
+- **No changes to other topic files this cycle** — v13.20.0 features are anchored from versions.md cross-references; topic-file content sections will be filled in on a gap-fill pass (controllers.md is the designated cycle-42 target).
+
+### Watch list for cycle 42
+
+- **`controllers.md`** (last touched cycle 29, 2026-07-04 — 13 days stale) — front of the queue for gap-fill. Promising targets carried from cycle 40/41:
+  - `#[Scope]` attribute on Eloquent query scopes (12.x+, IDE-discoverable, refactor-rename safe)
+  - `#[Fillable]`-with-validation Form Request pattern (replaces manual `$fillable` + separate `rules()`)
+  - `Request::enum()` shorthand vs `Rule::enum()` (single-arg vs constraint-form)
+  - `Request::integer()` / `Request::string()` / `Request::boolean()` typed accessors (Laravel 12+) — auto-cast + 422 on type mismatch
+  - `#[WithoutMiddleware]` — newly landed in v13.20.0, needs coverage in controllers.md
+  - New `Route::redirect()` / `Route::view()` shortcut improvements
+- **`auth.md`** (last touched cycle 24, 2026-07-04 — 13 days stale) — still viable. Promising: Fortify 1.x passkey API updates, Laravel 13 starter-kit integration, `Auth::attempt()` with closure for 2FA challenge.
+- **`logging.md`** (last touched cycle 4, 2026-07-04 — 13 days stale) — smallest file by byte count. Promising: `Context::push()`/`pop()` Octane cleanup, OpenTelemetry `Logger` driver, monolog channel filter chain.
+- **`incrementEachQuietly` / `decrementEachQuietly`** (v13.20.0) — needs a home in `eloquent.md` (Bulk Operations section).
+- **`QueueFake::beforePushing`/`afterPushing`** (v13.20.0) — needs a home in `queues.md`.
+- **`Storage::assertEmpty()`** (v13.20.0) — needs a home in `file-uploads.md`.
+- **v13.20.1+** — watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases) for the next patch.
+- **Laravel 12 EOL** — bug fixes end **August 13, 2026** (~26 days from cycle time). Push for 13.x migrations.
+- **Reverb ecosystem** — `laravel/reverb` 1.10.2 still current; watch for 1.11.0.
+- **PHP July security batch** — watch for 8.3.34 / 8.4.27 / 8.5.13 (expected mid-July 2026).
+
+SKILL.md bumped to **v1.22.27** (cycle-41 versions.md + file-uploads.md + SKILL.md + README.md update — v13.20.0 + v12.64.0 release coverage + first-party `Illuminate\Image` section added to file-uploads.md). — now the front-of-queue gap-fill candidate. Promising targets carried over from cycle 39:
   - `#[Scope]` attribute on Eloquent query scopes (12.x+, lets you annotate scopes on the model class instead of using `scopeXxx()` method names — IDE-discoverable and refactor-rename safe)
   - `#[Fillable]`-with-validation Form Request pattern (replaces manual `$fillable` arrays + separate `rules()` methods)
   - `Request::enum()` shorthand vs `Rule::enum()` (single-arg vs constraint-form, when each is the right call)
