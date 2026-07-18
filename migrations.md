@@ -239,6 +239,45 @@ Schema::table('posts', function (Blueprint $table) {
 composer require doctrine/dbal
 ```
 
+## Schema Introspection — `hasTable()` / `hasColumn()` / `hasForeignKey()`
+
+Check whether tables and columns exist **before** running migrations or seeding — avoids "table does not exist" crashes in multi-DB setups, conditional migration logic, and self-healing seeders:
+
+```php
+use Illuminate\Support\Facades\Schema;
+
+// Does the table exist?
+if (Schema::hasTable('posts')) {
+    // ...
+}
+
+// Does the column exist?
+if (Schema::hasColumn('posts', 'published_at')) {
+    // add index, etc.
+}
+
+// Does the foreign key constraint exist? (useful before dropForeign)
+if (Schema::hasForeign('posts', 'user_id')) {
+    $table->dropForeign('user_id');
+}
+
+// Multi-database introspection — pass connection name as second arg
+Schema::connection('tenant')->hasTable('invoices');   // tenant DB
+Schema::connection('legacy')->hasColumn('clients', 'company_id');
+```
+
+**Safe migration pattern (avoid re-run crashes):**
+```php
+if (!Schema::hasTable('analytics_events')) {
+    Schema::create('analytics_events', function (Blueprint $table) {
+        $table->id();
+        $table->string('event');
+        $table->json('payload')->nullable();
+        $table->timestamps();
+    });
+}
+```
+
 ## Laravel 13.18.1 Migration Blueprint Improvements
 
 - **`foreignUuid()` / `foreignUlid()` Blueprint return types (PR #60643 by @LiddleDev)** — these Blueprint methods now declare `ColumnType::Uuid` / `ColumnType::Ulid` to match `foreignId()`, so schema-dumpers and migration generators handle them uniformly. No runtime behavior change — only matters for tooling that introspects Blueprint method return types.

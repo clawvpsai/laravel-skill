@@ -405,6 +405,41 @@ $rows = DB::table('orders')
 
 ## Common Mistakes
 
+## Quiet Bulk Increment / Decrement — `incrementEachQuietly()` / `decrementEachQuietly()` (Laravel 13.20+, PR #60720)
+
+Firing hundreds of individual `updated` model events for a simple view-count update is expensive. Laravel 13.20 adds the **quiet** variants that bypass per-record model events entirely, firing a single `updated` for the whole query:
+
+```php
+// Before — fires N individual model events (one per record)
+foreach ($products as $product) {
+    $product->increment('views');   // updated + incrementing + incremented events × N
+}
+
+// Laravel 13.20 — fires ONE query, ONE updated event total
+Product::whereIn('id', $ids)->incrementEachQuietly(['views' => 1]);
+
+// Multi-column decrement (e.g., stock management)
+OrderItem::where('status', 'shipped')
+    ->decrementEachQuietly(['quantity' => 1, 'reserved' => 1]);
+
+// Mixed increment and decrement
+Metric::where('date', today())->incrementEachQuietly([
+    'visits' => 1,
+    'bounces' => -1,
+]);
+```
+
+**What fires:** one `updated` event on the parent model (not N individual model events). `incrementing` / `decrementing` / `incremented` / `decremented` events are **not** fired. Use for analytics counters, view counts, stock levels, and any bulk metric that doesn't need per-record event propagation.
+
+**When to use plain `increment()` vs `incrementEachQuietly()`:**
+| Scenario | Method |
+|---|---|
+| Single record counter | `Model::increment('counter')` |
+| Bulk analytics/counters, no observers needed | `Model::query()->incrementEachQuietly([...])` |
+| You need `updated` model events per record | Use a chunked loop with `increment()` |
+| Inventory/stock — observers must react | Chunked loop with `increment()` + observer |
+
+
 1. **Lazy loading in loops** — always check `with()`
 2. **Using env() outside config** — config caches, env becomes null
 3. **Mass assignment without $fillable** — exposes all fields

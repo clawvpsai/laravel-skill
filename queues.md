@@ -865,6 +865,45 @@ $batch->failed(); // number of failures
 - **`Release` Queue Middleware (Laravel 13.18.1, PR #60630)** — declarative companion to `$this->release($delay)`. Attach via `->middleware(new \Illuminate\Queue\Middleware\Release($delayInSeconds))` so the job releases itself back to the queue after middleware runs, without `handle()` needing to call `release()` manually. Use for "try, and if it would conflict, hand off to another worker" patterns without scattering `release()` calls across job classes. Add to `withMiddleware()` in `bootstrap/app.php` or apply per-job via `->middleware(new Release(60))` on the dispatch chain.
 - **Inspect Delayed Jobs on `Queue::fake()` (Laravel 13.18.1, PR #60636)** — `Queue::fake()` now tracks the `availableAt` timestamp on pushed jobs. Tests can inspect delayed releases via `Queue::assertReleased()` / `Queue::assertDelayed()` instead of losing the delay metadata when reading the fake.
 
+
+### `QueueFake` Lifecycle Hooks — `beforePushing()` / `afterPushing()` (Laravel 13.20+, PR #60689)
+
+The queue fake now supports **lifecycle hooks** that fire when jobs are pushed to the fake, enabling deeper inspection and side-effect testing without reaching into the fake's internal array:
+
+```php
+Queue::fake();
+
+// Fire before every job is recorded
+Queue::beforePushing(function ($job) {
+    // $job is the resolved job instance
+    // Useful for: logging, validating job shape before it enters the fake,
+    //              ensuring certain jobs are dispatched before others
+    Log::info('Queue fake: before push', ['job' => $job::class]);
+});
+
+// Fire after every job is recorded
+Queue::afterPushing(function ($job) {
+    // Useful for: capturing job metadata, validating job ordering,
+    //              triggering assertions that can't use assertPushed
+    expect($job)->retryAfter->toBe(60);
+});
+```
+
+**Common use cases:**
+- Validate job ordering: `beforePushing` captures a sequence array, `afterPushing` asserts expected order
+- Catch missing jobs: `beforePushing` can `abort()` if a job of unexpected type appears
+- Enrich jobs: add runtime context before the fake records it
+
+```php
+// Complete pattern: assert jobs were pushed in the right order
+$pushOrder = [];
+Queue::beforePushing(fn($job) => $pushOrder[] = $job::class);
+ProcessWebhookJob::dispatch($webhook);
+SendNotificationJob::dispatch($user);
+Queue::afterPushing(fn($job) => null); // record trigger
+expect($pushOrder)->toBe([ProcessWebhookJob::class, SendNotificationJob::class]);
+```
+
 Source: [Laravel 13 Docs - Queues](https://laravel.com/docs/13.x/queues)
 
 ### Laravel Reverb Database Driver — WebSocket Without Redis (Laravel 13)
