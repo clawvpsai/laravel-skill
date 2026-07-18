@@ -495,6 +495,32 @@ function safeForHumans(float|int $n, int $max = PHP_INT_MAX): string {
 
 Source: [PR #60617 — Fix Number::forHumans and Number::abbreviate crashing on INF/NAN](https://github.com/laravel/framework/pull/60617) | [PR #60625 — Fix Number::fileSize wrong unit suffix for non-finite inputs](https://github.com/laravel/framework/pull/60625)
 
+### `Number::forHumans()` / `Number::abbreviate()` Scaling Tiny Decimals (Laravel 13.20.0, PR #60768 by @daffa-aditya-p)
+
+v13.20.0 patches a precision-loss bug: `Number::forHumans()` and `Number::abbreviate()` previously produced incorrect output for **very small fractional numbers** (e.g., `0.000001` -> malformed abbreviations, or wrong unit scale). The fix ensures scaling arithmetic is applied correctly before abbreviation.
+
+```php
+use Illuminate\Support\Number;
+
+// Pre-13.20.0: tiny decimals produced wrong or empty output
+Number::forHumans(0.000001);    // broken
+Number::abbreviate(0.000001);   // broken
+
+// v13.20.0+: correct micro/milli scaling
+Number::forHumans(0.000001);    // "1 u" (micro) or locale-appropriate notation
+Number::forHumans(0.001);      // "1 m" (milli) or locale-appropriate notation
+Number::abbreviate(0.001);      // "0" (correctly rounds to nearest)
+```
+
+**When this matters:**
+- Scientific or precision-tooling APIs displaying micro/milli unit notation
+- Financial apps displaying very small fractions (basis points, micropayments)
+- Any dashboard rendering normalized metrics that include sub-unit values
+
+This is distinct from the 13.18.0 INF/NaN OOM fix (PR #60617 + #60625) — both patches are needed for complete `Number::` helper correctness.
+
+Source: [PR #60768 — Fix Number::forHumans() and abbreviate() scaling tiny decimals](https://github.com/laravel/framework/pull/60768)
+
 ## Updated from Research (2026-07-10, cycle 32)
 
 - **Added `## Index Patterns — Composite Column Order Rules` section** — covered the four-step slow-query diagnostic, the `equality → range → ORDER BY` rule for composite indexes, MySQL `EXPLAIN` red-flags (`type: ALL`, `Using filesort`, `key_len` mismatch), and PostgreSQL-specific patterns (`BRIN` for natural-order tables, `GIN` for full-text / `jsonb`, `gist` for geometric). Filament/Statamic/Spatie schemas commonly violate the composite-column rule silently — covered the most-skipped pattern in real codebases.

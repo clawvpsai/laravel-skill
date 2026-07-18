@@ -879,6 +879,8 @@ function safeNumber(mixed $value, callable $fn, string $fallback = 'N/A'): strin
 
 Source: [PR #60617 — Fix Number::forHumans and Number::abbreviate crashing on INF/NAN](https://github.com/laravel/framework/pull/60617) | [PR #60625 — Fix Number::fileSize wrong unit suffix for non-finite inputs](https://github.com/laravel/framework/pull/60625)
 
+**Separate fix — Tiny Decimal Scaling (v13.20.0, PR #60768):** `Number::forHumans()` and `Number::abbreviate()` also had a precision-loss bug on very small fractional values (e.g., `0.000001`). v13.20.0 fixes the scaling arithmetic so micro/milli unit notation renders correctly. This is orthogonal to the INF/NaN DoS fix — both patches are needed for complete `Number::` correctness. See `performance.md` (Number Scaling Tiny Decimals section) for details.
+
 ## Common Mistakes
 
 1. **Returning arrays directly** — always wrap in `response()->json()` with proper status codes

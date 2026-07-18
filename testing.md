@@ -704,6 +704,30 @@ class PostCreationTest extends DuskTestCase
 - **`assertQuery()` / `assertQueryMissing()` / `assertQueryJson()` test helpers (PR #60662)** — first-class query-string assertions on `TestResponse` and `Http::sent()` callbacks. `$response->assertQuery(['page' => 2, 'sort' => 'desc'])`, `$response->assertQueryJson('filters.status', 'active')`. Mirrors the existing `assertJson` API for query strings.
 - **`assertSoftDeleted()` / `assertNotSoftDeleted()` `deletedAtColumn` param (PR #60657)** — pass `deletedAtColumn: 'archived_at'` to soft-delete assertions on models that override `getDeletedAtColumn()`. Fixes a silent-misbehavior bug on apps with custom soft-delete column names.
 
+## Laravel 13.20.0 Testing Fixes (July 14, 2026)
+
+### `Carbon::setTestNow()` Fake Clock Auto-Reset (PR #60761 by @lucasmichot)
+
+Laravel 13.20.0 fixes a long-standing test-hygiene footgun: `Carbon::setTestNow()` / `Time::setTestNow()` fake-clock state is now reset **automatically in `PHPUnit::globalStateTearDown()`** — the Laravel test framework's lifecycle hook that runs after every test method. You no longer need hand-rolled `afterEach()` / `tearDown()` cleanup in your tests or base TestCase class.
+
+```php
+// Before v13.20.0 — you had to manually reset, or fake clock leaked to the next test
+protected function tearDown(): void
+{
+    Carbon::setTestNow(); // manually reset
+    parent::tearDown();
+}
+
+// v13.20.0+ — Laravel resets automatically, drop the cleanup
+// No tearDown() override needed just for Carbon fake clock
+```
+
+**Why it matters:** Fake clock leakage between tests is a source of flaky test suites — one test calls `Time::setTestNow('2026-01-01')` and a later test asserts `expect('2026-07-14')` but gets `'2026-01-01'` instead. Before 13.20.0 every project that used time-faking needed its own cleanup boilerplate. Now Laravel handles it for you out of the box.
+
+**When to keep your own cleanup:** If you use `setTestNow()` inside a single test doing non-linear time manipulation (e.g., `setTestNow('2026-01-01')` → assertions → `setTestNow('2026-07-14')` → more assertions within the same test), you still own that intra-test cleanup.
+
+Source: [PR #60761 — Reset fake time globally after each test](https://github.com/laravel/framework/pull/60761)
+
 ## Common Mistakes
 
 1. **Not using `RefreshDatabase`** — tests see stale data from previous tests

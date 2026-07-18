@@ -36,6 +36,31 @@ return new class extends Migration
 };
 ```
 
+### `make:migration` Collision-Free Ordered Timestamps (Laravel 13.20.0, PR #60771 by @NickSdot)
+
+Laravel 13.20.0 fixes a real-world annoyance: generating multiple migrations in the same second (e.g., a quick `make:migration add_status_to_posts_table` followed by `make:migration add_slug_to_posts_table` in a hot code-editing session) previously produced the **same timestamp prefix**, causing file-system ordering conflicts.
+
+Now `make:migration` generates strictly ascending timestamp prefixes even when multiple migrations are generated in the same second. The fix is in the timestamp generation logic — no changes needed in your migrations.
+
+```bash
+# Before v13.20.0 — same second = same prefix = potential ordering issues
+2026_07_18_120000_add_status_to_posts_table.php
+2026_07_18_120000_add_slug_to_posts_table.php   # ← collision risk
+
+# v13.20.0+ — microsecond-precision or deferred-commit ordering
+2026_07_18_120000_00000000_add_status_to_posts_table.php
+2026_07_18_120000_00000001_add_slug_to_posts_table.php   # ← always unique
+```
+
+**Why this matters:**
+- **CI/CD pipelines** that generate multiple migrations in parallel or near-simultaneously (e.g., from different PRs merged in quick succession) now produce non-colliding filenames reliably.
+- **Hot-reload scaffolding** (e.g., Vibecoder workflows) that generates many migration stubs quickly are no longer affected.
+- Existing migration files with the same timestamp prefix that ran successfully are unaffected — this only fixes *new* migration generation.
+
+**Note:** If you have an existing project with same-second collision issues (two migrations with identical `2026_07_18_120000_xxxxxx.php` prefixes that ran in the wrong order), you need to manually rename the file and update the `migration` column in the `migrations` table to reflect the new filename.
+
+Source: [PR #60771 — Ensure make:migration generates collision-free timestamps](https://github.com/laravel/framework/pull/60771)
+
 ## Column Types
 
 | Type | Notes |
