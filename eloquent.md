@@ -267,10 +267,27 @@ $post->forceDelete();
 ## Scopes
 
 ```php
-// Local scope — call as Post::published()->get()
+// Classic local scope — call as Post::published()->get()
 public function scopePublished($query)
 {
     return $query->where('published_at', '<=', now());
+}
+
+// Laravel 12+ — typed #[Scope] attribute (no `scopeXxx` naming convention required)
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
+
+#[Scope]
+protected function published(Builder $query): void
+{
+    $query->where('published_at', '<=', now());
+}
+
+// Dynamic scope (with parameters) — also works as an attribute
+#[Scope]
+protected function ofType(Builder $query, string $type): void
+{
+    $query->where('type', $type);
 }
 
 // Global scope (boot in model)
@@ -279,6 +296,18 @@ protected static function booted()
     static::addGlobalScope('active', fn($q) => $q->where('active', true));
 }
 ```
+
+**`#[Scope]` attribute (Laravel 12+):**
+- Replaces the `scopeXxx()` method-name convention. Method can be `protected` (preferred) or `public`.
+- **Must be `protected`** per Laravel docs — `public` works but the docs flag it as discouraged.
+- Calling an attributed scope from inside the model class: `static::query()->ofType('admin')` — must go through the query builder, not `$this->ofType()` directly (the latter doesn't route through Eloquent's scope handling).
+- Refactor-rename safe (no magic prefix to keep in sync) and IDE-discoverable (the attribute shows up in `Find Usages` / autocompletion where a string-prefixed method name wouldn't).
+- Dynamic scopes work the same way: extra method parameters become scope arguments.
+- Both styles (`scopeXxx()` and `#[Scope]`) coexist. New code should prefer the attribute.
+
+**Common gotcha:** the attribute only marks the method as a scope. The method signature still needs `Builder $query` as the first parameter — the framework dispatches via reflection but the SQL builder is still injected positionally.
+
+Source: [Laravel 13 Docs - Eloquent Query Scopes](https://laravel.com/docs/13.x/eloquent#query-scopes) | [PHP Attributes in Laravel 13 Guide](https://laraveldaily.com/post/php-attributes-in-laravel-13-the-ultimate-guide-36-new-attributes)
 
 ## Factories (for testing/seeders)
 

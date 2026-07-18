@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.27
+version: 1.22.28
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -18,8 +18,11 @@ metadata:
 | `incrementEachQuietly` / `decrementEachQuietly` Eloquent bulk helpers (Laravel 13.20+) | `eloquent.md` (Bulk Operations section) | Batch counter updates without firing per-model events |
 | `QueueFake::beforePushing()` / `afterPushing()` lifecycle hooks (Laravel 13.20+) | `queues.md` (QueueFake Lifecycle Hooks section) | Inspect jobs entering/exiting the fake queue in tests |
 | First-party `Illuminate\Image` facade — resize, crop, convert, store (Laravel 13.20+) | `file-uploads.md` (First-Party Image Processing section) | Replace third-party image packages for basic transforms |
-| `#[WithoutMiddleware]` controller attribute (Laravel 13.20+) | `controllers.md` (WithoutMiddleware section) | Exclude specific middleware from individual controller actions |
+| `#[WithoutMiddleware]` controller attribute (Laravel 13.20+) | `controllers.md` (Laravel 13 Controller Attributes section) | Exclude specific middleware from individual controller actions (PR #60709) |
 | `Storage::assertEmpty()` (Laravel 13.20+) | `file-uploads.md` (Testing File Uploads section) | Assert a storage path has no files — inverse of `assertExists` |
+| `Request::integer()` / `Request::string()` / `Request::boolean()` / `Request::float()` / `Request::array()` / `Request::date()` typed accessors (Laravel 12+) | `controllers.md` (Request Typed Accessors section) | Auto-cast + safe defaults — replace `?:` null-coalescing + `intval()` boilerplate |
+| `Request::enum()` / `Request::enums()` typed enum accessors (Laravel 12+) | `controllers.md` (Request Typed Accessors section) | Read enum-typed input as a typed enum; pair with `Rule::enum()` for validation |
+| `#[Scope]` Eloquent query scope attribute (Laravel 12+) | `eloquent.md` (Scopes section) | Replaces `scopeXxx()` method naming; IDE-discoverable, refactor-rename safe |
 | Templates, components, XSS, slots | `blade.md` | Blade/frontend work |
 | CLI commands, scheduling, tinker | `artisan.md` | DevOps & maintenance |
 | REST APIs, JSON, rate limiting | `api.md` | API development |

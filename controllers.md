@@ -83,7 +83,7 @@ class ProvisionServer extends Controller
 
 ## Laravel 13 Controller Attributes
 
-Laravel 13 introduces PHP attributes for middleware and authorization directly on controllers:
+Laravel 13 introduces PHP attributes for middleware and authorization directly on controllers. **Laravel 13.20+** added the matching `#[WithoutMiddleware]` attribute to *exclude* middleware from specific actions — the missing complement to `#[Middleware]`:
 
 ```php
 use Illuminate\Routing\Attributes\Controllers\Authorize;
@@ -105,9 +105,89 @@ class PostController extends Controller
 }
 ```
 
+// Laravel 13.20+ — exclude specific middleware from individual methods
+use Illuminate\Routing\Attributes\Controllers\WithoutMiddleware;
+use App\Http\Middleware\EnsureEmailIsVerified;
+
+#[Middleware('auth')]
+class UserController extends Controller
+{
+    // All methods get 'auth', but...
+
+    #[WithoutMiddleware(EnsureEmailIsVerified::class)]
+    public function profile()
+    {
+        // ...this method is also exempt from the email-verified check.
+    }
+}
+```
+
+**`#[WithoutMiddleware]` gotchas (PR #60709):**
+- It can only **remove route-level middleware**, not global middleware. A class-level `#[Middleware('auth')]` is still overridable; a `$middleware->append(EnsureJsonResponse::class)` global is not.
+- Matching uses `ReflectionAttribute::IS_INSTANCEOF` — exclude the parent middleware class and all subclasses are excluded too. Exclude only the leaf and you get the inverse.
+- Class-level `#[WithoutMiddleware]` is inherited by child controllers (subclasses). Re-declare at the subclass if you want to undo.
+- Use the `only` / `except` array args to scope a class-level attribute to particular methods: `#[WithoutMiddleware('throttle:api', except: ['show'])]`.
+- The route-level `->withoutMiddleware([...])` and `Route::resource()->withoutMiddlewareFor([...], ...)` chain methods still work — the attribute is just the typed, IDE-discoverable alternative.
+
 **Key attributes:**
 - `#[Middleware('name')]` — apply middleware to controller or method
 - `#[Authorize('action', [Model::class, 'relation])` — authorize with policy
+- `#[WithoutMiddleware('name')]` *(13.20+)* — exclude middleware from a controller method
+
+## Request Typed Accessors (Laravel 12+)
+
+`Illuminate\Http\Request` ships typed accessors that auto-cast and return safe defaults — eliminating `?:` null-coalescing ladders and `intval()` / `strtolower()` boilerplate:
+
+```php
+public function update(StorePostRequest $request, Post $post)
+{
+    $title       = $request->string('title')->trim();        // Stringable — chains Str methods
+    $perPage     = $request->integer('per_page', 25);         // int; default 25 if missing/invalid
+    $archived    = $request->boolean('archived');             // accepts 1, "1", true, "true", "on", "yes"
+    $tags        = $request->array('tags') ?? [];             // array, [] if missing
+    $status      = $request->enum('status', PostStatus::class, PostStatus::Draft); // enum or default
+    $products    = $request->enums('products', Product::class); // array of enums (skips invalid)
+    $publishedAt = $request->date('published_at');           // Carbon; null if missing
+    $amount      = $request->float('amount', 0.0);            // float, default
+}
+```
+
+**Decision matrix — when to use which:**
+
+| Method | Returns | Default behavior | When to use |
+|---|---|---|---|
+| `->input('key')` | `mixed` | `null` | Need raw, untyped payload |
+| `->string('key')` | `Stringable` | empty `Stringable` | Trimming, regex, chaining `Str` |
+| `->integer('key', 0)` | `int` | the second arg | Page sizes, counts, IDs from query |
+| `->float('key', 0.0)` | `float` | the second arg | Money, percentages, ratios |
+| `->boolean('key')` | `bool` | `false` | Checkboxes, feature flags from form |
+| `->array('key', [])` | `array` | the second arg | Tag lists, multi-selects |
+| `->date('key')` | `?\Carbon` | `null` | Date inputs that need Carbon math |
+| `->enum('key', E::class, $default)` | `?E` | the third arg (or `null`) | Validated enum from request body |
+| `->enums('key', E::class)` | `array<E>` | `[]` | Array of enums, invalid entries skipped |
+
+**`Request::enum()` vs `Rule::enum()` (the most-confused pair):**
+- **`Request::enum($key, E::class, $default)`** — used at *read time* in the controller. Returns the enum instance (or default). Doesn't validate; assumes input is already valid.
+- **`Rule::enum(E::class)`** — used in a validator (`'status' => [Rule::enum(E::class)]`). Validates the input, returns a 422 on bad values.
+- **Correct pairing:** `Rule::enum()` in the FormRequest's `rules()` for validation, then `$request->enum('status', E::class)` in the controller for the typed read. Skip the rule when you have a default fallback (`Request::enum($key, E::class, E::Pending)`).
+- **For a form field you accept from the user:** use both. `Rule::enum()` enforces, `Request::enum()` reads.
+- **For a field you set server-side with a known-safe default:** `Request::enum($key, E::class, E::Pending)` only.
+
+**`boolean()` truthy values (canonical list, do not deviate):**
+Returns `true` for: `1`, `"1"`, `true`, `"true"`, `"on"`, `"yes"` (case-insensitive).
+Returns `false` for: literally everything else, including `"0"`, `"false"`, `"off"`, `""`, `null`, and the string `"no"` *if you mess up the casing*. If your HTML form sends `"NO"` (uppercase), it returns `false` — check your `<input>` value attribute matches one of the canonical strings.
+
+**`string()` returns `Stringable`, not `string`:**
+```php
+$name = $request->string('name')->trim()->lower()->title();
+// For raw string coercion in a JSON response:
+$name = (string) $request->string('name');
+// For comparisons:
+if ($request->string('email')->lower() === 'admin@example.com') { /* ... */ }
+```
+Forgetting the `(string)` cast when stuffing into a JSON array is the #1 typo with this helper — `Stringable` serializes fine to JSON but blows up on `===` against a plain string.
+
+Source: [Laravel 13 Docs - HTTP Requests](https://laravel.com/docs/13.x/requests#retrieving-input) | [Laravel 13 Docs - Validation](https://laravel.com/docs/13.x/validation#rule-enum)
 
 ## Route Patterns (Global Constraints)
 
@@ -339,6 +419,10 @@ try {
 6. **Validation errors not flashed** — ensure `Back` or `withErrors` is called
 7. **Using a 7-method resource for one-off actions** — webhooks, OIDC callbacks, billing redirects are not CRUD. Use `__invoke()` controllers instead.
 8. **Forgetting `Route::pattern()` after upgrading** — global constraints override implicit binding. Tests that expected `ModelNotFoundException` will now see a 404 and start failing.
+9. **Comparing `Request::string('key')` directly to a `string`** — `$request->string('email')` returns a `Stringable`, not a string. `$request->string('email') === 'a@b.com'` is always false. Cast with `(string)` or use `->lower()` for case-insensitive comparison. The Stringable serializes correctly to JSON, which is why the bug only shows up in `===` / type-hint checks.
+10. **Using `Request::enum()` to validate** — `Request::enum($key, E::class)` *does not* validate. It returns `null` (or your default) when the value isn't a valid enum case, but accepts whatever the user sent. Pair with `Rule::enum(E::class)` in the FormRequest when the value comes from user input.
+11. **Trying `#[WithoutMiddleware]` on global middleware** — it can only strip route-level middleware (class-level `#[Middleware]` and `Route::middleware()`). For a global middleware (`$middleware->append(ForceJson::class)`), use `Route::withoutMiddleware()` or move the bypass logic into the middleware itself.
+12. **Forgetting `(bool)` around `Request::boolean()` in `array_merge`** — `array_merge($validated, ['archived' => $request->boolean('archived')])` works because PHP coerces, but `$row['archived'] ?? false` after a JSON roundtrip will give you `true`/`false` reliably only if the value was cast. The HTML checkbox "0" / "1" / "on" / "off" trap hits people who skip the helper and do `$request->input('archived') === 'on'` instead.
 
 
 ## Updated from Research (2026-06-29)
@@ -349,4 +433,12 @@ try {
 - **HEAD request cache headers fix (PR #60589)** — `SetCacheHeaders` middleware now applies to `HEAD` requests as of 13.18.0+. Fixes CDN cache-warming scripts that previously saw no `Cache-Control` / `ETag` on HEAD probes.
 - **API versioning convention** — `prefix('vN')->name('api.vN.')` keeps URL helpers stable; use `Route::apiResource()` instead of `Route::resource()` for JSON-only endpoints; add `Sunset` HTTP header for deprecated versions via metadata.
 
-Source: [Laravel 13 Docs - Controllers](https://laravel.com/docs/13.x/controllers) | [Laravel 13 Docs - Routing](https://laravel.com/docs/13.x/routing) | [PR #60589 HEAD cache fix](https://github.com/laravel/framework/pull/60589)
+## Updated from Research (2026-07-18, cycle 42) — v13.20 + typed accessors
+
+- **`#[WithoutMiddleware]` controller attribute (Laravel 13.20+, PR #60709 by @JurianArie)** — typed, IDE-discoverable complement to `#[Middleware]`. Excludes a middleware from a single method or an entire controller. Subclass-aware (uses `ReflectionAttribute::IS_INSTANCEOF`). Does **not** strip global middleware. Class-level attribute is inherited by subclasses — re-declare to opt back in.
+- **`Request::enum()` vs `Rule::enum()` (the most-confused pair)** — `Request::enum($key, E::class, $default)` is for *reading* the validated input as a typed enum at controller time (no validation). `Rule::enum(E::class)` is for *validating* in a FormRequest. Pair them for user-submitted enum fields. Use `Request::enum()` with a default when the field is server-set.
+- **Request typed accessors (`Request::integer()` / `Request::string()` / `Request::boolean()` / `Request::float()` / `Request::array()` / `Request::date()` / `Request::enum()` / `Request::enums()`)** — Laravel 12+ helpers that auto-cast and accept a default. Replace `?:` null-coalescing chains and `intval()` / `strtolower()` boilerplate. Watch out: `string()` returns a `Stringable` (cast to `string` for `===` and JSON `array_merge`); `boolean()` is `true` only for `1`/`"1"`/`true`/`"true"`/`"on"`/`"yes"` — case-insensitive; no `boolean:strict` needed.
+- **`#[Scope]` attribute on Eloquent query scopes** — replaces `scopeXxx()` method naming. `#[Scope] protected function published(Builder $query): void` instead of `public function scopePublished($query)`. Method must be `protected` (not `public`). IDE-discoverable, refactor-rename safe, plays nicely with static analysis. Cross-ref: `eloquent.md` (Scopes section).
+- **`Route::redirect()` / `Route::view()` shortcut improvements** — both accept a third status-code / data arg respectively. `Route::redirect('/here', '/there', 301)` for permanent SEO redirects; `Route::view('/welcome', 'welcome', ['name' => 'Taylor'])` for view-only endpoints. Still doesn't run middleware per request — keep them for static redirects/views only.
+
+Source: [Laravel News — Laravel 13.20](https://laravel-news.com/laravel-13-20-0) | [Laravel 13 Docs - Controllers](https://laravel.com/docs/13.x/controllers) | [Laravel 13 Docs - HTTP Requests](https://laravel.com/docs/13.x/requests) | [PR #60709 — `#[WithoutMiddleware]`](https://github.com/laravel/framework/pull/60709) | [Eloquent Docs — Query Scopes](https://laravel.com/docs/13.x/eloquent#query-scopes)

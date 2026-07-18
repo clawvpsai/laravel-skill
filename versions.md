@@ -1460,7 +1460,51 @@ Cycle 39's watch-list named `controllers.md` (10 days stale) as the cycle-40 gap
 - **Reverb ecosystem** — `laravel/reverb` 1.10.2 still current; watch for 1.11.0.
 - **PHP July security batch** — watch for 8.3.34 / 8.4.27 / 8.5.13 (expected mid-July 2026).
 
-SKILL.md bumped to **v1.22.27** (cycle-41 versions.md + file-uploads.md + SKILL.md + README.md update — v13.20.0 + v12.64.0 release coverage + first-party `Illuminate\Image` section added to file-uploads.md). — now the front-of-queue gap-fill candidate. Promising targets carried over from cycle 39:
+### Cycle 42 Notes (2026-07-18 00:07 UTC) — controllers.md Gap-Fill + Scopes attribute
+
+**State of the skill at cycle time:**
+- **Latest Laravel framework release:** **v13.20.0** (tagged 2026-07-14 14:23 UTC) — still current. No new minor release since cycle 41.
+- **No new Laravel CVEs** since cycle 40. GitHub Security Advisories rechecked at 00:07 UTC.
+- **PHP security batch** from 2026-07-01 (8.3.32 / 8.4.23 / 8.5.8) still current. PHP 8.3.34 / 8.4.27 / 8.5.13 expected any day now.
+- **Laravel 12 EOL** — bug fixes end **August 13, 2026** (~26 days from cycle time). Push for 13.x migrations.
+
+**What cycle 42 changed:**
+- **`controllers.md`** — gap-fill on the file that was 14 days stale (last touched cycle 29, 2026-07-04). Five new topics covered:
+  1. **`#[WithoutMiddleware]` controller attribute** (Laravel 13.20+, PR #60709) — full usage example, 5 gotchas (only strips route-level middleware, IS_INSTANCEOF subclass matching, child-controller inheritance, `only`/`except` array args, relationship to route-level `->withoutMiddleware()`). Cross-referenced from the "Updated from Research (2026-06-29)" block as a new cycle-42 block.
+  2. **`Request::enum()` vs `Rule::enum()`** (the most-confused pair) — clear rule-by-rule table for when to use which, plus the 5 common footguns (one is for reading, one is for validating; pair them for user-submitted enum fields).
+  3. **Request Typed Accessors section** (Laravel 12+) — full coverage of `Request::integer()` / `Request::string()` / `Request::boolean()` / `Request::float()` / `Request::array()` / `Request::date()` / `Request::enum()` / `Request::enums()`. Includes a 9-row decision matrix (returns + default behavior + when-to-use), the canonical `boolean()` truthy values list, and the `Stringable`-vs-`string` comparison footgun.
+  4. **Common Mistakes section extended** — 4 new entries (items 9–12): `Request::string()` vs `string` comparison footgun; using `Request::enum()` to validate; `#[WithoutMiddleware]` on global middleware doesn't work; `Request::boolean()` in array_merge edge cases.
+  5. **`#[Scope]` / `Route::redirect()` / `Route::view()`** coverage in the cycle-42 "Updated from Research" block (eloquent.md Scopes section was also updated for `#[Scope]`).
+- **`eloquent.md`** — extended the Scopes section with `#[Scope]` attribute (Laravel 12+), including dynamic scopes, the `protected`-not-`public` rule, the "must call through query builder" gotcha, and a refactor-rename / IDE-discoverability rationale. PHP-Attributes-in-Laravel-13 cross-ref.
+- **`SKILL.md`** — bumped `1.22.27 → 1.22.28`; added 3 new cross-reference rows for `Request::integer()`/`string()`/`boolean()`/etc. typed accessors, `Request::enum()`/`enums()` typed enum accessors, and `#[Scope]` Eloquent query scope attribute.
+- **`README.md`** — version stamp updated; skill version bumped to v1.22.28; research-cycle marker bumped to **Cycle 42**.
+- **No changes to other topic files this cycle** — `auth.md` (14 days stale, cycle-43 candidate), `logging.md` (14 days stale, smallest file), and `migrations.md` (14 days stale) are the front-of-queue candidates for cycle 43.
+
+### Watch list for cycle 43
+
+- **`auth.md`** (last touched cycle 24, 2026-07-04 — 14 days stale) — front of the queue for cycle 43. Promising targets:
+  - **Fortify 1.x passkey API updates** — `Laravel\Fortify\Features::twoFactorRecoveryCodes()`, passkey registration endpoint, `Webauthn` assertions
+  - **Laravel 13 starter-kit integration** — Livewire 3 / Volt / React starter kits now ship with `auth()->login()` patterns; update auth.md's "starter kit" section
+  - **`Auth::attempt()` with closure for 2FA challenge** — second-factor challenge step (returns `null` for "needs 2FA" then a separate `Auth::attemptTwoFactor()` call)
+  - **`Password::sendResetLink()` rate-limit headers** — Laravel 12+ exposes `RateLimiter::for('password-reset', ...)` for the new `Retry-After` header on the response
+  - **`#[UsePolicy]` and `#[Authorize]` class-level attribute** on Models (Laravel 13+) — already partially covered; verify all spelling and add the model-level `use Authenticatable, HasPolicies` interaction
+- **`logging.md`** (last touched cycle 4, 2026-07-04 — 14 days stale) — smallest file (8,986 bytes pre-cycle-40). Promising:
+  - `Context::push()` / `pop()` Octane hygiene (clean up between requests)
+  - The new `Log::withoutContext()` Octane hygiene pattern
+  - The `Logger` driver for OpenTelemetry export
+  - The missing coverage of the Monolog channel-level filter chain
+- **`migrations.md`** (last touched cycle 4, 2026-07-04 — 14 days stale) — promising:
+  - `Schema::hasTable()` / `Schema::hasColumn()` for safe multi-DB migrations
+  - `morphs()` / `nullableMorphs()` UUID mode (Laravel 12+)
+  - Postgres exclusion constraints and `->virtualAs()` column expressions
+  - `php artisan migrate:status --pending` flag (Laravel 12.50+)
+- **`controllers.md`** — minor follow-up candidates: `Route::fallback()` semantics, `Route::can()` for inline ability checks, `Route::getCurrentRoute()->parameters()` use cases, `Route::scopeBindings()` for nested `belongsTo` resolution.
+- **v13.20.1+ / v13.21.0** — watch [github.com/laravel/framework/releases](https://github.com/laravel/framework/releases). The 5-PR-per-week cadence suggests v13.20.1 in late July / early August 2026.
+- **Laravel 12 EOL** — bug fixes end **August 13, 2026** (~26 days from cycle time). Push for 13.x migrations.
+- **Reverb ecosystem** — `laravel/reverb` 1.10.2 still current; watch for 1.11.0.
+- **PHP July security batch** — watch for 8.3.34 / 8.4.27 / 8.5.13 (any day now in mid-July 2026).
+
+SKILL.md bumped to **v1.22.28** (cycle-42 controllers.md + eloquent.md gap-fill — `#[WithoutMiddleware]` controller attribute (PR #60709) + Request typed accessors (integer/string/boolean/float/array/date/enum/enums) + `Request::enum()` vs `Rule::enum()` decision matrix + `#[Scope]` Eloquent query scope attribute + 4 new Common Mistakes entries + Scopes section rewrite in eloquent.md). — now the front-of-queue gap-fill candidate. Promising targets carried over from cycle 39:
   - `#[Scope]` attribute on Eloquent query scopes (12.x+, lets you annotate scopes on the model class instead of using `scopeXxx()` method names — IDE-discoverable and refactor-rename safe)
   - `#[Fillable]`-with-validation Form Request pattern (replaces manual `$fillable` arrays + separate `rules()` methods)
   - `Request::enum()` shorthand vs `Rule::enum()` (single-arg vs constraint-form, when each is the right call)
