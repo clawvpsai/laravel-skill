@@ -1,7 +1,7 @@
 ---
 name: Laravel
 slug: laravel-developer
-version: 1.22.29
+version: 1.22.30
 description: Production-grade Laravel development — ship robust apps without common pitfalls.
 metadata:
   {"emoji":"🟠","requires":{"bins":["php","composer"]},"os":["linux","darwin","win32"]}
@@ -61,6 +61,9 @@ metadata:
 | `JsonResource` Advanced Patterns (`when`/`whenLoaded`/`whenCounted`/`whenPivotLoaded`, `additional`, `wrap`/`withoutWrapping`, `withResponse` for HATEOAS) | `api.md` (API Resource Advanced Patterns section) | Conditional attributes, response-level metadata, data wrapper control, and HATEOAS self/related links — covers ~90% of production API resource patterns that AI models default to verbose `response()->json([...])` for |
 | `JsonApiResource::toLinks()` / `toMeta()` | `api.md` (JsonApiResource toLinks section) | JSON:API spec compliance for `self`/`related`/pagination/domain links and collection metadata (totals, generated_at, request_id) |
 | `php artisan dev --kill-others-on-fail` (PR #60606) | `artisan.md` (Dev Orchestration section) | 13.18.0+ tears down sibling dev processes on non-zero exit; use in CI / one-shot dev, leave off for normal local dev |
+| `php artisan pail` live log tail with filters (Laravel 11+, official in 13) | `logging.md` (Tail & Filter Logs with Pail section) | `--filter` matches type/file/message/AND stack trace content (the killer feature for grep-on-JSON-logs); `-vv` inline stack traces; `--level`/`--message`/`--no-interaction`. Works with file/Sentry/Flare/Nightwatch backends |
+| `JsonFormatter` + `formatter_with => ['includeStacktraces' => true]` (CRITICAL for JSON log aggregation) | `logging.md` (JsonFormatter + `includeStacktraces` section) | Without this, structured log aggregators (Datadog/Loki/Elastic/CloudWatch Logs Insights) lose the line that links an error to source code. Laravel Cloud ships it on by default; on-prem FrankenPHP/Swoole/RoadRunner do not — easy to miss |
+| `LOG_DEPRECATIONS_CHANNEL` + `LOG_DEPRECATIONS_TRACE` | `logging.md` (Deprecation Warnings Channel section) | Capture PHP/Laravel/Composer deprecation warnings to a dedicated file for pre-upgrade audits. Footgun: the default is the literal **string** `'null'`, not PHP `null` — see Common Mistakes |
 | TaggedCache `flexible()` lock/defer namespace fix (PR #60626) | `performance.md` (TaggedCache section) | 13.18.0+ namespaces `flex_lock:` and `flex_defer:` keys separately so a custom lockName can't collide with a defer label |
 | Debounced-jobs cache-hit reduction (PR #60575) | `performance.md` (Cache debounce subsection) | 13.18.0+ skips lock acquisition when already inside the debounce window — pairs with the 13.17.0 `maxWait` fix |
 | `Release` queue middleware (`Illuminate\Queue\Middleware\Release`) (PR #60630) | `queues.md` (Job Middleware section) | 13.18.1+ declarative `->middleware(new Release($delay))` so jobs release themselves without `$this->release()` calls scattered through `handle()` |
